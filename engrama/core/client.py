@@ -23,10 +23,9 @@ from neo4j import GraphDatabase, Driver, Record
 # set environment variables explicitly.
 load_dotenv()
 
-# Defaults matching .env.example shipped with the project.
+# Defaults — password is intentionally omitted to force explicit config.
 _DEFAULT_URI = "bolt://localhost:7687"
 _DEFAULT_USER = "neo4j"
-_DEFAULT_PASSWORD = "changeme123"
 
 
 class EngramaClient:
@@ -45,7 +44,7 @@ class EngramaClient:
         user: Authentication user name.  Falls back to
               ``NEO4J_USERNAME`` env var, then ``"neo4j"``.
         password: Authentication password.  Falls back to
-                  ``NEO4J_PASSWORD`` env var, then ``"changeme123"``.
+                  ``NEO4J_PASSWORD`` env var.  Raises if not set.
     """
 
     def __init__(
@@ -56,7 +55,13 @@ class EngramaClient:
     ) -> None:
         self._uri: str = uri or os.getenv("NEO4J_URI", _DEFAULT_URI)
         self._user: str = user or os.getenv("NEO4J_USERNAME", _DEFAULT_USER)
-        self._password: str = password or os.getenv("NEO4J_PASSWORD", _DEFAULT_PASSWORD)
+        resolved_password = password or os.getenv("NEO4J_PASSWORD")
+        if not resolved_password:
+            raise ValueError(
+                "Neo4j password is required. Pass it explicitly, set NEO4J_PASSWORD "
+                "in the environment, or create a .env file (see .env.example)."
+            )
+        self._password: str = resolved_password
 
         self._driver: Driver = GraphDatabase.driver(
             self._uri,

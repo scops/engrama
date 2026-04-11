@@ -1,6 +1,6 @@
 // Engrama — schema initialisation script
 // Run once after Neo4j starts:
-//   docker exec -i engrama-neo4j cypher-shell -u neo4j -p changeme123 < scripts/init-schema.cypher
+//   docker exec -i engrama-neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD < scripts/init-schema.cypher
 
 // === CONSTRAINTS ===
 

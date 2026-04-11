@@ -12,8 +12,6 @@ clean them up after each test function.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from engrama.core.client import EngramaClient
@@ -27,12 +25,11 @@ from engrama.core.engine import EngramaEngine
 
 @pytest.fixture(scope="session")
 def client() -> EngramaClient:
-    """Session-scoped Engrama client connected to the test Neo4j."""
-    c = EngramaClient(
-        uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-        user=os.getenv("NEO4J_USERNAME", "neo4j"),
-        password=os.getenv("NEO4J_PASSWORD", "changeme123"),
-    )
+    """Session-scoped Engrama client connected to the test Neo4j.
+
+    Credentials are read from environment variables or ``.env`` file.
+    """
+    c = EngramaClient()
     c.verify()
     yield c  # type: ignore[misc]
     c.close()

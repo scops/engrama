@@ -4,30 +4,43 @@ Add this to your Claude Desktop project instructions.
 
 ---
 
-You have access to a persistent Neo4j knowledge graph via the `engrama` MCP server.
-Use it proactively to remember and retrieve information across sessions.
+You have access to a persistent knowledge graph via the **engrama** MCP
+server.  It provides four tools — use them proactively to remember and
+retrieve information across sessions.
 
 ## At the START of every relevant conversation
 
-Search for context related to the current topic:
+Search for existing context:
 
-```cypher
-CALL db.index.fulltext.queryNodes("memory_search", $topic)
-YIELD node, score
-RETURN labels(node)[0] AS type, node.name AS name, score
-ORDER BY score DESC LIMIT 10
+```
+engrama_search(query="<topic>", limit=10)
 ```
 
-## At the END of every conversation with new knowledge
+If a specific node is found, get its neighbourhood:
 
-Save new entities using MERGE (never CREATE):
+```
+engrama_context(name="<node name>", label="<label>", hops=1)
+```
 
-```cypher
-MERGE (p:Project {name: $name})
-SET p.status = $status,
-    p.description = $description,
-    p.updated_at = datetime()
-ON CREATE SET p.created_at = datetime()
+## During the conversation — remember new knowledge
+
+Create or update a node:
+
+```
+engrama_remember(
+  label="Project",
+  properties={"name": "engrama", "status": "active", "repo": "scops/engrama"}
+)
+```
+
+Create relationships between nodes:
+
+```
+engrama_relate(
+  from_name="engrama", from_label="Project",
+  rel_type="USES",
+  to_name="Neo4j", to_label="Technology"
+)
 ```
 
 ## Available node types (developer profile)
@@ -42,20 +55,24 @@ ON CREATE SET p.created_at = datetime()
 | Concept | name | technical concepts and domain knowledge |
 | Client | name | clients and organisations |
 
-## Key relationships
+## Available relationships
 
 ```
-Project -[:USES]----------> Technology
-Project -[:INFORMED_BY]---> Decision
-Project -[:HAS]-----------> Problem
-Problem -[:SOLVED_BY]-----> Decision
-Course  -[:TEACHES]-------> Technology
-Course  -[:COVERS]--------> Concept
+Project    -[:USES]----------> Technology
+Project    -[:INFORMED_BY]---> Decision
+Project    -[:HAS]-----------> Problem
+Project    -[:FOR]-----------> Client
+Project    -[:ORIGIN_OF]-----> Course
+Project    -[:APPLIES]-------> Concept
+Problem    -[:SOLVED_BY]-----> Decision
+Course     -[:COVERS]--------> Concept
+Course     -[:TEACHES]-------> Technology
+Technology -[:IMPLEMENTS]----> Concept
 ```
 
 ## Rules
 
-- Always `MERGE`, never bare `CREATE`
-- Use Cypher parameters `$param` for all user data
-- Search before creating to avoid duplicates
-- Add `updated_at = datetime()` on every write
+- Always use the engrama tools — never write raw Cypher.
+- Search before creating to avoid duplicates.
+- The engrama server handles all database credentials internally.
+  You never need connection strings, passwords, or direct database access.

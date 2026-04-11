@@ -1,28 +1,13 @@
 {
   "mcpServers": {
     "engrama": {
-      "command": "uvx",
-      "args": ["mcp-neo4j-cypher"],
-      "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USERNAME": "neo4j",
-        "NEO4J_PASSWORD": "changeme123"
-      }
-    },
-    "filesystem": {
-      "command": "npx",
+      "command": "uv",
       "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "C:\\Proyectos\\engrama"
+        "run",
+        "--directory", "C:\\Proyectos\\engrama",
+        "--extra", "mcp",
+        "engrama-mcp"
       ]
-    },
-    "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_YOUR_TOKEN_HERE"
-      }
     }
   }
 }

@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.0", "fastmcp>=0.1"]
+mcp = ["mcp>=1.8", "fastmcp>=2.10.5,<3"]
 langchain = ["langchain>=0.2", "langchain-community>=0.2"]
 rest = ["fastapi>=0.110", "uvicorn>=0.29"]
 dev = [
@@ -36,6 +36,7 @@ all = ["engrama[mcp,langchain,rest,dev]"]
 
 [project.scripts]
 engrama = "engrama.cli:main"
+engrama-mcp = "engrama.adapters.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/scops/engrama"

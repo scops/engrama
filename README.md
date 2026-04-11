@@ -27,48 +27,97 @@ Inspired by Karpathy's second brain concept, but built for agents rather than hu
 
 ## Quick start
 
+### 1. Clone and configure credentials
+
 ```bash
-# 1. Start Neo4j
-docker compose up -d
-
-# 2. Install Engrama
-pip install engrama
-
-# 3. Initialise schema
-engrama init --profile developer
-
-# 4. Use it
-python -c "
-from engrama import Engrama
-brain = Engrama()
-brain.remember('Project', 'my-api', 'Uses FastAPI and Neo4j')
-print(brain.recall('FastAPI'))
-"
+git clone https://github.com/scops/engrama
+cd engrama
+cp .env.example .env
 ```
+
+Open `.env` and **set your own password** for `NEO4J_PASSWORD`.
+You can generate a secure one with:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+> **Security note:** The `.env` file contains your database credentials and
+> is listed in `.gitignore` — it is never committed to the repository.
+> The `.env.example` file ships with a sample password for convenience;
+> replace it immediately in your local `.env` before starting Neo4j.
+
+### 2. Start Neo4j
+
+```bash
+docker compose up -d
+```
+
+Wait ~15 seconds for the database to become ready, then initialise the schema:
+
+```bash
+# Linux / macOS / Git Bash
+docker exec -i engrama-neo4j cypher-shell \
+  -u neo4j -p "$(grep NEO4J_PASSWORD .env | cut -d= -f2)" \
+  < scripts/init-schema.cypher
+
+# PowerShell
+Get-Content scripts/init-schema.cypher |
+  docker exec -i engrama-neo4j cypher-shell `
+    -u neo4j -p (Get-Content .env | Select-String 'NEO4J_PASSWORD' |
+    ForEach-Object { $_.Line.Split('=',2)[1] })
+```
+
+Verify at [http://localhost:7474](http://localhost:7474) using the credentials from your `.env`.
+
+### 3. Install and test
+
+```bash
+uv sync
+uv run python -m pytest tests/test_core.py -v
+```
+
+### 4. Run the MCP server
+
+```bash
+uv run engrama-mcp
+```
+
+Or use it from Claude Desktop — see the MCP section below.
 
 ---
 
 ## MCP integration (Claude Desktop)
 
-Add to `%APPDATA%\Claude\claude_desktop_config.json`:
+Engrama acts as an abstraction layer between the AI agent and the database.
+Claude Desktop connects to the Engrama MCP server — it never sees database
+credentials, connection strings, or raw queries.
+
+Add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
   "mcpServers": {
     "engrama": {
-      "command": "uvx",
-      "args": ["mcp-neo4j-cypher"],
-      "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USERNAME": "neo4j",
-        "NEO4J_PASSWORD": "changeme123"
-      }
+      "command": "uv",
+      "args": [
+        "run", "--directory", "C:\\Proyectos\\engrama",
+        "--extra", "mcp", "engrama-mcp"
+      ]
     }
   }
 }
 ```
 
-Restart Claude Desktop. Claude can now read and write your knowledge graph directly from the conversation.
+Adjust `--directory` to wherever you cloned the repo.
+No credentials needed here — the server reads them from `.env` internally.
+
+Restart Claude Desktop. You'll get four tools: `engrama_search`,
+`engrama_remember`, `engrama_relate`, and `engrama_context`.
+
+See [`examples/claude_desktop/system-prompt.md`](examples/claude_desktop/system-prompt.md)
+for a ready-to-paste system prompt that teaches Claude how to use the memory graph.
 
 ---
 
@@ -91,29 +140,6 @@ engrama init --profile assistant    # People, Preferences, Tasks, Contexts
 - [Graph Schema](GRAPH-SCHEMA.md) — nodes, relationships, Cypher reference
 - [Roadmap](ROADMAP.md) — development phases and status
 - [Contributing](CONTRIBUTING.md) — how to contribute
-
----
-
-## Setup
-
-### Prerequisites
-
-- Docker Desktop (Windows/Mac/Linux)
-- Python 3.11+
-- `uv` package manager
-
-### Full setup
-
-```bash
-git clone https://github.com/scops/engrama
-cd engrama
-cp .env.example .env
-docker compose up -d
-uv sync
-engrama init --profile developer
-```
-
-Verify at [http://localhost:7474](http://localhost:7474) (neo4j / changeme123).
 
 ---
 

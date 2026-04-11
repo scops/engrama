@@ -7,17 +7,33 @@ Thank you for your interest in Engrama. Contributions are welcome — code, docu
 ```bash
 git clone https://github.com/scops/engrama
 cd engrama
+
+# 1. Create your local credentials file
+cp .env.example .env
+#    Open .env and set NEO4J_PASSWORD to a strong, unique password.
+#    Generate one with: python -c "import secrets; print(secrets.token_urlsafe(24))"
+
+# 2. Start Neo4j and install dependencies
+docker compose up -d
 uv sync --all-extras
-docker compose up -d   # Neo4j required for integration tests
+
+# 3. Wait ~15 seconds for Neo4j to boot, then initialise the schema
+#    (see README.md for the PowerShell / bash command)
 ```
+
+> **Important:** Never commit your `.env` file. It is already in `.gitignore`,
+> but double-check before pushing. The `.env.example` ships with a sample
+> password — always replace it in your local copy.
 
 ## Running tests
 
 ```bash
-uv run pytest tests/ -v
+uv run python -m pytest tests/ -v
 ```
 
-Integration tests run against a real Neo4j on `bolt://localhost:7687`. Make sure Docker is running first.
+Integration tests run against a real Neo4j on `bolt://localhost:7687`.
+Credentials are read from your `.env` file — tests will fail with a clear
+error if `NEO4J_PASSWORD` is not set. Make sure Docker is running first.
 
 ## Code style
 

@@ -1,1 +1,3 @@
-# TODO: implement adapters — mcp, langchain, rest, sdk
+"""
+Engrama adapters — MCP, LangChain, REST, SDK.
+"""
