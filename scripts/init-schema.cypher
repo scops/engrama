@@ -25,12 +25,15 @@ CREATE CONSTRAINT concept_name IF NOT EXISTS
 CREATE CONSTRAINT client_name IF NOT EXISTS
   FOR (n:Client) REQUIRE n.name IS UNIQUE;
 
+CREATE CONSTRAINT insight_title IF NOT EXISTS
+  FOR (n:Insight) REQUIRE n.title IS UNIQUE;
+
 // === FULLTEXT INDEX ===
 
 CREATE FULLTEXT INDEX memory_search IF NOT EXISTS
-FOR (n:Project|Technology|Decision|Problem|Course|Concept|Client)
+FOR (n:Project|Technology|Decision|Problem|Course|Concept|Client|Insight)
 ON EACH [n.name, n.title, n.notes, n.rationale,
-         n.solution, n.description, n.context];
+         n.solution, n.description, n.context, n.body];
 
 // === RANGE INDEXES ===
 

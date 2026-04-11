@@ -5,24 +5,31 @@ nodes:
   - label: Project
     properties: [name, status, repo, stack, description]
     required: [name]
+    description: "A software project or product."
   - label: Technology
     properties: [name, version, type, notes]
     required: [name]
+    description: "A language, framework, tool, or infrastructure component."
   - label: Decision
     properties: [title, rationale, date, alternatives]
     required: [title]
+    description: "An architectural or technical decision with rationale."
   - label: Problem
     properties: [title, solution, status, context]
     required: [title]
+    description: "A bug, blocker, or challenge encountered."
   - label: Course
     properties: [name, cohort, date, level, client]
     required: [name]
+    description: "A training course or workshop delivered."
   - label: Concept
     properties: [name, domain, notes]
     required: [name]
+    description: "A technical or domain concept."
   - label: Client
     properties: [name, sector, contact]
     required: [name]
+    description: "An organisation that commissions work or training."
 
 relations:
   - {type: USES,        from: Project,    to: Technology}

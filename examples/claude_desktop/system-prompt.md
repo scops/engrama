@@ -5,8 +5,8 @@ Add this to your Claude Desktop project instructions.
 ---
 
 You have access to a persistent knowledge graph via the **engrama** MCP
-server.  It provides four tools — use them proactively to remember and
-retrieve information across sessions.
+server.  It provides ten tools — use them proactively to remember,
+retrieve, and reflect on information across sessions.
 
 ## At the START of every relevant conversation
 
@@ -70,9 +70,30 @@ Course     -[:TEACHES]-------> Technology
 Technology -[:IMPLEMENTS]----> Concept
 ```
 
+## Obsidian sync
+
+Sync a note or the entire vault to the graph:
+
+```
+engrama_sync_note(path="10-projects/engrama.md")
+engrama_sync_vault(folder="10-projects")
+```
+
+## Reflect — detect patterns
+
+Run cross-entity pattern detection and review the results:
+
+```
+engrama_reflect()
+engrama_surface_insights(limit=5)
+engrama_approve_insight(title="...", action="approve")
+engrama_write_insight_to_vault(title="...", target_note="10-projects/engrama.md")
+```
+
 ## Rules
 
 - Always use the engrama tools — never write raw Cypher.
 - Search before creating to avoid duplicates.
+- Never act on unapproved Insights — present them to the human first.
 - The engrama server handles all database credentials internally.
   You never need connection strings, passwords, or direct database access.

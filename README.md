@@ -113,11 +113,53 @@ Add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or
 Adjust `--directory` to wherever you cloned the repo.
 No credentials needed here — the server reads them from `.env` internally.
 
-Restart Claude Desktop. You'll get four tools: `engrama_search`,
-`engrama_remember`, `engrama_relate`, and `engrama_context`.
+Restart Claude Desktop. You'll get ten MCP tools:
+
+| Tool | Description |
+|------|-------------|
+| `engrama_search` | Fulltext search across the memory graph |
+| `engrama_remember` | Create or update a node (always MERGE) |
+| `engrama_relate` | Create a relationship between two nodes |
+| `engrama_context` | Retrieve the neighbourhood of a node |
+| `engrama_sync_note` | Sync a single Obsidian note to the graph |
+| `engrama_sync_vault` | Full vault scan, reconcile all notes |
+| `engrama_reflect` | Cross-entity pattern detection → Insight nodes |
+| `engrama_surface_insights` | Read pending Insights for review |
+| `engrama_approve_insight` | Approve or dismiss an Insight |
+| `engrama_write_insight_to_vault` | Write approved Insight to Obsidian |
 
 See [`examples/claude_desktop/system-prompt.md`](examples/claude_desktop/system-prompt.md)
 for a ready-to-paste system prompt that teaches Claude how to use the memory graph.
+
+---
+
+## Python SDK
+
+Use Engrama directly from Python — no MCP required:
+
+```python
+from engrama import Engrama
+
+with Engrama() as eng:
+    eng.remember("Technology", "FastAPI", "High-performance async framework")
+    results = eng.recall("FastAPI", hops=2)
+    eng.associate("MyProject", "Project", "USES", "FastAPI", "Technology")
+
+    insights = eng.reflect()
+    pending = eng.surface_insights()
+    eng.approve_insight(pending[0].title)
+```
+
+---
+
+## CLI
+
+```bash
+engrama init --profile developer    # Generate schema + apply to Neo4j
+engrama verify                      # Check Neo4j connectivity
+engrama search "microservices"      # Fulltext search from terminal
+engrama reflect                     # Run pattern detection
+```
 
 ---
 
@@ -127,9 +169,9 @@ Profiles define your graph schema without touching code:
 
 ```bash
 engrama init --profile developer    # Projects, Technologies, Decisions, Problems
-engrama init --profile researcher   # Papers, Concepts, Authors, Hypotheses
-engrama init --profile assistant    # People, Preferences, Tasks, Contexts
 ```
+
+Create your own profile YAML for any domain — see [`profiles/developer.yaml`](profiles/developer.yaml) and the [onboard skill](engrama/skills/onboard/) for guided schema creation.
 
 ---
 
@@ -149,5 +191,4 @@ MIT — see [LICENSE](LICENSE)
 
 ## Related
 
-- [scops/mcp-neo4j](https://github.com/scops/mcp-neo4j) — our MCP adapter fork
-- [neo4j-contrib/mcp-neo4j](https://github.com/neo4j-contrib/mcp-neo4j) — upstream
+- [neo4j-contrib/mcp-neo4j](https://github.com/neo4j-contrib/mcp-neo4j) — Neo4j MCP server (Engrama uses its own native adapter instead)

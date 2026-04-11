@@ -29,6 +29,7 @@ class NodeType(str, Enum):
     COURSE = "Course"
     CONCEPT = "Concept"
     CLIENT = "Client"
+    INSIGHT = "Insight"
 
 
 class RelationType(str, Enum):
@@ -199,6 +200,32 @@ class Client:
     updated_at: Optional[datetime.datetime] = None
 
 
+@dataclass
+class Insight:
+    """A cross-entity pattern detected by the reflect skill.
+
+    Insights are proposed by the engine and approved by the human.
+    They are never acted upon automatically.
+
+    Attributes:
+        title: Unique insight title (required).
+        body: Human-readable description of the detected pattern.
+        confidence: Confidence score between 0.0 and 1.0.
+        status: Lifecycle state — ``"pending"``, ``"approved"``, or ``"dismissed"``.
+        source_query: Name or identifier of the Cypher pattern that detected this.
+        created_at: Timestamp set automatically on first write.
+        updated_at: Timestamp refreshed on every write.
+    """
+
+    title: str
+    body: str = ""
+    confidence: float = 0.8
+    status: str = "pending"
+    source_query: str = ""
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
+
+
 # ---------------------------------------------------------------------------
 # Mapping helpers
 # ---------------------------------------------------------------------------
@@ -211,5 +238,9 @@ NODE_DATACLASS_MAP: dict[NodeType, type] = {
     NodeType.COURSE: Course,
     NodeType.CONCEPT: Concept,
     NodeType.CLIENT: Client,
+    NodeType.INSIGHT: Insight,
 }
 """Maps each ``NodeType`` enum member to its corresponding dataclass."""
+
+TITLE_KEYED_LABELS: frozenset[str] = frozenset({"Decision", "Problem"})
+"""Node labels that use ``title`` instead of ``name`` as merge key."""

@@ -17,6 +17,7 @@ from typing import Any
 from neo4j import Record
 
 from engrama.core.client import EngramaClient
+from engrama.core.schema import TITLE_KEYED_LABELS
 
 
 class EngramaEngine:
@@ -129,9 +130,14 @@ class EngramaEngine:
         Returns:
             The list of result records from the query.
         """
+        # Decision and Problem nodes use `title` as their unique key;
+        # all other node types use `name`.
+        from_key = "title" if from_label in TITLE_KEYED_LABELS else "name"
+        to_key = "title" if to_label in TITLE_KEYED_LABELS else "name"
+
         query = (
-            f"MATCH (a:{from_label} {{name: $from_name}}) "
-            f"MATCH (b:{to_label} {{name: $to_name}}) "
+            f"MATCH (a:{from_label} {{{from_key}: $from_name}}) "
+            f"MATCH (b:{to_label} {{{to_key}: $to_name}}) "
             f"MERGE (a)-[r:{rel_type}]->(b) "
             "RETURN type(r) AS rel_type"
         )

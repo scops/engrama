@@ -9,30 +9,166 @@
 | Database | Neo4j Community | 5.26.24 LTS | Free, local, supported until June 2028 |
 | Language | Python | ≥ 3.11 | Agent ecosystem, FastMCP compatibility |
 | Dependency mgmt | uv | latest | Modern standard, fast |
-| MCP adapter | mcp-neo4j-cypher | scops fork | Full Cypher control |
+| MCP adapter | FastMCP + neo4j async | native | Full Cypher control, no intermediate layer |
+| Obsidian adapter | Local Obsidian MCP server | stdio | Document ↔ graph sync |
 | Container | Docker Desktop | latest | Reproducible infrastructure |
 | CI/CD | GitHub Actions | — | Tests and PyPI publishing |
 | Packaging | pyproject.toml | — | Installable as `pip install engrama` |
 
+## What makes Engrama different
+
+Engrama is not another MCP wrapper for Neo4j. It is a **cognitive framework**
+combining two complementary layers:
+
+- **Obsidian** — narrative memory (documents, reasoning, full context)
+- **Neo4j** — relational memory (entities, relationships, patterns)
+
+The `reflect` and `proactive` skills traverse the graph to surface connections
+that neither layer could find alone. Example: a Problem in Project B shares a
+Concept with a resolved Problem in Project A — Engrama detects this and
+proposes the existing Decision as a solution candidate, without being asked.
+
 ## Layer diagram
 
+```mermaid
+block-beta
+  columns 1
+
+  block:adapters["Layer 1 · Adapters"]
+    columns 5
+    MCP["🔌 MCP Server\n(FastMCP)"]
+    Obsidian["📓 Obsidian\nSync"]
+    LangChain["🦜 LangChain"]
+    REST["🌐 REST API"]
+    SDK["📦 SDK"]
+  end
+
+  block:skills["Layer 2 · Skills"]
+    columns 6
+    remember["remember"]
+    recall["recall"]
+    associate["associate"]
+    forget["forget"]
+    reflect["⭐ reflect"]
+    proactive["⭐ proactive"]
+  end
+
+  block:engine["Layer 3 · Memory Engine"]
+    columns 4
+    write["Write Pipeline\n(MERGE)"]
+    query["Query"]
+    fulltext["Fulltext\nSearch"]
+    ttl["TTL /\nArchive"]
+  end
+
+  block:schema["Layer 4 · Graph Schema + Profiles"]
+    columns 4
+    nodes["Nodes"]
+    relations["Relations"]
+    constraints["Constraints"]
+    profiles["Profiles"]
+  end
+
+  block:storage["Storage"]
+    columns 2
+    neo4j[("Neo4j 5.26 LTS\nbolt://7687")]
+    vault[("Obsidian Vault\n~/Documents/vault")]
+  end
+
+  adapters --> skills
+  skills --> engine
+  engine --> schema
+  schema --> storage
 ```
-┌─────────────────────────────────────────────┐
-│           Layer 1 · Adapters                │
-│  MCP server · REST API · LangChain · SDK    │
-├─────────────────────────────────────────────┤
-│           Layer 2 · Skills library          │
-│  remember · recall · associate · forget...  │
-├─────────────────────────────────────────────┤
-│           Layer 3 · Memory engine           │
-│  write pipeline · query · vector · TTL      │
-├─────────────────────────────────────────────┤
-│           Layer 4 · Graph schema            │
-│  nodes · relations · constraints · profiles │
-├─────────────────────────────────────────────┤
-│           Layer 5 · Neo4j 5.26 LTS          │
-│  bolt://localhost:7687 · Docker Desktop     │
-└─────────────────────────────────────────────┘
+
+## Data flow: reflect → Insight
+
+```mermaid
+flowchart LR
+  subgraph Graph["Neo4j Memory Graph"]
+    P1[Project A] -->|HAS| RP[Problem\nresolved]
+    P2[Project B] -->|HAS| OP[Problem\nopen]
+    RP -->|APPLIES| C((Concept))
+    OP -->|APPLIES| C
+    RP -->|SOLVED_BY| D[Decision]
+    P1 -->|INFORMED_BY| D
+  end
+
+  subgraph Reflect["⭐ reflect skill"]
+    Q1["Query 1\nCross-project\nsolution"]
+    Q2["Query 2\nShared\ntechnology"]
+    Q3["Query 3\nTraining\nopportunity"]
+  end
+
+  subgraph Output["Output"]
+    I[/"💡 Insight node\nstatus: pending\nconfidence: 0.8"/]
+  end
+
+  Graph -.->|pattern\ndetected| Reflect
+  Reflect -->|MERGE| Output
+
+  style C fill:#f9d71c,stroke:#333,color:#333
+  style I fill:#a8e6cf,stroke:#333,color:#333
+  style D fill:#ffd3b6,stroke:#333,color:#333
+```
+
+## Graph schema
+
+```mermaid
+erDiagram
+  Project ||--o{ Technology : USES
+  Project ||--o{ Decision : INFORMED_BY
+  Project ||--o{ Problem : HAS
+  Project ||--o{ Client : FOR
+  Problem ||--o{ Concept : APPLIES
+  Problem ||--o{ Decision : SOLVED_BY
+  Course ||--o{ Concept : COVERS
+  Course ||--o{ Technology : TEACHES
+  Course ||--o{ Client : FOR
+
+  Project {
+    string name PK
+    string status
+    string repo
+    string stack
+    string description
+  }
+  Decision {
+    string title PK
+    string rationale
+    string alternatives
+  }
+  Problem {
+    string title PK
+    string status
+    string solution
+    string context
+  }
+  Technology {
+    string name PK
+    string version
+    string type
+  }
+  Concept {
+    string name PK
+    string domain
+  }
+  Course {
+    string name PK
+    string cohort
+    string level
+  }
+  Client {
+    string name PK
+    string sector
+  }
+  Insight {
+    string title PK
+    string body
+    float confidence
+    string status
+    string source_query
+  }
 ```
 
 ## Directory structure
@@ -51,35 +187,36 @@ engrama/
 ├── .env.example
 │
 ├── engrama/
-│   ├── __init__.py          # public API: Engrama class
+│   ├── __init__.py
 │   │
 │   ├── core/
-│   │   ├── __init__.py
 │   │   ├── client.py        # Neo4j driver, connection pool, health check
-│   │   ├── engine.py        # write pipeline (MERGE+timestamps), query, fulltext, TTL
+│   │   ├── engine.py        # write pipeline (MERGE+timestamps), query, fulltext
 │   │   └── schema.py        # Python dataclasses for nodes and relationships
 │   │
 │   ├── skills/
-│   │   ├── __init__.py
 │   │   ├── remember.py      # MERGE entity + observation
 │   │   ├── recall.py        # fulltext search + graph traversal
 │   │   ├── associate.py     # create relationships between entities
-│   │   ├── reflect.py       # infer implicit relationships
+│   │   ├── reflect.py       # ★ cross-entity pattern detection
+│   │   ├── proactive.py     # ★ surfaces Insights without being asked
 │   │   ├── forget.py        # decay, archiving, TTL
 │   │   └── summarize.py     # condense subgraph into synthesis node
 │   │
 │   ├── adapters/
-│   │   ├── __init__.py
-│   │   ├── mcp/             # MCP server (uses scops/mcp-neo4j-cypher)
-│   │   ├── langchain/       # LangChain Memory + Tool
-│   │   ├── rest/            # FastAPI HTTP endpoints
-│   │   └── sdk/             # direct Python SDK, no server needed
+│   │   ├── mcp/             # MCP server (FastMCP + neo4j async driver)
+│   │   ├── obsidian/        # ★ Obsidian MCP adapter — document ↔ graph sync
+│   │   │   ├── adapter.py   # vault file I/O (mirrors obsidian-mcp tools)
+│   │   │   ├── parser.py    # extracts entities from note frontmatter + content
+│   │   │   └── sync.py      # bidirectional sync via engrama_id
+│   │   ├── langchain/
+│   │   ├── rest/
+│   │   └── sdk/
 │   │
 │   └── ingest/
-│       ├── __init__.py
 │       ├── conversation.py  # extract entities from conversation transcripts
-│       ├── document.py      # import from PDF, Markdown, Obsidian vault
 │       └── web.py           # URLs, RSS feeds
+│                            # (document ingestion → adapters/obsidian/)
 │
 ├── profiles/
 │   ├── developer.yaml
@@ -94,29 +231,116 @@ engrama/
 │   │   ├── config.json
 │   │   └── system-prompt.md
 │   └── langchain_agent/
-│       └── example.py
 │
 └── tests/
     ├── conftest.py
     ├── test_core.py
     ├── test_skills.py
-    └── test_adapters.py
+    ├── test_adapters.py
+    └── test_obsidian_sync.py
+```
+
+## Obsidian integration
+
+The vault is the **narrative layer**. Neo4j is the **relational layer**.
+Neither replaces the other. The local Obsidian MCP server is a custom stdio
+implementation that handles vault file I/O operations.
+
+### Referential integrity via engrama_id
+
+Every documented node (Project, Course) carries `engrama_id` in its note's
+YAML frontmatter. `adapters/obsidian/sync.py` maintains the contract:
+
+```mermaid
+sequenceDiagram
+  participant V as Obsidian Vault
+  participant A as ObsidianAdapter
+  participant P as NoteParser
+  participant E as Engine (MERGE)
+  participant N as Neo4j
+
+  rect rgb(230, 245, 255)
+    Note over V,N: Note created or modified
+    V->>A: read_note(path)
+    A->>P: parse(content, frontmatter)
+    P-->>E: ParsedNote (label, name, props)
+    E->>N: MERGE node
+    N-->>E: engrama_id
+    E->>A: inject_engrama_id(path, id)
+    A->>V: write frontmatter
+  end
+
+  rect rgb(255, 235, 235)
+    Note over V,N: Note deleted
+    V--xA: note missing
+    A->>E: archive_missing()
+    E->>N: SET status = "archived"
+    Note right of N: Never hard-deleted
+  end
+```
+
+### Obsidian sync
+
+All vault notes are candidates for sync.  The parser infers the node label
+from frontmatter (`engrama_label:`) or folder structure.  Notes that cannot
+be classified are skipped.  The `ObsidianAdapter` handles all file I/O
+directly — no external MCP server dependency.
+
+| Operation | Module | Purpose |
+|---|---|---|
+| Read note | `adapter.py` | Extract content + frontmatter |
+| Search notes | `adapter.py` | Find related notes by text |
+| List notes | `adapter.py` | Full vault scan |
+| Inject engrama_id | `adapter.py` | Bidirectional sync identity |
+| `vault_create_note` | proactive.py | write Insight notes back to vault |
+| `vault_append_note` | proactive.py | add insight section to existing notes |
+
+### frontmatter extensions in the local MCP server
+
+The local Obsidian MCP server currently generates `date` and `tags` in frontmatter.
+Engrama extends this by injecting `engrama_id` — making it a first-class frontmatter
+citizen for bidirectional sync between notes and the Neo4j graph.
+
+## The distinctive skills: reflect + proactive
+
+`skills/reflect.py` runs cross-entity pattern detection using multi-hop Cypher.
+It finds Problems sharing Concepts with resolved Problems, projects using the
+same Technologies, courses covering Concepts that appear in open Problems.
+Results are written as `Insight` nodes with a confidence score.
+
+`skills/proactive.py` surfaces pending Insights to the agent and writes them
+back to Obsidian via `vault_append_note`. The agent proposes — the human
+approves. Insights are never acted upon automatically.
+
+Example Cypher behind a proactive insight:
+
+```cypher
+// "A solution from project A might apply to project B"
+MATCH (open:Problem {status: "open"})<-[:HAS]-(pB:Project),
+      (open)-[:APPLIES]->(c:Concept)<-[:APPLIES]-(resolved:Problem {status: "resolved"}),
+      (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project)
+WHERE pA <> pB
+RETURN pB.name, open.title, d.title, pA.name, c.name
 ```
 
 ## MCP adapter
 
-The MCP adapter is the first to implement — it connects Engrama directly to Claude Desktop.
+Native MCP server built with FastMCP and the official `neo4j` async driver.
+No intermediate mcp-neo4j-cypher layer — Engrama owns its Cypher directly.
 
-Uses `mcp-neo4j-cypher` from fork `scops/mcp-neo4j`, exposing three tools:
-- `get-neo4j-schema` — introspect current graph schema
-- `read-neo4j-cypher` — execute read queries
-- `write-neo4j-cypher` — execute write queries
-
-Any improvements made to the adapter should be contributed upstream to `neo4j-contrib/mcp-neo4j`.
+Exposes ten tools:
+- `engrama_search` — fulltext search across the memory graph
+- `engrama_remember` — create or update a node (always MERGE)
+- `engrama_relate` — create a relationship (handles title-keyed nodes)
+- `engrama_context` — retrieve the neighbourhood of a node up to N hops
+- `engrama_sync_note` — sync a single Obsidian note to the graph
+- `engrama_sync_vault` — full vault scan, reconcile all notes
+- `engrama_reflect` — cross-entity pattern detection → Insight nodes
+- `engrama_surface_insights` — read pending Insights for agent presentation
+- `engrama_approve_insight` — human approves or dismisses an Insight
+- `engrama_write_insight_to_vault` — append approved Insight to Obsidian note
 
 ## Profile system
-
-A YAML profile fully defines the graph schema without writing code:
 
 ```yaml
 # profiles/developer.yaml
@@ -126,47 +350,35 @@ nodes:
   - label: Project
     properties: [name, status, repo, stack, description]
     required: [name]
+    description: "A software project or product."
   - label: Technology
     properties: [name, version, type, notes]
     required: [name]
-  - label: Decision
-    properties: [title, rationale, date, alternatives]
-    required: [title]
-  - label: Problem
-    properties: [title, solution, status, context]
-    required: [title]
-  - label: Course
-    properties: [name, cohort, date, level, client]
-    required: [name]
-  - label: Concept
-    properties: [name, domain, notes]
-    required: [name]
-  - label: Client
-    properties: [name, sector, contact]
-    required: [name]
+    description: "A language, framework, tool, or infrastructure component."
+  # ... etc (7 node types + Insight auto-included)
 relations:
   - {type: USES,        from: Project,    to: Technology}
   - {type: INFORMED_BY, from: Project,    to: Decision}
-  - {type: HAS,         from: Project,    to: Problem}
-  - {type: FOR,         from: Project,    to: Client}
-  - {type: ORIGIN_OF,   from: Project,    to: Course}
-  - {type: APPLIES,     from: Project,    to: Concept}
-  - {type: SOLVED_BY,   from: Problem,    to: Decision}
-  - {type: COVERS,      from: Course,     to: Concept}
-  - {type: TEACHES,     from: Course,     to: Technology}
-  - {type: IMPLEMENTS,  from: Technology, to: Concept}
+  # ... etc (10 relationship types)
 ```
+
+Profiles are the single source of truth.  Run `engrama init --profile developer`
+to generate `schema.py` and `init-schema.cypher` from the YAML.
 
 ## Implementation rules
 
 1. **Always `MERGE`, never bare `CREATE`** — prevents duplicates
-2. **Fulltext index is mandatory** — `memory_search` across all nodes and text properties
-3. **Timestamps everywhere** — `created_at` and `updated_at` on every node, managed by engine
+2. **Fulltext index is mandatory** — `memory_search` across all text properties
+3. **Timestamps everywhere** — `created_at` and `updated_at` on every node
 4. **No embeddings in v1** — structure first, vectors in v2
-5. **Integration tests against a real Neo4j** — no mocks for the data layer
-6. **Cypher parameters always** — never string-format queries (injection risk)
+5. **Integration tests against real Neo4j** — no mocks for the data layer
+6. **Cypher parameters always** — never string-format queries
 
 ## Related repositories
 
-- `scops/mcp-neo4j` — MCP adapter fork; improvements contributed upstream
 - `scops/engrama` — this framework
+
+> **Note:** An intermediate `mcp-neo4j` layer was originally planned but was
+> dropped in favour of a native MCP server.  The async Neo4j driver gives full
+> control over MERGE logic, parameter handling, and key selection (name vs title)
+> without an extra dependency.

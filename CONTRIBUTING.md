@@ -73,6 +73,6 @@ No code changes needed — the engine reads YAML at initialisation.
 
 ## MCP adapter
 
-The adapter in `engrama/adapters/mcp/` is based on [scops/mcp-neo4j](https://github.com/scops/mcp-neo4j),
-a fork of [neo4j-contrib/mcp-neo4j](https://github.com/neo4j-contrib/mcp-neo4j).
-Improvements should be contributed upstream when appropriate.
+The adapter in `engrama/adapters/mcp/` is a native FastMCP server that talks
+directly to Neo4j via the official async driver.  No intermediate layers — all
+Cypher is written and maintained in `server.py`.
