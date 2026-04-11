@@ -1,0 +1,32 @@
+# ── Secrets ──────────────────────────────────────────────
+.env
+
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+*.whl
+
+# ── Virtual environments ────────────────────────────────
+.venv/
+
+# ── Testing & linting ──────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ── IDEs ────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Docker named-volume fallback (if bind-mounted) ─────
+neo4j_data/
+neo4j_logs/
