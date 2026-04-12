@@ -142,5 +142,5 @@ RETURN path LIMIT 50
 - **`MERGE` always** — engine never uses bare `CREATE`
 - **Automatic timestamps** — engine manages `created_at` / `updated_at`
 - **No relationship properties in v1** — added only when demonstrated need arises
-- **Vector index in v2** — once enough data exists, adds complementary semantic search
+- **Embeddings are optional** — local embeddings via Ollama enhance search when enabled (DDR-003 Phase B); vector index storage planned for Phase C
 - **Always use Cypher parameters** — never string-format queries

@@ -19,7 +19,7 @@ Inspired by Karpathy's second brain concept, but built for agents rather than hu
 |---|---|---|---|
 | Relationship queries | ❌ | ❌ | ✅ native |
 | Scales to 10k+ memories | ❌ slow | ✅ | ✅ |
-| No embeddings required | ✅ | ❌ | ✅ |
+| Works without embeddings | ✅ | ❌ | ✅ (optional Ollama) |
 | Local-first / private | ✅ | depends | ✅ |
 | "What projects use FastMCP?" | full scan | approximate | 1-hop traversal |
 
@@ -38,7 +38,10 @@ You need three things installed before starting. If you already have them, skip 
 > **Windows users:** after installing Python, make sure "Add Python to PATH"
 > is checked.  After installing uv, you may need to restart your terminal.
 
-Optional: [Obsidian](https://obsidian.md/) — needed only for vault sync features.
+**Optional:**
+
+- [Obsidian](https://obsidian.md/) — needed only for vault sync features.
+- [Ollama](https://ollama.com/) — needed only for local embeddings (semantic search). See [Embedding setup](#embedding-setup-optional) below.
 
 ---
 
@@ -153,6 +156,41 @@ uv run engrama reflect
 > unless you activate the virtual environment first with
 > `.venv\Scripts\Activate.ps1` (Windows) or `source .venv/bin/activate`
 > (Linux/macOS).
+
+### Embedding setup (optional)
+
+Engrama works out of the box with fulltext search only.  If you want
+**semantic similarity search** (finding conceptually related nodes, not just
+keyword matches), you can enable local embeddings via Ollama.
+
+**1. Install Ollama** — download from [ollama.com](https://ollama.com/) and
+make sure it's running (`ollama serve` or launch the desktop app).
+
+**2. Pull the embedding model:**
+
+```bash
+ollama pull nomic-embed-text
+```
+
+**3. Enable embeddings in `.env`:**
+
+```dotenv
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_DIMENSIONS=768
+OLLAMA_URL=http://localhost:11434
+```
+
+**4. Verify the model is available:**
+
+```bash
+ollama list
+```
+
+You should see `nomic-embed-text:latest` in the output.
+
+> **Note:** embeddings are generated locally — no data leaves your machine.
+> The `nomic-embed-text` model is ~274 MB and supports 8192-token context.
 
 ### What's next?
 

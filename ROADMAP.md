@@ -189,9 +189,16 @@
 
 ## Phase 11 · Vectors (v2)
 
-- [ ] Vector index in Neo4j 5.26
-- [ ] Local embeddings (ollama / nomic-embed-text)
-- [ ] Hybrid search: graph + vector similarity
+> DDR-003 Phase A (protocols) and Phase B (embedding providers) are complete.
+> Remaining work: vector storage in Neo4j and hybrid search.
+
+- [x] Protocol-based architecture — `GraphStore`, `VectorStore`, `EmbeddingProvider` (DDR-003 Phase A)
+- [x] Local embeddings — `OllamaProvider` with `nomic-embed-text` (DDR-003 Phase B)
+- [x] `node_to_text()` — canonical text representation for embedding
+- [x] Embedding factory — `create_provider()` reads `.env`, supports `ollama` and `none`
+- [x] 27 embedding tests (mocked + live integration)
+- [ ] Vector index in Neo4j 5.26 (DDR-003 Phase C)
+- [ ] Hybrid search: graph + vector similarity (DDR-003 Phase C)
 
 
 ## Definition of done
@@ -203,7 +210,7 @@
 
 ## Test suite status
 
-100 tests expected:
+127 tests expected:
 
 - `test_core.py` — core engine integration tests
 - `test_adapters.py` — relate title-key fix (Decision, Problem, name-keyed regression)
@@ -214,3 +221,4 @@
 - `test_sdk.py` — SDK public API (14)
 - `test_cli.py` — CLI commands via subprocess (6)
 - `test_composable.py` — merge logic (9), codegen (3), real files (5), CLI (4)
+- `test_embeddings.py` — NullProvider (4), OllamaProvider mocked (10), node_to_text (6), factory (3), live Ollama (5, skip if unavailable)

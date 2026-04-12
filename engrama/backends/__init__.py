@@ -98,22 +98,14 @@ def create_embedding_provider(
 ) -> Any:
     """Create an embedding provider from configuration.
 
+    Delegates to :func:`engrama.embeddings.create_provider`.
+
     Parameters:
         config: Optional config dict.  If ``None``, reads from env vars.
 
     Returns:
         An ``EmbeddingProvider`` instance.
     """
-    if config is None:
-        config = {}
+    from engrama.embeddings import create_provider
 
-    provider = config.get("EMBEDDING_PROVIDER") or os.getenv("EMBEDDING_PROVIDER", "none")
-
-    if provider in ("none", "null"):
-        from engrama.embeddings.null import NullProvider
-        return NullProvider()
-
-    raise ValueError(
-        f"Unknown embedding provider: {provider!r}. "
-        f"Supported: 'none' (Phase A).  Ollama/OpenAI coming in Phase B."
-    )
+    return create_provider(config)

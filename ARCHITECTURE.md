@@ -11,6 +11,7 @@
 | Dependency mgmt | uv | latest | Modern standard, fast |
 | MCP adapter | FastMCP + neo4j async | native | Full Cypher control, no intermediate layer |
 | Obsidian adapter | Local Obsidian MCP server | stdio | Document ↔ graph sync |
+| Embeddings | Ollama + nomic-embed-text | latest | Local, private, no API keys (optional) |
 | Container | Docker Desktop | latest | Reproducible infrastructure |
 | CI/CD | GitHub Actions | — | Tests and PyPI publishing |
 | Packaging | pyproject.toml | — | Installable as `pip install engrama` |
@@ -54,10 +55,11 @@ block-beta
   end
 
   block:engine["Layer 3 · Memory Engine"]
-    columns 4
+    columns 5
     write["Write Pipeline\n(MERGE)"]
     query["Query"]
     fulltext["Fulltext\nSearch"]
+    embed["Embeddings\n(optional)"]
     ttl["TTL /\nArchive"]
   end
 
@@ -192,7 +194,20 @@ engrama/
 │   ├── core/
 │   │   ├── client.py        # Neo4j driver, connection pool, health check
 │   │   ├── engine.py        # write pipeline (MERGE+timestamps), query, fulltext
+│   │   ├── protocols.py     # GraphStore, VectorStore, EmbeddingProvider (DDR-003)
 │   │   └── schema.py        # Python dataclasses for nodes and relationships
+│   │
+│   ├── backends/
+│   │   ├── __init__.py      # create_stores() factory — reads .env
+│   │   ├── null.py          # NullGraphStore, NullVectorStore (testing / zero-dep)
+│   │   └── neo4j/
+│   │       └── backend.py   # Neo4jGraphStore — extracted Cypher from engine.py
+│   │
+│   ├── embeddings/
+│   │   ├── __init__.py      # create_provider() factory — reads .env
+│   │   ├── null.py          # NullProvider (no embeddings, dimensions=0)
+│   │   ├── ollama.py        # OllamaProvider — local embeddings via Ollama API
+│   │   └── text.py          # node_to_text() — canonical text for embedding
 │   │
 │   ├── skills/
 │   │   ├── remember.py      # MERGE entity + observation
@@ -241,7 +256,8 @@ engrama/
     ├── test_core.py
     ├── test_skills.py
     ├── test_adapters.py
-    └── test_obsidian_sync.py
+    ├── test_obsidian_sync.py
+    └── test_embeddings.py   # 27 tests: Null, Ollama (mocked+live), text, factory
 ```
 
 ## Obsidian integration
@@ -385,7 +401,7 @@ through a conversational interview.
 1. **Always `MERGE`, never bare `CREATE`** — prevents duplicates
 2. **Fulltext index is mandatory** — `memory_search` across all text properties
 3. **Timestamps everywhere** — `created_at` and `updated_at` on every node
-4. **No embeddings in v1** — structure first, vectors in v2
+4. **Embeddings are optional** — graph structure is primary; local embeddings (Ollama) enhance search when enabled
 5. **Integration tests against real Neo4j** — no mocks for the data layer
 6. **Cypher parameters always** — never string-format queries
 
