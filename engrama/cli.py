@@ -377,6 +377,36 @@ def cmd_reindex(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_decay(args: argparse.Namespace) -> int:
+    """Apply confidence decay to all nodes (DDR-003 Phase D)."""
+    try:
+        from engrama.adapters.sdk import Engrama
+        with Engrama() as eng:
+            rate = args.rate
+            min_conf = args.min_confidence
+            max_age = args.max_age
+            label = args.label
+
+            if args.dry_run:
+                print("Dry run — no changes will be made.")
+                print(f"  rate={rate}, min_confidence={min_conf}, "
+                      f"max_age_days={max_age}, label={label or 'all'}")
+                return 0
+
+            result = eng.decay_scores(
+                rate=rate,
+                min_confidence=min_conf,
+                max_age_days=max_age,
+                label=label,
+            )
+            print(f"Decay applied: {result['decayed']} nodes updated, "
+                  f"{result['archived']} nodes archived.")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_search(args: argparse.Namespace) -> int:
     """Fulltext search."""
     try:
@@ -448,6 +478,31 @@ def main() -> None:
         help="Re-embed nodes that already have embeddings",
     )
 
+    # --- decay ---
+    p_decay = sub.add_parser(
+        "decay", help="Apply confidence decay to nodes (DDR-003 Phase D)",
+    )
+    p_decay.add_argument(
+        "--rate", "-r", type=float, default=0.01,
+        help="Exponential decay rate (default: 0.01)",
+    )
+    p_decay.add_argument(
+        "--min-confidence", "-c", type=float, default=0.0,
+        help="Archive nodes below this confidence after decay (default: 0, no archive)",
+    )
+    p_decay.add_argument(
+        "--max-age", "-a", type=int, default=0,
+        help="Archive nodes older than N days (default: 0, no age limit)",
+    )
+    p_decay.add_argument(
+        "--label", type=str, default=None,
+        help="Restrict to a specific label (default: all labels)",
+    )
+    p_decay.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would happen without making changes",
+    )
+
     args = parser.parse_args()
 
     handlers = {
@@ -456,6 +511,7 @@ def main() -> None:
         "reflect": cmd_reflect,
         "search": cmd_search,
         "reindex": cmd_reindex,
+        "decay": cmd_decay,
     }
 
     if args.command is None:
@@ -472,6 +528,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-d

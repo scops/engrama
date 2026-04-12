@@ -325,6 +325,36 @@ class Engrama:
         )
 
     # ------------------------------------------------------------------
+    # Decay (DDR-003 Phase D)
+    # ------------------------------------------------------------------
+
+    def decay_scores(
+        self,
+        *,
+        rate: float = 0.01,
+        min_confidence: float = 0.0,
+        max_age_days: int = 0,
+        label: str | None = None,
+    ) -> dict:
+        """Apply exponential confidence decay to all nodes.
+
+        Args:
+            rate: Decay rate (0.01 ≈ 63 % after 100 days).
+            min_confidence: Archive nodes below this threshold.
+            max_age_days: Archive nodes older than this.
+            label: Restrict to a specific label.
+
+        Returns:
+            Dict with ``decayed`` and ``archived`` counts.
+        """
+        return self._engine.decay_scores(
+            rate=rate,
+            min_confidence=min_confidence,
+            max_age_days=max_age_days,
+            label=label,
+        )
+
+    # ------------------------------------------------------------------
     # Reflect
     # ------------------------------------------------------------------
 

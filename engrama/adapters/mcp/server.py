@@ -383,6 +383,7 @@ def create_engrama_mcp(
                             "score": round(r.final_score, 4),
                             "vector_score": round(r.vector_score, 4),
                             "fulltext_score": round(r.fulltext_score, 4),
+                            "temporal_score": round(r.temporal_score, 4),
                         }
                         for r in hybrid_results
                     ]

@@ -189,16 +189,22 @@
 
 ## Phase 11 · Vectors (v2)
 
-> DDR-003 Phase A (protocols) and Phase B (embedding providers) are complete.
-> Remaining work: vector storage in Neo4j and hybrid search.
+> DDR-003 Phases A–C complete. Remaining: temporal reasoning, security, multi-scope, benchmarks.
 
 - [x] Protocol-based architecture — `GraphStore`, `VectorStore`, `EmbeddingProvider` (DDR-003 Phase A)
 - [x] Local embeddings — `OllamaProvider` with `nomic-embed-text` (DDR-003 Phase B)
 - [x] `node_to_text()` — canonical text representation for embedding
 - [x] Embedding factory — `create_provider()` reads `.env`, supports `ollama` and `none`
 - [x] 27 embedding tests (mocked + live integration)
-- [ ] Vector index in Neo4j 5.26 (DDR-003 Phase C)
-- [ ] Hybrid search: graph + vector similarity (DDR-003 Phase C)
+- [x] `Neo4jVectorStore` with `:Embedded` secondary label strategy (DDR-003 Phase C)
+- [x] `HybridSearchEngine` — alpha=0.6 vector / 0.4 fulltext + graph boost (DDR-003 Phase C)
+- [x] Embed-on-write in `EngramaEngine.merge_node()` (DDR-003 Phase C)
+- [x] `engrama reindex` CLI command (DDR-003 Phase C)
+- [x] 18 new tests: vector store, hybrid search, engine embed, factory (DDR-003 Phase C)
+- [ ] Temporal reasoning — valid_from/valid_to, confidence decay (DDR-003 Phase D)
+- [ ] Security hardening — sanitisation, provenance, trust levels (DDR-003 Phase E)
+- [ ] Multi-scope — scope isolation and hierarchy (DDR-003 Phase F)
+- [ ] Benchmarks — LOCOMO/LongMemEval harness (DDR-003 Phase G)
 
 
 ## Definition of done

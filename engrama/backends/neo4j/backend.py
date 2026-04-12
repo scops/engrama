@@ -63,6 +63,15 @@ class Neo4jGraphStore:
         ``created_at`` is set only on the first write; ``updated_at`` is
         refreshed on every call.
 
+        **DDR-003 Phase D** temporal fields:
+
+        * ``valid_from`` — set on CREATE to ``datetime()`` (or the
+          caller-supplied value).
+        * ``confidence`` — set on CREATE to ``1.0`` (or caller-supplied).
+        * ``valid_to`` — cleared on MATCH when present, signalling a
+          "revived" node (conflict detection).  Callers may set it
+          explicitly via *properties*.
+
         Parameters:
             label: The Neo4j node label (e.g. ``"Project"``).
             key_field: The merge key property (``"name"`` or ``"title"``).
@@ -75,15 +84,34 @@ class Neo4jGraphStore:
         Returns:
             A ``list[Record]`` with the merged node.
         """
+        # Extract temporal fields from properties (if supplied)
+        valid_from = properties.pop("valid_from", None)
+        confidence = properties.pop("confidence", None)
+
         set_clauses_create: list[str] = [
             "n.created_at = datetime()",
             "n.updated_at = datetime()",
+            f"n.valid_from = $valid_from",
+            f"n.confidence = $confidence_val",
         ]
         set_clauses_match: list[str] = [
             "n.updated_at = datetime()",
         ]
 
-        params: dict[str, Any] = {"merge_value": key_value}
+        params: dict[str, Any] = {
+            "merge_value": key_value,
+            "valid_from": valid_from or "$$NOW$$",  # sentinel replaced below
+            "confidence_val": confidence if confidence is not None else 1.0,
+        }
+
+        # Use datetime() in Cypher for valid_from when not supplied
+        if valid_from is None:
+            set_clauses_create[2] = "n.valid_from = datetime()"
+            del params["valid_from"]
+        # On MATCH: revive expired nodes by clearing valid_to
+        set_clauses_match.append(
+            "n.valid_to = CASE WHEN n.valid_to IS NOT NULL THEN null ELSE n.valid_to END"
+        )
 
         for idx, (key, value) in enumerate(properties.items()):
             param_name = f"p{idx}"
@@ -151,6 +179,91 @@ class Neo4jGraphStore:
         records = self._client.run(query, {"key_value": key_value})
         return len(records) > 0
 
+    def expire_node(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+    ) -> bool:
+        """Set ``valid_to = datetime()`` on a node (soft expiry).
+
+        This marks the knowledge as no longer current without deleting it.
+        Re-merging the node later will clear ``valid_to`` (conflict
+        detection / revival).
+        """
+        query = (
+            f"MATCH (n:{label} {{{key_field}: $key_value}}) "
+            "SET n.valid_to = datetime(), n.updated_at = datetime() "
+            "RETURN n"
+        )
+        records = self._client.run(query, {"key_value": key_value})
+        return len(records) > 0
+
+    def decay_scores(
+        self,
+        rate: float = 0.01,
+        min_confidence: float = 0.0,
+        max_age_days: int = 0,
+        label: str | None = None,
+    ) -> dict[str, int]:
+        """Batch-apply exponential confidence decay to all nodes.
+
+        For each node: ``new_confidence = confidence * exp(-rate * days_old)``
+        where ``days_old = (now - updated_at)`` in days.
+
+        Args:
+            rate: Exponential decay rate.
+            min_confidence: Archive nodes that fall below this after decay.
+            max_age_days: Archive nodes older than this many days.
+            label: Optional — restrict to a single label.
+
+        Returns:
+            Dict with ``decayed`` (count updated) and ``archived``
+            (count archived).
+        """
+        label_filter = f":{label}" if label else ""
+
+        # Step 1: Apply decay to all nodes with confidence
+        decay_query = (
+            f"MATCH (n{label_filter}) "
+            "WHERE n.confidence IS NOT NULL AND n.updated_at IS NOT NULL "
+            "WITH n, duration.between(n.updated_at, datetime()).days AS days_old "
+            "WHERE days_old > 0 "
+            "SET n.confidence = n.confidence * exp(-$rate * days_old) "
+            "RETURN count(n) AS decayed"
+        )
+        result = self._client.run(decay_query, {"rate": rate})
+        decayed = result[0]["decayed"] if result else 0
+
+        archived = 0
+
+        # Step 2: Archive nodes below min_confidence (if threshold > 0)
+        if min_confidence > 0:
+            archive_query = (
+                f"MATCH (n{label_filter}) "
+                "WHERE n.confidence IS NOT NULL AND n.confidence < $min_conf "
+                "AND (n.status IS NULL OR n.status <> 'archived') "
+                "SET n.status = 'archived', n.updated_at = datetime() "
+                "RETURN count(n) AS archived"
+            )
+            result = self._client.run(archive_query, {"min_conf": min_confidence})
+            archived += result[0]["archived"] if result else 0
+
+        # Step 3: Archive nodes older than max_age_days (if set)
+        if max_age_days > 0:
+            age_query = (
+                f"MATCH (n{label_filter}) "
+                "WHERE n.updated_at IS NOT NULL "
+                "AND duration.between(n.updated_at, datetime()).days > $max_age "
+                "AND (n.status IS NULL OR n.status <> 'archived') "
+                "SET n.status = 'archived', n.updated_at = datetime() "
+                "RETURN count(n) AS archived"
+            )
+            result = self._client.run(age_query, {"max_age": max_age_days})
+            archived += result[0]["archived"] if result else 0
+
+        return {"decayed": decayed, "archived": archived}
+
     # ------------------------------------------------------------------
     # Relationship operations
     # ------------------------------------------------------------------
@@ -206,12 +319,17 @@ class Neo4jGraphStore:
     ) -> list[Record]:
         """Keyword search against the ``memory_search`` fulltext index.
 
-        Returns records with ``type``, ``name``, and ``score`` fields.
+        Returns records with ``type``, ``name``, ``score``, and temporal
+        fields (``confidence``, ``updated_at``) for Phase D scoring.
         """
         cypher = (
             'CALL db.index.fulltext.queryNodes("memory_search", $query) '
             "YIELD node, score "
-            "RETURN labels(node)[0] AS type, node.name AS name, score "
+            "RETURN labels(node)[0] AS type, "
+            "COALESCE(node.name, node.title) AS name, "
+            "score, "
+            "node.confidence AS confidence, "
+            "node.updated_at AS updated_at "
             "ORDER BY score DESC LIMIT $limit"
         )
         return self._client.run(cypher, {"query": query, "limit": limit})
@@ -247,14 +365,3 @@ class Neo4jGraphStore:
             "backend": "neo4j",
             "uri": self._client._uri,
         }
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    def close(self) -> None:
-        """Release the underlying driver and its connection pool."""
-        self._client.close()
-
-    def __repr__(self) -> str:
-        return f"Neo4jGraphStore(client={self._client!r})"

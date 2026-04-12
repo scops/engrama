@@ -38,6 +38,9 @@ class HybridConfig:
         boost_cap: Maximum graph-boost per node.
         vector_k: Candidate count from vector search.
         fulltext_k: Candidate count from fulltext search.
+        temporal_gamma: Weight for the temporal signal (Phase D).
+            ``0.0`` disables temporal scoring.
+        recency_half_life: Days after which recency factor is 0.5.
     """
 
     alpha: float = 0.6
@@ -45,6 +48,8 @@ class HybridConfig:
     boost_cap: float = 0.3
     vector_k: int = 20
     fulltext_k: int = 20
+    temporal_gamma: float = 0.1
+    recency_half_life: float = 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -74,8 +79,11 @@ class SearchResult:
     graph_boost: float = 0.0
     """Graph-based boost (e.g. relationship count)."""
 
+    temporal_score: float = 1.0
+    """Temporal relevance (confidence × recency), 0–1."""
+
     final_score: float = 0.0
-    """Weighted combination of the three signals."""
+    """Weighted combination of all signals."""
 
     properties: dict[str, Any] = field(default_factory=dict)
     """Selected node properties returned with the result."""
@@ -205,17 +213,41 @@ class HybridSearchEngine:
                 if not name:
                     continue
                 norm = (d.get("score", 0.0) - f_min) / f_range
+                # Build temporal properties for Phase D scoring
+                temporal_props = {}
+                if "confidence" in d:
+                    temporal_props["confidence"] = d["confidence"]
+                if "updated_at" in d:
+                    temporal_props["updated_at"] = d["updated_at"]
+
                 if name in by_name:
                     by_name[name].fulltext_score = norm
-                    # Fill in label if not already set
                     if not by_name[name].label:
                         by_name[name].label = d.get("type", "")
+                    # Merge temporal props
+                    by_name[name].properties.update(temporal_props)
                 else:
                     by_name[name] = SearchResult(
                         label=d.get("type", ""),
                         name=name,
                         fulltext_score=norm,
+                        properties=temporal_props,
                     )
+
+        # --- Temporal scoring (Phase D) ---
+        gamma = self.config.temporal_gamma
+        if gamma > 0:
+            from engrama.core.temporal import temporal_score, days_since
+
+            for sr in by_name.values():
+                confidence = sr.properties.get("confidence", 1.0)
+                updated_at = sr.properties.get("updated_at")
+                days = days_since(updated_at) if updated_at else 0.0
+                sr.temporal_score = temporal_score(
+                    confidence if confidence is not None else 1.0,
+                    days,
+                    recency_half_life=self.config.recency_half_life,
+                )
 
         # --- Score ---
         beta = self.config.graph_beta
@@ -224,6 +256,7 @@ class HybridSearchEngine:
                 alpha * sr.vector_score
                 + (1 - alpha) * sr.fulltext_score
                 + beta * min(sr.graph_boost, self.config.boost_cap)
+                + gamma * sr.temporal_score
             )
 
         return list(by_name.values())

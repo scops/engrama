@@ -76,7 +76,12 @@ class EngramaEngine:
     # ------------------------------------------------------------------
 
     def merge_node(self, label: str, properties: dict[str, Any]) -> list[Record]:
-        """Create or update a node using ``MERGE``."""
+        """Create or update a node using ``MERGE``.
+
+        DDR-003 Phase D: temporal fields ``valid_from``, ``valid_to``,
+        and ``confidence`` flow through to the backend.  Conflict detection
+        (reviving expired nodes) is handled in the backend's ON MATCH clause.
+        """
         if "name" in properties:
             merge_key = "name"
         elif "title" in properties:
@@ -177,6 +182,29 @@ class EngramaEngine:
                 final_score=d.get("score", 0.0),
             ))
         return results
+
+    def decay_scores(
+        self,
+        rate: float = 0.01,
+        min_confidence: float = 0.0,
+        max_age_days: int = 0,
+        label: str | None = None,
+    ) -> dict[str, int]:
+        """Batch-apply confidence decay (delegates to the backend).
+
+        Returns:
+            Dict with ``decayed`` and ``archived`` counts.
+        """
+        fn = getattr(self._store, "decay_scores", None)
+        if fn is None:
+            logger.warning("Backend does not support decay_scores")
+            return {"decayed": 0, "archived": 0}
+        return fn(
+            rate=rate,
+            min_confidence=min_confidence,
+            max_age_days=max_age_days,
+            label=label,
+        )
 
     def get_context(self, name: str, label: str, hops: int = 1) -> list[Record]:
         """Retrieve the local neighbourhood of a node."""
