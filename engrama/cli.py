@@ -9,6 +9,9 @@ Commands:
         Generate schema.py and init-schema.cypher from a profile YAML,
         then apply the schema to Neo4j.
 
+    engrama init --profile base --modules hacking teaching photography
+        Compose a base profile with domain modules and apply.
+
     engrama verify
         Check connectivity to Neo4j.
 
@@ -17,9 +20,6 @@ Commands:
 
     engrama search <query>
         Fulltext search across the memory graph.
-
-    engrama schema --dry-run
-        Preview what the codegen would produce without writing files.
 """
 
 from __future__ import annotations
@@ -73,8 +73,14 @@ def cmd_init(args: argparse.Namespace) -> int:
             return 1
 
     # Step 1: Generate schema files
-    print(f"Generating schema from {profile_path.name}...")
+    modules = getattr(args, "modules", None) or []
+    if modules:
+        print(f"Generating schema from {profile_path.name} + modules: {', '.join(modules)}...")
+    else:
+        print(f"Generating schema from {profile_path.name}...")
     cmd = [sys.executable, str(generate_script), str(profile_path)]
+    if modules:
+        cmd.extend(["--modules"] + modules)
     if args.dry_run:
         cmd.append("--dry-run")
     cmd.extend(["--project-root", str(project_root)])
@@ -101,21 +107,34 @@ def cmd_init(args: argparse.Namespace) -> int:
                 client = EngramaClient()
                 client.verify()
 
-                # Read and execute the cypher script statement by statement
+                # Read and execute the cypher script statement by statement.
+                # Each chunk between semicolons may contain leading comment
+                # lines (// ...) that must be stripped before execution.
                 cypher_text = cypher_path.read_text(encoding="utf-8")
-                statements = [
-                    s.strip() for s in cypher_text.split(";")
-                    if s.strip() and not s.strip().startswith("//")
-                ]
+                raw_chunks = [s.strip() for s in cypher_text.split(";") if s.strip()]
+                statements: list[str] = []
+                for chunk in raw_chunks:
+                    # Strip comment lines from within the chunk
+                    lines = [
+                        line for line in chunk.splitlines()
+                        if line.strip() and not line.strip().startswith("//")
+                    ]
+                    cleaned = "\n".join(lines).strip()
+                    if cleaned:
+                        statements.append(cleaned)
+
                 for stmt in statements:
-                    if stmt:
-                        try:
-                            client.run(stmt)
-                        except Exception as e:
-                            # Some statements (SHOW) may fail on certain Neo4j
-                            # editions — skip non-critical errors.
-                            if "SHOW" not in stmt.upper():
-                                print(f"  Warning: {e}", file=sys.stderr)
+                    try:
+                        client.run(stmt)
+                    except Exception as e:
+                        # SHOW statements may fail on certain Neo4j editions
+                        # — skip non-critical errors.
+                        if "SHOW" not in stmt.upper():
+                            print(f"  Warning: {e}", file=sys.stderr)
+                # Step 3: Seed Domain nodes per module (BUG-004)
+                if modules:
+                    _seed_domain_nodes(client, modules)
+
                 client.close()
                 print("Schema applied successfully.")
             except Exception as e:
@@ -126,6 +145,92 @@ def cmd_init(args: argparse.Namespace) -> int:
             print("No init-schema.cypher found — skipping Neo4j apply.")
 
     return 0
+
+
+# Seed data for each domain module
+_MODULE_SEEDS: dict[str, dict] = {
+    "hacking": {
+        "domain": "cybersecurity",
+        "domain_description": "Ethical hacking, penetration testing, and cybersecurity",
+        "concepts": [
+            "injection-vulnerability",
+            "privilege-escalation",
+            "lateral-movement",
+            "enumeration",
+            "post-exploitation",
+        ],
+    },
+    "teaching": {
+        "domain": "teaching",
+        "domain_description": "Corporate training, course delivery, and instructional design",
+        "concepts": [
+            "course-design",
+            "assessment",
+            "hands-on-lab",
+            "learning-objectives",
+        ],
+    },
+    "photography": {
+        "domain": "photography",
+        "domain_description": "Nature and wildlife photography",
+        "concepts": [
+            "composition",
+            "exposure",
+            "wildlife-observation",
+        ],
+    },
+    "ai": {
+        "domain": "ai-ml",
+        "domain_description": "Artificial intelligence and machine learning",
+        "concepts": [
+            "neural-network",
+            "supervised-learning",
+            "prompt-engineering",
+            "fine-tuning",
+        ],
+    },
+}
+
+
+def _seed_domain_nodes(client: "EngramaClient", modules: list[str]) -> None:
+    """Seed Domain (and optionally Concept) nodes for each module.
+
+    Uses MERGE so it's safe to run repeatedly.
+    """
+    from engrama.core.client import EngramaClient  # noqa: F811
+
+    for module_name in modules:
+        seed = _MODULE_SEEDS.get(module_name)
+        if not seed:
+            continue
+
+        # Create Domain node
+        try:
+            client.run(
+                "MERGE (d:Domain {name: $name}) "
+                "ON CREATE SET d.description = $desc, "
+                "d.created_at = datetime(), d.updated_at = datetime() "
+                "ON MATCH SET d.updated_at = datetime()",
+                {"name": seed["domain"], "desc": seed["domain_description"]},
+            )
+            print(f"  Seeded Domain: {seed['domain']}")
+        except Exception as e:
+            print(f"  Warning: could not seed domain {seed['domain']}: {e}", file=sys.stderr)
+
+        # Create Concept nodes and link to Domain
+        for concept_name in seed.get("concepts", []):
+            try:
+                client.run(
+                    "MERGE (c:Concept {name: $name}) "
+                    "ON CREATE SET c.created_at = datetime(), c.updated_at = datetime() "
+                    "ON MATCH SET c.updated_at = datetime() "
+                    "WITH c "
+                    "MATCH (d:Domain {name: $domain}) "
+                    "MERGE (c)-[:IN_DOMAIN]->(d)",
+                    {"name": concept_name, "domain": seed["domain"]},
+                )
+            except Exception as e:
+                print(f"  Warning: could not seed concept {concept_name}: {e}", file=sys.stderr)
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
@@ -195,7 +300,16 @@ def main() -> int:
     init_p.add_argument(
         "--profile", "-p",
         required=True,
-        help="Profile name (e.g. 'developer') or path to YAML file",
+        help="Profile name (e.g. 'developer', 'base') or path to YAML file",
+    )
+    init_p.add_argument(
+        "--modules", "-m",
+        nargs="+",
+        default=[],
+        help=(
+            "Domain modules to compose with the base profile "
+            "(e.g. 'hacking teaching photography ai')"
+        ),
     )
     init_p.add_argument(
         "--dry-run",

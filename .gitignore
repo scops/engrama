@@ -30,3 +30,9 @@ htmlcov/
 # ── Docker named-volume fallback (if bind-mounted) ─────
 neo4j_data/
 neo4j_logs/
+
+# ── Claude Code / Cowork session artifacts ─────────────
+.claude/
+
+# ── Development references (not part of codebase) ─────
+_obsidian_mcp_ref/

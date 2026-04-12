@@ -1,8 +1,8 @@
 """
 tests/test_obsidian_sync.py
 
-Integration tests for the Obsidian adapter and sync engine.
-Requires VAULT_PATH env var pointing to a real or test vault.
+Integration tests for the Obsidian adapter, parser, and DDR-002 bidirectional
+sync (relations in frontmatter).
 """
 
 import os
@@ -62,6 +62,28 @@ def tmp_vault(tmp_path: Path) -> Path:
     (tmp_path / "00-inbox").mkdir()
     (tmp_path / "00-inbox" / "random-idea.md").write_text(
         "# Random idea\nJust a draft.", encoding="utf-8"
+    )
+
+    # DDR-002: Project note with relations in frontmatter
+    (tmp_path / "10-projects" / "eoelite.md").write_text(
+        textwrap.dedent("""\
+            ---
+            date: 2026-04-12
+            tags: [eoelite, proyecto]
+            status: active
+            engrama_id: test-uuid-eoelite
+            relations:
+              USES: [Python, Neo4j]
+              IN_DOMAIN: [web-development]
+              BELONGS_TO: [EOElite]
+            ---
+            # EOElite
+
+            > Online training platform for ethical hacking.
+
+            Built with Python and Neo4j.
+        """),
+        encoding="utf-8",
     )
 
     return tmp_path
@@ -163,3 +185,162 @@ def test_parse_inbox_note_skipped(adapter: ObsidianAdapter):
         frontmatter=note["frontmatter"],
     )
     assert parsed is None  # not a documentable label
+
+
+# ── DDR-002: Relations in frontmatter ─────────────────────────────────────────
+
+class TestParserRelations:
+    """Parser should extract relations from frontmatter (DDR-002)."""
+
+    def test_parse_note_with_relations(self, adapter: ObsidianAdapter):
+        parser = NoteParser()
+        note = adapter.read_note("10-projects/eoelite.md")
+        parsed = parser.parse(
+            path="10-projects/eoelite.md",
+            content=note["content"],
+            frontmatter=note["frontmatter"],
+        )
+        assert parsed is not None
+        assert parsed.relations == {
+            "USES": ["Python", "Neo4j"],
+            "IN_DOMAIN": ["web-development"],
+            "BELONGS_TO": ["EOElite"],
+        }
+
+    def test_parse_note_without_relations(self, adapter: ObsidianAdapter):
+        parser = NoteParser()
+        note = adapter.read_note("10-projects/engrama.md")
+        parsed = parser.parse(
+            path="10-projects/engrama.md",
+            content=note["content"],
+            frontmatter=note["frontmatter"],
+        )
+        assert parsed is not None
+        assert parsed.relations == {}
+
+    def test_parse_relations_scalar_to_list(self, tmp_path: Path):
+        """A scalar value in relations should be normalised to a list."""
+        (tmp_path / "10-projects").mkdir(exist_ok=True)
+        (tmp_path / "10-projects" / "scalar-rel.md").write_text(
+            textwrap.dedent("""\
+                ---
+                engrama_label: Project
+                name: ScalarTest
+                relations:
+                  IN_DOMAIN: cybersecurity
+                ---
+                # Scalar Test
+            """),
+            encoding="utf-8",
+        )
+        adapter = ObsidianAdapter(vault_path=tmp_path)
+        parser = NoteParser()
+        note = adapter.read_note("10-projects/scalar-rel.md")
+        parsed = parser.parse(
+            path="10-projects/scalar-rel.md",
+            content=note["content"],
+            frontmatter=note["frontmatter"],
+        )
+        assert parsed is not None
+        assert parsed.relations == {"IN_DOMAIN": ["cybersecurity"]}
+
+
+class TestAdapterRelations:
+    """Adapter should read/write relations in frontmatter (DDR-002)."""
+
+    def test_add_relation_new(self, adapter: ObsidianAdapter):
+        path = "10-projects/engrama.md"
+        modified = adapter.add_relation(path, "USES", "Python")
+        assert modified is True
+
+        # Verify it was written
+        note = adapter.read_note(path)
+        assert note["frontmatter"]["relations"]["USES"] == ["Python"]
+
+    def test_add_relation_idempotent(self, adapter: ObsidianAdapter):
+        path = "10-projects/eoelite.md"
+        # "Python" already in USES
+        modified = adapter.add_relation(path, "USES", "Python")
+        assert modified is False
+
+    def test_add_relation_appends(self, adapter: ObsidianAdapter):
+        path = "10-projects/eoelite.md"
+        modified = adapter.add_relation(path, "USES", "FastMCP")
+        assert modified is True
+
+        note = adapter.read_note(path)
+        uses = note["frontmatter"]["relations"]["USES"]
+        assert "Python" in uses
+        assert "Neo4j" in uses
+        assert "FastMCP" in uses
+
+    def test_add_relation_new_type(self, adapter: ObsidianAdapter):
+        path = "10-projects/engrama.md"
+        adapter.add_relation(path, "COMPOSED_OF", "Neo4j")
+        adapter.add_relation(path, "IN_DOMAIN", "ai")
+
+        note = adapter.read_note(path)
+        rels = note["frontmatter"]["relations"]
+        assert rels["COMPOSED_OF"] == ["Neo4j"]
+        assert rels["IN_DOMAIN"] == ["ai"]
+
+    def test_remove_relation(self, adapter: ObsidianAdapter):
+        path = "10-projects/eoelite.md"
+        modified = adapter.remove_relation(path, "USES", "Neo4j")
+        assert modified is True
+
+        note = adapter.read_note(path)
+        assert "Neo4j" not in note["frontmatter"]["relations"]["USES"]
+        assert "Python" in note["frontmatter"]["relations"]["USES"]
+
+    def test_remove_last_relation_cleans_type(self, adapter: ObsidianAdapter):
+        path = "10-projects/eoelite.md"
+        adapter.remove_relation(path, "IN_DOMAIN", "web-development")
+
+        note = adapter.read_note(path)
+        assert "IN_DOMAIN" not in note["frontmatter"]["relations"]
+
+    def test_remove_nonexistent_relation(self, adapter: ObsidianAdapter):
+        path = "10-projects/eoelite.md"
+        modified = adapter.remove_relation(path, "USES", "Rust")
+        assert modified is False
+
+    def test_set_relations_full_replace(self, adapter: ObsidianAdapter):
+        path = "10-projects/engrama.md"
+        new_rels = {
+            "USES": ["Python", "Neo4j", "FastMCP"],
+            "IN_DOMAIN": ["ai", "cybersecurity"],
+        }
+        modified = adapter.set_relations(path, new_rels)
+        assert modified is True
+
+        note = adapter.read_note(path)
+        rels = note["frontmatter"]["relations"]
+        assert rels == new_rels
+
+    def test_set_relations_empty_removes(self, adapter: ObsidianAdapter):
+        path = "10-projects/eoelite.md"
+        modified = adapter.set_relations(path, {})
+        assert modified is True
+
+        note = adapter.read_note(path)
+        assert "relations" not in note["frontmatter"]
+
+    def test_add_relation_preserves_content(self, adapter: ObsidianAdapter):
+        """Adding a relation should not corrupt the note body."""
+        path = "10-projects/engrama.md"
+        original = adapter.read_note(path)
+        adapter.add_relation(path, "USES", "Python")
+        updated = adapter.read_note(path)
+
+        # Body content should still be there
+        assert "Graph-based long-term memory framework" in updated["content"]
+        assert "More content here." in updated["content"]
+
+    def test_add_relation_preserves_other_frontmatter(self, adapter: ObsidianAdapter):
+        """Adding a relation should not lose existing frontmatter fields."""
+        path = "10-projects/engrama.md"
+        adapter.add_relation(path, "USES", "Python")
+        note = adapter.read_note(path)
+        assert note["frontmatter"]["status"] == "active"
+        assert note["frontmatter"]["repo"] == "github.com/scops/engrama"

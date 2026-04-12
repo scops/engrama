@@ -260,6 +260,122 @@ relations:
 
 ---
 
+---
+
+## 6. Composable modules
+
+For users with multiple roles, Engrama supports **composable profiles**.
+Instead of one monolithic YAML, combine a universal `base.yaml` with domain
+modules from `profiles/modules/`:
+
+```bash
+uv run engrama init --profile base --modules hacking teaching photography ai
+```
+
+Each module adds domain-specific node types and relations while referencing
+shared base labels (Project, Concept, Technology, Decision, Problem, Person).
+The merge engine deduplicates nodes and validates all relation endpoints.
+
+Included example modules: `hacking`, `teaching`, `photography`, `ai`.
+These are starting points — create your own for any domain in
+`profiles/modules/<name>.yaml`.
+
+### Example: generating modules for a nurse who teaches and cooks
+
+User says: *"I'm a nurse with a master's in biology, I teach undergrads, and
+I love cooking."*
+
+You'd generate three custom modules:
+
+**`profiles/modules/nursing.yaml`**
+```yaml
+name: nursing
+description: Clinical nursing — patients, conditions, medications
+
+nodes:
+  - label: Patient
+    properties: [name, age, ward, status, notes]
+    required: [name]
+    description: "A patient under care."
+  - label: Condition
+    properties: [name, severity, icd_code, notes]
+    required: [name]
+    description: "A medical condition or diagnosis."
+  - label: Medication
+    properties: [name, dosage, route, notes]
+    required: [name]
+    description: "A prescribed medication."
+
+relations:
+  - {type: HAS,       from: Patient,    to: Condition}
+  - {type: RECEIVES,  from: Patient,    to: Medication}
+  - {type: TREATS,    from: Medication,  to: Condition}
+  - {type: RELATED,   from: Condition,   to: Concept}    # Concept from base
+```
+
+**`profiles/modules/biology.yaml`**
+```yaml
+name: biology
+description: Biology research — organisms, studies, lab work
+
+nodes:
+  - label: Organism
+    properties: [name, taxonomy, habitat, notes]
+    required: [name]
+    description: "A biological organism or species."
+  - label: Study
+    properties: [title, status, methodology, date, notes]
+    required: [title]
+    description: "A research study or experiment."
+  - label: LabProtocol
+    properties: [title, steps, reagents, notes]
+    required: [title]
+    description: "A laboratory protocol or procedure."
+
+relations:
+  - {type: STUDIES,    from: Study,        to: Organism}
+  - {type: FOLLOWS,    from: Study,        to: LabProtocol}
+  - {type: APPLIES,    from: LabProtocol,  to: Concept}   # Concept from base
+  - {type: USES,       from: Study,        to: Technology} # Technology from base
+```
+
+**`profiles/modules/cooking.yaml`**
+```yaml
+name: cooking
+description: Culinary — recipes, ingredients, techniques
+
+nodes:
+  - label: Recipe
+    properties: [name, cuisine, difficulty, time, notes]
+    required: [name]
+    description: "A dish or preparation."
+  - label: Ingredient
+    properties: [name, category, season, notes]
+    required: [name]
+    description: "A food ingredient."
+  - label: CookingTechnique
+    properties: [name, type, notes]
+    required: [name]
+    description: "A culinary method — sous vide, braising, fermentation."
+
+relations:
+  - {type: USES,    from: Recipe,            to: Ingredient}
+  - {type: APPLIES, from: Recipe,            to: CookingTechnique}
+  - {type: RELATED, from: CookingTechnique,  to: Concept} # Concept from base
+```
+
+Then apply all at once:
+```bash
+uv run engrama init --profile base --modules nursing biology cooking
+```
+
+The merge engine combines base.yaml (6 nodes) + 3 modules (9 nodes) = 15
+node types total, with all cross-module relations validated.  The nurse can
+later add more modules (e.g. `teaching`) without regenerating the existing
+ones.
+
+---
+
 ## Design principles across all profiles
 
 When proposing a schema to a new user, keep these principles in mind:

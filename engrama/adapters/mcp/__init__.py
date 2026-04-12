@@ -58,6 +58,11 @@ def main() -> None:
         default="stdio",
         help="MCP transport (default: stdio)",
     )
+    parser.add_argument(
+        "--vault-path",
+        default=os.getenv("VAULT_PATH"),
+        help="Absolute path to the Obsidian vault root (default: $VAULT_PATH)",
+    )
     parser.add_argument("--host", default="127.0.0.1", help="HTTP host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="HTTP port (default: 8000)")
 
@@ -74,6 +79,7 @@ def main() -> None:
         username=args.username,
         password=args.password,
         database=args.database,
+        vault_path=args.vault_path,
     )
 
     if args.transport == "http":

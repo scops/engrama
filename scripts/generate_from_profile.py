@@ -2,16 +2,23 @@
 """
 scripts/generate_from_profile.py
 
-Code generator: reads a profile YAML and produces all derived files.
+Code generator: reads a profile YAML (optionally composed with domain modules)
+and produces all derived schema files.
 
 Usage:
+    # Standalone profile (backward-compatible):
     python scripts/generate_from_profile.py profiles/developer.yaml
-    python scripts/generate_from_profile.py profiles/nurse.yaml --dry-run
+
+    # Composable: base profile + domain modules:
+    python scripts/generate_from_profile.py profiles/base.yaml \\
+        --modules hacking teaching photography ai
+
+    # Dry-run (preview without writing):
+    python scripts/generate_from_profile.py profiles/base.yaml --modules hacking --dry-run
 
 Generated files:
     engrama/core/schema.py          — NodeType/RelationType enums + dataclasses
     scripts/init-schema.cypher      — constraints + fulltext index + range indexes
-    engrama/adapters/mcp/server.py  — _VALID_LABELS / _VALID_RELATIONS updated
 
 The profile YAML is the single source of truth for the graph schema.
 """
@@ -71,6 +78,132 @@ def load_profile(path: Path) -> dict[str, Any]:
         sys.exit(1)
 
     return profile
+
+
+def load_module(name: str, modules_dir: Path) -> dict[str, Any]:
+    """Load a domain module YAML from the modules directory.
+
+    Args:
+        name: Module name (without extension), e.g. 'hacking'.
+        modules_dir: Path to the modules directory.
+
+    Returns:
+        Parsed module dict.
+
+    Raises:
+        SystemExit: If the module file is not found or invalid.
+    """
+    path = modules_dir / f"{name}.yaml"
+    if not path.exists():
+        print(f"Error: module not found: {path}", file=sys.stderr)
+        sys.exit(1)
+    with open(path, encoding="utf-8") as f:
+        module = yaml.safe_load(f)
+    if "nodes" not in module:
+        module["nodes"] = []
+    if "relations" not in module:
+        module["relations"] = []
+    return module
+
+
+def merge_profiles(
+    base: dict[str, Any],
+    modules: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Merge a base profile with one or more domain modules.
+
+    Nodes with the same label get their properties merged (union, preserving
+    order from the first definition).  The longer description wins.
+    Relations are unioned and deduplicated.
+
+    Args:
+        base: The base profile dict.
+        modules: List of module dicts to merge in.
+
+    Returns:
+        A new merged profile dict ready for codegen.
+
+    Raises:
+        SystemExit: If relation endpoints reference undefined node labels.
+    """
+    # Index base nodes by label for fast lookup
+    nodes_by_label: dict[str, dict[str, Any]] = {}
+    for node in base.get("nodes", []):
+        nodes_by_label[node["label"]] = dict(node)  # shallow copy
+
+    # Merge each module's nodes
+    module_names: list[str] = []
+    for module in modules:
+        module_names.append(module.get("name", "unknown"))
+        for node in module.get("nodes", []):
+            label = node["label"]
+            if label in nodes_by_label:
+                # Merge properties (union, base order first)
+                existing = nodes_by_label[label]
+                existing_props = list(existing["properties"])
+                for prop in node["properties"]:
+                    if prop not in existing_props:
+                        existing_props.append(prop)
+                existing["properties"] = existing_props
+
+                # Merge required (union)
+                existing_req = set(existing.get("required", []))
+                existing_req.update(node.get("required", []))
+                existing["required"] = sorted(existing_req)
+
+                # Keep longer description
+                new_desc = node.get("description", "")
+                old_desc = existing.get("description", "")
+                if len(new_desc) > len(old_desc):
+                    existing["description"] = new_desc
+            else:
+                nodes_by_label[label] = dict(node)
+
+    # Merge relations (deduplicate by (type, from, to) tuple)
+    seen_rels: set[tuple[str, str, str]] = set()
+    merged_rels: list[dict[str, str]] = []
+
+    for rel in base.get("relations", []):
+        key = (rel["type"], rel["from"], rel["to"])
+        if key not in seen_rels:
+            seen_rels.add(key)
+            merged_rels.append(rel)
+
+    for module in modules:
+        for rel in module.get("relations", []):
+            key = (rel["type"], rel["from"], rel["to"])
+            if key not in seen_rels:
+                seen_rels.add(key)
+                merged_rels.append(rel)
+
+    # Validate: all relation endpoints must exist in the merged node set
+    all_labels = set(nodes_by_label.keys())
+    errors: list[str] = []
+    for rel in merged_rels:
+        if rel["from"] not in all_labels:
+            errors.append(
+                f"Relation {rel['type']}: from-label '{rel['from']}' "
+                f"not defined in any profile or module."
+            )
+        if rel["to"] not in all_labels:
+            errors.append(
+                f"Relation {rel['type']}: to-label '{rel['to']}' "
+                f"not defined in any profile or module."
+            )
+    if errors:
+        print("Merge validation errors:", file=sys.stderr)
+        for e in errors:
+            print(f"  - {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Build merged profile
+    composed_name = base["name"] + "+" + "+".join(module_names)
+    return {
+        "name": composed_name,
+        "description": f"Composed profile: {base.get('name', 'base')} + {', '.join(module_names)}",
+        "nodes": list(nodes_by_label.values()),
+        "relations": merged_rels,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +542,16 @@ def main() -> None:
     )
     parser.add_argument("profile", type=Path, help="Path to the profile YAML file.")
     parser.add_argument(
+        "--modules", "-m",
+        nargs="+",
+        default=[],
+        help=(
+            "Domain modules to compose with the base profile. "
+            "Pass module names (e.g. 'hacking teaching ai') — "
+            "resolved from profiles/modules/ directory."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print generated files to stdout without writing.",
@@ -428,6 +571,15 @@ def main() -> None:
         root = Path(__file__).resolve().parent.parent
 
     profile = load_profile(args.profile)
+
+    # If modules are specified, load and merge them
+    if args.modules:
+        modules_dir = root / "profiles" / "modules"
+        if not modules_dir.is_dir():
+            print(f"Error: modules directory not found: {modules_dir}", file=sys.stderr)
+            sys.exit(1)
+        loaded_modules = [load_module(m, modules_dir) for m in args.modules]
+        profile = merge_profiles(profile, loaded_modules)
 
     schema_content = generate_schema(profile)
     cypher_content = generate_cypher(profile)

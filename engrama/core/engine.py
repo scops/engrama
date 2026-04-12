@@ -144,6 +144,15 @@ class EngramaEngine:
         params = {"from_name": from_name, "to_name": to_name}
         return self._client.run(query, params)
 
+    def run(self, query: str, params: dict[str, Any] | None = None) -> list[Record]:
+        """Execute a raw Cypher query (delegates to the underlying client).
+
+        Prefer the higher-level methods (``merge_node``, ``merge_relation``,
+        ``search``, ``get_context``) when possible.  Use ``run`` only when
+        none of them cover the query you need.
+        """
+        return self._client.run(query, params)
+
     # ------------------------------------------------------------------
     # Read operations
     # ------------------------------------------------------------------

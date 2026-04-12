@@ -205,6 +205,9 @@ class Engrama:
     ) -> dict:
         """Create a typed relationship between two nodes.
 
+        DDR-002: If an Obsidian adapter is available, the relation is also
+        written to the source note's YAML frontmatter (dual-write).
+
         Args:
             from_name: Source node identity.
             from_label: Source node label.
@@ -213,7 +216,8 @@ class Engrama:
             to_label: Target node label.
 
         Returns:
-            Dict with ``matched`` (bool) and relationship details.
+            Dict with ``matched`` (bool), ``vault_written`` (bool),
+            and relationship details.
         """
         return self._associate.run(
             self._engine,
@@ -222,6 +226,7 @@ class Engrama:
             rel_type=rel_type,
             to_name=to_name,
             to_label=to_label,
+            obsidian=self._obsidian,
         )
 
     # ------------------------------------------------------------------

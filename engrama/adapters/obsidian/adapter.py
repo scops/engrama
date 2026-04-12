@@ -126,8 +126,169 @@ class ObsidianAdapter:
         return True
 
     # ------------------------------------------------------------------
+    # Relations in frontmatter (DDR-002: bidirectional sync)
+    # ------------------------------------------------------------------
+
+    def add_relation(
+        self,
+        path: str,
+        rel_type: str,
+        target_name: str,
+    ) -> bool:
+        """Add a relation to a note's YAML frontmatter.
+
+        Appends *target_name* to the ``relations.<rel_type>`` array.
+        Creates the ``relations`` map if it doesn't exist yet.
+        Idempotent — returns False if the relation already exists.
+
+        Returns True if the frontmatter was modified.
+        """
+        target = self._resolve(path)
+        if not target.exists():
+            return False
+
+        content = target.read_text(encoding="utf-8")
+        fm = self._parse_frontmatter(content)
+
+        relations: dict = fm.get("relations", {})
+        if not isinstance(relations, dict):
+            relations = {}
+
+        existing = relations.get(rel_type, [])
+        if isinstance(existing, str):
+            existing = [existing]
+        if target_name in existing:
+            return False  # already present
+
+        existing.append(target_name)
+        relations[rel_type] = existing
+
+        return self._write_frontmatter_field(path, content, "relations", relations)
+
+    def remove_relation(
+        self,
+        path: str,
+        rel_type: str,
+        target_name: str,
+    ) -> bool:
+        """Remove a relation from a note's YAML frontmatter.
+
+        Returns True if the frontmatter was modified, False if the
+        relation was not found.
+        """
+        target = self._resolve(path)
+        if not target.exists():
+            return False
+
+        content = target.read_text(encoding="utf-8")
+        fm = self._parse_frontmatter(content)
+
+        relations: dict = fm.get("relations", {})
+        if not isinstance(relations, dict):
+            return False
+
+        existing = relations.get(rel_type, [])
+        if isinstance(existing, str):
+            existing = [existing]
+        if target_name not in existing:
+            return False
+
+        existing.remove(target_name)
+        if not existing:
+            del relations[rel_type]
+        else:
+            relations[rel_type] = existing
+
+        if not relations:
+            return self._remove_frontmatter_field(path, content, "relations")
+        return self._write_frontmatter_field(path, content, "relations", relations)
+
+    def set_relations(
+        self,
+        path: str,
+        relations: dict[str, list[str]],
+    ) -> bool:
+        """Replace the entire ``relations`` map in a note's frontmatter.
+
+        Used during graph→vault sync to write a complete snapshot.
+        Returns True if the frontmatter was modified.
+        """
+        target = self._resolve(path)
+        if not target.exists():
+            return False
+
+        content = target.read_text(encoding="utf-8")
+
+        if not relations:
+            return self._remove_frontmatter_field(path, content, "relations")
+        return self._write_frontmatter_field(path, content, "relations", relations)
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _write_frontmatter_field(
+        self, path: str, content: str, key: str, value: Any
+    ) -> bool:
+        """Write or update a single field in a note's YAML frontmatter.
+
+        Requires PyYAML for complex values (dicts, nested lists).
+        Returns True if the file was modified.
+        """
+        target = self._resolve(path)
+
+        if not _HAS_YAML:
+            raise RuntimeError(
+                "PyYAML is required for writing complex frontmatter values"
+            )
+
+        fm = self._parse_frontmatter(content)
+        fm[key] = value
+
+        # Rebuild frontmatter YAML
+        fm_yaml = yaml.dump(fm, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+        if content.startswith("---"):
+            end_idx = content.index("---", 3)
+            body = content[end_idx + 3:]
+            # body already starts with \n from the original "---\n"
+        else:
+            body = "\n\n" + content
+
+        new_content = "---\n" + fm_yaml + "---" + body
+        target.write_text(new_content, encoding="utf-8")
+        return True
+
+    def _remove_frontmatter_field(
+        self, path: str, content: str, key: str
+    ) -> bool:
+        """Remove a field from a note's YAML frontmatter.
+
+        Returns True if the file was modified, False if the field was not found.
+        """
+        target = self._resolve(path)
+        fm = self._parse_frontmatter(content)
+        if key not in fm:
+            return False
+
+        del fm[key]
+
+        if not _HAS_YAML:
+            raise RuntimeError(
+                "PyYAML is required for writing complex frontmatter values"
+            )
+
+        fm_yaml = yaml.dump(fm, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+        if content.startswith("---"):
+            end_idx = content.index("---", 3)
+            body = content[end_idx + 3:]
+        else:
+            body = "\n\n" + content
+
+        new_content = "---\n" + fm_yaml + "---" + body
+        target.write_text(new_content, encoding="utf-8")
+        return True
 
     def _resolve(self, relative_path: str) -> Path:
         target = (self.vault_path / relative_path).resolve()

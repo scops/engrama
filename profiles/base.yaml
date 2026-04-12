@@ -1,0 +1,82 @@
+name: base
+description: >
+  Universal base profile with faceted classification (PMEST).
+  Provides the six-facet system: identity, composition, action,
+  purpose, context, and domain.
+
+nodes:
+  - label: Project
+    properties: [name, status, repo, stack, description]
+    required: [name]
+    description: "A project, product, or major initiative."
+  - label: Concept
+    properties: [name, domain, notes]
+    required: [name]
+    description: "A concept, idea, or knowledge area. The bridge between domains."
+  - label: Decision
+    properties: [title, rationale, date, status, alternatives]
+    required: [title]
+    description: "A decision with rationale and alternatives considered."
+  - label: Problem
+    properties: [title, solution, status, context, severity]
+    required: [title]
+    description: "A problem, challenge, or blocker encountered."
+  - label: Technology
+    properties: [name, version, type, notes]
+    required: [name]
+    description: "A language, framework, tool, or infrastructure component."
+  - label: Person
+    properties: [name, role, organisation, contact, notes]
+    required: [name]
+    description: "A person — colleague, client, collaborator, or contact."
+  - label: Domain
+    properties: [name, description]
+    required: [name]
+    description: "A field of knowledge — web-development, cybersecurity, cooking, photography."
+  - label: Client
+    properties: [name, sector, contact, notes]
+    required: [name]
+    description: "An organisation that commissions work or training."
+
+relations:
+  # -- Faceted classification (universal, apply to any node) --
+  - {type: INSTANCE_OF,    from: Project,     to: Concept}
+  - {type: INSTANCE_OF,    from: Problem,     to: Concept}
+  - {type: INSTANCE_OF,    from: Decision,    to: Concept}
+  - {type: INSTANCE_OF,    from: Technology,  to: Concept}
+  - {type: COMPOSED_OF,    from: Project,     to: Technology}
+  - {type: COMPOSED_OF,    from: Project,     to: Concept}
+  - {type: PERFORMS,        from: Project,     to: Concept}
+  - {type: SOLVED_BY,      from: Problem,     to: Decision}
+  - {type: SERVES,         from: Project,     to: Concept}
+  - {type: SERVES,         from: Decision,    to: Concept}
+  - {type: BELONGS_TO,     from: Problem,     to: Project}
+  - {type: BELONGS_TO,     from: Decision,    to: Project}
+  - {type: BELONGS_TO,     from: Technology,  to: Project}
+  - {type: BELONGS_TO,     from: Problem,     to: Client}
+  - {type: IN_DOMAIN,      from: Project,     to: Domain}
+  - {type: IN_DOMAIN,      from: Concept,     to: Domain}
+  - {type: IN_DOMAIN,      from: Problem,     to: Domain}
+  - {type: IN_DOMAIN,      from: Decision,    to: Domain}
+  - {type: IN_DOMAIN,      from: Technology,  to: Domain}
+
+  # -- Structural relationships (domain-specific semantics) --
+  - {type: USES,           from: Project,     to: Technology}
+  - {type: INFORMED_BY,    from: Project,     to: Decision}
+  - {type: HAS,            from: Project,     to: Problem}
+  - {type: APPLIES,        from: Project,     to: Concept}
+  - {type: IMPLEMENTS,     from: Technology,  to: Concept}
+  - {type: INVOLVES,       from: Project,     to: Person}
+  - {type: FOR,            from: Project,     to: Client}
+  - {type: DEPENDS_ON,     from: Project,     to: Project}
+  - {type: SIMILAR_TO,     from: Problem,     to: Problem}
+  - {type: CAUSED_BY,      from: Problem,     to: Problem}
+  - {type: REPLACES,       from: Decision,    to: Decision}
+  - {type: RELATED_TO,     from: Concept,     to: Concept}
+  - {type: SUBSET_OF,      from: Concept,     to: Concept}
+  - {type: CONTRADICTS,    from: Concept,     to: Concept}
+
+  # -- Vault sync relation (created automatically) --
+  - {type: LINKS_TO,       from: Project,     to: Project}
+  - {type: LINKS_TO,       from: Project,     to: Concept}
+  - {type: LINKS_TO,       from: Concept,     to: Concept}

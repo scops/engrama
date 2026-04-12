@@ -1,0 +1,26 @@
+name: photography
+description: Nature and wildlife photography
+
+nodes:
+  - label: Photo
+    properties: [title, date, location, species, camera, lens, status, notes]
+    required: [title]
+    description: "A photograph or photo session."
+  - label: Location
+    properties: [name, region, coordinates, habitat, notes]
+    required: [name]
+    description: "A geographic location — birding spot, nature reserve, trail."
+  - label: Species
+    properties: [name, family, conservation_status, notes]
+    required: [name]
+    description: "A species of bird, mammal, insect, or plant."
+  - label: Gear
+    properties: [name, type, brand, notes]
+    required: [name]
+    description: "Camera body, lens, tripod, or other photography equipment."
+
+relations:
+  - {type: TAKEN_AT,    from: Photo,    to: Location}
+  - {type: FEATURES,    from: Photo,    to: Species}
+  - {type: SHOT_WITH,   from: Photo,    to: Gear}
+  - {type: INHABITS,    from: Species,  to: Location}

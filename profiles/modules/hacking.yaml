@@ -1,0 +1,44 @@
+name: hacking
+description: Ethical hacking, pentesting, and CTF work
+
+nodes:
+  - label: Target
+    properties: [name, ip, os, status, scope, notes]
+    required: [name]
+    description: "A machine, network, or service being assessed."
+  - label: Vulnerability
+    properties: [title, cve, severity, status, notes]
+    required: [title]
+    description: "A vulnerability or misconfiguration found during assessment."
+  - label: Technique
+    properties: [name, mitre_id, tactic, notes]
+    required: [name]
+    description: "An attack technique — maps to MITRE ATT&CK where applicable."
+  - label: Tool
+    properties: [name, version, type, notes]
+    required: [name]
+    description: "A security tool — scanner, exploit framework, utility."
+  - label: CTF
+    properties: [name, platform, difficulty, status, writeup_path]
+    required: [name]
+    description: "A CTF challenge or HackTheBox machine."
+
+relations:
+  # -- Structural --
+  - {type: HAS,            from: Target,        to: Vulnerability}
+  - {type: EXPLOITS,       from: Technique,     to: Vulnerability}
+  - {type: EXECUTED_WITH,  from: Technique,     to: Tool}
+  - {type: TARGETS,        from: CTF,           to: Target}
+  - {type: USES,           from: CTF,           to: Technique}
+  - {type: DOCUMENTS,      from: CTF,           to: Technique}
+
+  # -- Faceted --
+  - {type: INSTANCE_OF,    from: Vulnerability, to: Concept}
+  - {type: INSTANCE_OF,    from: Technique,     to: Concept}
+  - {type: IN_DOMAIN,      from: Target,        to: Domain}
+  - {type: IN_DOMAIN,      from: Vulnerability, to: Domain}
+  - {type: IN_DOMAIN,      from: CTF,           to: Domain}
+  - {type: BELONGS_TO,     from: Target,        to: Project}
+  - {type: BELONGS_TO,     from: CTF,           to: Project}
+  - {type: COMPOSED_OF,    from: Target,        to: Technology}
+  - {type: SOLVED_BY,      from: Vulnerability, to: Decision}

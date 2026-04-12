@@ -25,7 +25,8 @@ No dependency on any specific AI framework, agent SDK, or MCP runtime.
 
 ## What gets generated
 
-From a single `profiles/<name>.yaml` file, the bundled codegen script produces:
+From a profile YAML (standalone or composed from base + modules), the codegen
+script produces:
 
 1. **`engrama/core/schema.py`** — NodeType enum, RelationType enum, dataclasses,
    `TITLE_KEYED_LABELS` set (used by engine and MCP server for merge-key logic)
@@ -33,6 +34,33 @@ From a single `profiles/<name>.yaml` file, the bundled codegen script produces:
 
 The profile YAML is the **single source of truth**.  Change it, rerun the
 script, and the entire schema propagates.  No manual editing needed.
+
+### Composable profiles (the default for onboarding)
+
+Most people have multiple roles.  A nurse who teaches biology and cooks on
+weekends.  A sysadmin who does pentesting and nature photography.  Instead of
+building one monolithic YAML, Engrama supports **composable profiles**: a
+`base.yaml` with universal node types (Project, Concept, Decision, Problem,
+Technology, Person) plus domain modules in `profiles/modules/` that add
+domain-specific nodes and relations.
+
+```bash
+# Composable — base + custom modules:
+uv run engrama init --profile base --modules nursing biology cooking
+
+# Standalone (backward-compatible):
+uv run engrama init --profile developer
+```
+
+**During onboarding, always prefer composable modules.**  For each role or
+interest the user mentions, generate a separate module YAML.  The four
+included modules (`hacking`, `teaching`, `photography`, `ai`) are examples —
+you will typically generate **new** modules tailored to the user.
+
+Modules can safely reference base node types in their relations (e.g. a
+teaching module can define `Course COVERS Concept` where `Concept` comes from
+`base.yaml`).  Nodes with the same label across modules get their properties
+merged (union).
 
 ## Bundled resources
 
@@ -66,13 +94,26 @@ Listen for **nouns** (these become node types) and **verbs/prepositions**
 (these become relationships).  Don't ask for these explicitly — extract them
 from the user's natural description.
 
-### Phase 2 — Propose a schema
+### Phase 2 — Propose a modular schema
 
-Based on Phase 1, read `references/example-profiles.md` for inspiration,
-then propose 5–8 node types and 6–12 relationships.
+Based on Phase 1, read `references/example-profiles.md` for inspiration.
 
-Present them in plain language first — a summary table, not YAML.  For each
-node type explain in one sentence what it is and what it connects to.
+**Group the user's roles/interests into modules.**  For example, if they say
+"I'm a nurse who teaches biology and cooks," you'd propose three modules:
+`nursing`, `biology`, `cooking`.  Each module adds 3–5 node types and a few
+relationships.  The base profile already provides the universal ones (Project,
+Concept, Technology, Decision, Problem, Person).
+
+Present the modules in plain language first — **not YAML**.  Show a table per
+module: what nodes it adds, what they connect to, and how they link to base
+labels.  Example:
+
+> **Module: nursing**
+> | Node | Key | Connects to |
+> |------|-----|-------------|
+> | Patient | name | has → Condition, treated with → Medication |
+> | Condition | name | related to → Concept |
+> | Medication | name | ... |
 
 Only show the YAML after the user agrees with the plain-language proposal.
 
@@ -87,38 +128,48 @@ For each node type:
 For relationships:
 - **Type** — UPPER_SNAKE_CASE verb (USES, FOLLOWS, TREATS, COVERS)
 - **Direction** — from → to, always the natural reading direction
+- Relations **can and should cross modules** — that's the whole point of a
+  graph (e.g. a Course in the teaching module COVERS a Concept from base)
 
 Ask: "Does this capture how you think about your work?  What's missing?
 What doesn't fit?"  Iterate until the user confirms.
 
-### Phase 3 — Generate and apply
+### Phase 3 — Generate modules and apply
 
 Once confirmed:
 
-1. Write the profile YAML to the Engrama project's `profiles/<name>.yaml`
-2. Run the codegen script (bundled in this skill):
+1. **Write each module** as a separate YAML in `profiles/modules/<name>.yaml`.
+   Check if an existing module already covers what's needed — reuse it if so.
+   If the user has only one role, you can still write a single module.
+
+2. **Run the codegen** with `--dry-run` first:
    ```bash
-   python scripts/generate_from_profile.py profiles/<name>.yaml --project-root <engrama_root>
+   uv run engrama init --profile base --modules nursing biology cooking --dry-run
    ```
-   If the Engrama project is at the default location, `--project-root` can be
-   omitted.  Use `--dry-run` first to preview without writing files.
-3. Show the user a summary of what was generated (not full files)
-4. Tell them to apply the Neo4j schema:
+   Review the output with the user.  Then apply for real:
    ```bash
-   docker exec -i engrama-neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD < scripts/init-schema.cypher
+   uv run engrama init --profile base --modules nursing biology cooking
    ```
-   If the fulltext index already exists with different labels, drop it first:
+
+3. If the fulltext index already exists with different labels, drop it first:
    ```cypher
    DROP INDEX memory_search IF EXISTS;
    ```
-5. Verify:
+
+4. Verify:
    ```bash
    uv run pytest tests/ -v
    ```
 
-## YAML template
+**Important:** Do not limit the user to the four example modules that ship
+with Engrama.  The whole point of the onboard skill is to generate **new**
+modules that match the user's actual life.  A cook gets `cooking.yaml`.
+A nurse gets `nursing.yaml`.  A fisherman gets `fishing.yaml`.  There is
+no closed list.
 
-Use this skeleton when building the profile:
+## YAML templates
+
+### Standalone profile
 
 ```yaml
 name: <profile_name>
@@ -134,16 +185,40 @@ relations:
   - {type: <UPPER_SNAKE>, from: <Label>, to: <Label>}
 ```
 
-Rules:
+### Domain module
+
+Modules follow the same format but can reference node labels defined in
+`base.yaml` (Project, Concept, Decision, Problem, Technology, Person)
+in their relations without redefining them.
+
+```yaml
+name: <module_name>
+description: <what this module adds>
+
+nodes:
+  - label: <PascalCase>
+    properties: [<merge_key>, prop2, status, notes]
+    required: [<merge_key>]
+    description: "<what this node represents>"
+
+relations:
+  - {type: <UPPER_SNAKE>, from: <Label>, to: <Label>}
+  # Can reference base labels like Concept, Technology, Project:
+  - {type: COVERS, from: Course, to: Concept}
+```
+
+### Rules (both formats)
+
 - The merge key (first item in `required`) must be either `name` or `title`
 - `title` is for nodes where the identifier is a sentence (Decision, Protocol)
 - `name` is for everything else (Project, Technology, Patient)
 - `status` is optional but recommended for lifecycle nodes
 - `description` on each node helps the LLM understand context
-- Every label in `relations` must exist in `nodes`
+- Every label in `relations` must exist in `nodes` (including base nodes
+  when composing)
 - Relationship types should be verbs, not nouns (USES not USAGE)
 - An `Insight` node type is always added automatically by the codegen —
-  don't include it in the profile
+  don't include it in the profile or module
 
 ## After onboarding
 

@@ -92,6 +92,15 @@ class RememberInput(BaseModel):
             "Example: {\"name\": \"engrama\", \"status\": \"active\", \"repo\": \"scops/engrama\"}."
         ),
     )
+    relations: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Optional relations to create in the same call. "
+            "Format: {\"REL_TYPE\": [\"target_name\", ...]}. "
+            'Example: {"TEACHES": ["Java"], "IN_DOMAIN": ["teaching"], "FOR": ["Accenture"]}. '
+            "Target nodes are found by name; if missing, stub nodes are created."
+        ),
+    )
 
 
 class RelateInput(BaseModel):
@@ -154,6 +163,34 @@ class SyncVaultInput(BaseModel):
         default="",
         description="Optional folder to restrict the scan (vault-relative). "
                     "Empty string scans the entire vault.",
+    )
+
+
+class SurfaceInput(BaseModel):
+    """Input for engrama_surface_insights."""
+    model_config = ConfigDict(extra="forbid")
+    limit: int = Field(
+        default=10,
+        description="Maximum number of pending Insights to return.",
+    )
+
+
+class ApproveInput(BaseModel):
+    """Input for engrama_approve_insight."""
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(description="Exact title of the Insight.")
+    action: str = Field(
+        default="approve",
+        description="'approve' or 'dismiss'.",
+    )
+
+
+class WriteInsightInput(BaseModel):
+    """Input for engrama_write_insight_to_vault."""
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(description="Exact title of the approved Insight.")
+    target_note: str = Field(
+        description="Relative path to the Obsidian note to append to.",
     )
 
 
@@ -237,7 +274,9 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_search(params: SearchInput, ctx: Context) -> str:
-        """Search the Engrama memory graph using fulltext search.
+        """Search the memory graph.  Use this at the START of every session
+        to load context relevant to the current topic, and whenever you need
+        to check whether a node already exists before creating it.
 
         Queries the ``memory_search`` fulltext index across all node types
         and text properties (name, title, description, notes, rationale,
@@ -275,16 +314,31 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_remember(params: RememberInput, ctx: Context) -> str:
-        """Create or update a node in the memory graph using MERGE.
+        """Store a piece of knowledge as a node in the memory graph.  Use this
+        whenever you learn something new, solve a problem, or encounter an
+        important entity (person, technology, project, etc.) that is not yet
+        in the graph.  **Immediately after calling this, call engrama_relate**
+        to connect the new node to its context — isolated nodes are much less
+        useful.
 
         If a node with the same ``name`` (or ``title``) already exists, its
-        properties are updated.  ``created_at`` is set on first write;
-        ``updated_at`` is refreshed on every call.
+        properties are updated (MERGE semantics).
 
-        Returns a summary of the operation.
+        When a vault is configured, a corresponding .md note is created (or
+        updated) with full YAML frontmatter including engrama_id and an empty
+        relations block (DDR-002).
         """
+        import re as _re
+
         label = params.label
-        props = params.properties
+        props = dict(params.properties)
+
+        # Extract relations before MERGE — Neo4j can't store dicts as properties.
+        # Relations may arrive via the top-level `relations` field OR nested
+        # inside `properties`; merge both sources so either path works.
+        inline_relations: dict[str, list[str]] = props.pop("relations", {}) or {}
+        if not isinstance(inline_relations, dict):
+            inline_relations = {}
 
         if label not in _VALID_LABELS:
             return f"Error: Invalid label '{label}'. Must be one of: {', '.join(sorted(_VALID_LABELS))}."
@@ -298,6 +352,80 @@ def create_engrama_mcp(
             return "Error: properties must include 'name' or 'title' as a merge key."
 
         merge_value = props[merge_key]
+
+        # --- Vault note creation (BUG-002 / DDR-002) ---
+        state = ctx.request_context.lifespan_context
+        obsidian: ObsidianAdapter | None = state.get("obsidian")
+        vault_path: str | None = None
+        engrama_id: str | None = None
+
+        if obsidian is not None:
+            # Generate a filesystem-safe slug from the node name
+            slug = _re.sub(r"[^\w\s-]", "", merge_value.lower())
+            slug = _re.sub(r"[\s]+", "-", slug).strip("-")
+            vault_path = f"{slug}.md"
+
+            # Check if a note already exists for this node (by obsidian_path
+            # stored on an existing graph node, or by filename)
+            note_data = obsidian.read_note(vault_path)
+            if note_data["success"]:
+                # Note exists — read its engrama_id
+                engrama_id = note_data["frontmatter"].get("engrama_id")
+
+            if not engrama_id:
+                engrama_id = str(uuid.uuid4())
+
+            # Build frontmatter for the note
+            fm: dict[str, Any] = {"engrama_id": engrama_id, "type": label}
+            # Add all user-provided properties
+            for k, v in props.items():
+                if k not in ("created_at", "updated_at"):
+                    fm[k] = v
+            # Ensure relations block exists (DDR-002)
+            if "relations" not in fm:
+                fm["relations"] = {}
+
+            try:
+                import yaml as _yaml
+                fm_yaml = _yaml.dump(
+                    fm, default_flow_style=False,
+                    allow_unicode=True, sort_keys=False,
+                )
+                target = obsidian._resolve(vault_path)
+
+                if note_data["success"]:
+                    # Update existing note — replace frontmatter, keep body
+                    content = note_data["content"]
+                    if content.startswith("---"):
+                        end_idx = content.index("---", 3)
+                        body = content[end_idx + 3:]
+                    else:
+                        body = "\n\n" + content
+                    new_content = "---\n" + fm_yaml + "---" + body
+                else:
+                    # Create new note
+                    new_content = (
+                        "---\n" + fm_yaml + "---\n\n"
+                        f"# {merge_value}\n"
+                    )
+                    # Add notes/description as body text if present
+                    desc = props.get("notes") or props.get("description")
+                    if desc:
+                        new_content += f"\n> {desc}\n"
+
+                target.write_text(new_content, encoding="utf-8")
+                logger.info("Vault note written: %s", vault_path)
+            except Exception as e:
+                logger.warning("Could not write vault note for %s: %s", merge_value, e)
+                vault_path = None
+
+        # --- Graph write ---
+        # Include obsidian metadata in node properties
+        if vault_path:
+            props["obsidian_path"] = vault_path
+        if engrama_id:
+            props["obsidian_id"] = engrama_id
+
         extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
 
         # Build parameterised SET clauses
@@ -323,8 +451,88 @@ def create_engrama_mcp(
             cypher, parameters_=cypher_params, database_=db
         )
         node = dict(records[0]["n"]) if records else {}
+
+        # --- BUG-005: Process inline relations ---
+        # Merge both sources: top-level params.relations + extracted from properties
+        all_relations: dict[str, list[str]] = {}
+        for src in (params.relations, inline_relations):
+            for rtype, targets in (src or {}).items():
+                merged = all_relations.setdefault(rtype, [])
+                for t in (targets if isinstance(targets, list) else [targets]):
+                    if t not in merged:
+                        merged.append(t)
+
+        relations_created = 0
+        if all_relations:
+            from engrama.adapters.obsidian.sync import ObsidianSync
+
+            for rel_type, targets in all_relations.items():
+                rel_type_upper = rel_type.upper()
+                if rel_type_upper not in _VALID_RELATIONS:
+                    logger.warning("Skipping unknown relation type: %s", rel_type)
+                    continue
+
+                for target_name in targets:
+                    # Find or create the target node
+                    target_label = None
+                    try:
+                        lookup_records, _, _ = await driver.execute_query(
+                            "MATCH (n) WHERE toLower(n.name) = toLower($name) "
+                            "RETURN labels(n)[0] AS label LIMIT 1",
+                            parameters_={"name": target_name},
+                            database_=db,
+                        )
+                        if lookup_records:
+                            target_label = lookup_records[0]["label"]
+                    except Exception:
+                        pass
+
+                    if target_label is None:
+                        # Infer label from relation type and create stub
+                        target_label = ObsidianSync._infer_stub_label(rel_type_upper)
+                        try:
+                            await _async_merge_node(driver, db, target_label, {
+                                "name": target_name,
+                                "status": "stub",
+                            })
+                        except Exception as e:
+                            logger.warning("Could not create stub %s: %s", target_name, e)
+                            continue
+
+                    # Create the relationship
+                    try:
+                        from_key_r = "title" if label in TITLE_KEYED_LABELS else "name"
+                        to_key_r = "title" if target_label in TITLE_KEYED_LABELS else "name"
+                        await driver.execute_query(
+                            f"MATCH (a:{label} {{{from_key_r}: $from_name}}) "
+                            f"MATCH (b:{target_label} {{{to_key_r}: $to_name}}) "
+                            f"MERGE (a)-[:{rel_type_upper}]->(b)",
+                            parameters_={"from_name": merge_value, "to_name": target_name},
+                            database_=db,
+                        )
+                        relations_created += 1
+                    except Exception as e:
+                        logger.warning(
+                            "Could not create relation %s -[%s]-> %s: %s",
+                            merge_value, rel_type_upper, target_name, e,
+                        )
+
+                    # Write relation to vault frontmatter (DDR-002)
+                    if obsidian is not None and vault_path:
+                        try:
+                            obsidian.add_relation(vault_path, rel_type_upper, target_name)
+                        except Exception:
+                            pass
+
         return json.dumps(
-            {"status": "ok", "label": label, "node": node},
+            {
+                "status": "ok",
+                "label": label,
+                "node": node,
+                "vault_path": vault_path,
+                "engrama_id": engrama_id,
+                "relations_created": relations_created,
+            },
             default=str,
             indent=2,
         )
@@ -342,12 +550,13 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_relate(params: RelateInput, ctx: Context) -> str:
-        """Create or update a relationship between two existing nodes.
+        """Connect two nodes with a typed relationship.  Always call this
+        right after engrama_remember to wire the new node into the graph.
+        Also use it to record newly discovered connections between existing
+        nodes.  Both endpoints must already exist (create them first with
+        engrama_remember if needed).
 
-        Both endpoints are matched by ``name``.  If either node does not
-        exist, no relationship is created (no error).
-
-        Returns a confirmation or a message if no match was found.
+        Returns a confirmation or a message if either node was not found.
         """
         if params.from_label not in _VALID_LABELS:
             return f"Error: Invalid from_label '{params.from_label}'."
@@ -366,7 +575,8 @@ def create_engrama_mcp(
             f"MATCH (b:{params.to_label} {{{to_key}: $to_name}}) "
             f"MERGE (a)-[r:{params.rel_type}]->(b) "
             f"RETURN type(r) AS rel_type, "
-            f"a.{from_key} AS from_name, b.{to_key} AS to_name"
+            f"a.{from_key} AS from_name, b.{to_key} AS to_name, "
+            f"a.obsidian_path AS from_obsidian_path"
         )
         cypher_params = {"from_name": params.from_name, "to_name": params.to_name}
 
@@ -381,7 +591,68 @@ def create_engrama_mcp(
                 f"or (:{params.to_label} {{name: '{params.to_name}'}})."
             )
         r = dict(records[0])
-        return json.dumps({"status": "ok", **r}, default=str, indent=2)
+
+        # DDR-002: dual-write — also record the relation in vault frontmatter
+        vault_written = False
+        state = ctx.request_context.lifespan_context
+        obsidian: ObsidianAdapter | None = state.get("obsidian")
+        from_path = r.pop("from_obsidian_path", None)
+        if obsidian is not None:
+            # If the source node has no vault note yet, create one now
+            if not from_path:
+                import re as _re
+                slug = _re.sub(r"[^\w\s-]", "", params.from_name.lower())
+                slug = _re.sub(r"[\s]+", "-", slug).strip("-")
+                from_path = f"{slug}.md"
+                note_data = obsidian.read_note(from_path)
+                if not note_data["success"]:
+                    # Create a minimal vault note for this node
+                    try:
+                        import yaml as _yaml
+                        _eid = str(uuid.uuid4())
+                        fm = {
+                            "engrama_id": _eid,
+                            "type": params.from_label,
+                            "name": params.from_name,
+                            "relations": {},
+                        }
+                        fm_yaml = _yaml.dump(
+                            fm, default_flow_style=False,
+                            allow_unicode=True, sort_keys=False,
+                        )
+                        target_file = obsidian._resolve(from_path)
+                        target_file.write_text(
+                            "---\n" + fm_yaml + "---\n\n"
+                            f"# {params.from_name}\n",
+                            encoding="utf-8",
+                        )
+                        # Update the graph node with obsidian metadata
+                        from_key_r = "title" if params.from_label in TITLE_KEYED_LABELS else "name"
+                        await driver.execute_query(
+                            f"MATCH (n:{params.from_label} {{{from_key_r}: $name}}) "
+                            "SET n.obsidian_path = $path, n.obsidian_id = $eid",
+                            parameters_={"name": params.from_name, "path": from_path, "eid": _eid},
+                            database_=db,
+                        )
+                    except Exception as e:
+                        logger.warning("Could not create vault note for %s: %s", params.from_name, e)
+                        from_path = None
+
+            if from_path:
+                try:
+                    vault_written = obsidian.add_relation(
+                        from_path, params.rel_type, params.to_name,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "DDR-002 vault write failed for %s -[%s]-> %s: %s",
+                        params.from_name, params.rel_type, params.to_name, e,
+                    )
+
+        return json.dumps(
+            {"status": "ok", **r, "vault_written": vault_written},
+            default=str, indent=2,
+        )
 
     # -- Tool: engrama_context --------------------------------------------
 
@@ -396,20 +667,19 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_context(params: ContextInput, ctx: Context) -> str:
-        """Retrieve the local neighbourhood of a node up to N hops.
-
-        Returns the starting node and all connected nodes with their
-        relationship types, useful for building context before answering
-        a question.
+        """Retrieve a node and its neighbourhood up to N hops.  Use this to
+        build rich context before answering a question — e.g. fetch the
+        user's Person node to see their projects, or a Technology node to
+        see what it connects to.  Works even for isolated nodes (returns the
+        node with an empty neighbours list).
         """
         if params.label not in _VALID_LABELS:
             return f"Error: Invalid label '{params.label}'."
 
+        merge_key = "title" if params.label in TITLE_KEYED_LABELS else "name"
         cypher = (
-            f"MATCH (start:{params.label} {{name: $name}}) "
+            f"MATCH (start:{params.label} {{{merge_key}: $name}}) "
             f"OPTIONAL MATCH (start)-[r*1..{params.hops}]-(neighbour) "
-            "WITH start, r, neighbour "
-            "WHERE neighbour IS NOT NULL "
             "RETURN start, "
             "  [rel IN r | type(rel)] AS rel_types, "
             "  labels(neighbour)[0] AS neighbour_label, "
@@ -424,15 +694,21 @@ def create_engrama_mcp(
         if not records:
             return f"No node found: (:{params.label} {{name: '{params.name}'}})."
 
-        # Format: start node + list of neighbours
+        # Format: start node + deduplicated list of neighbours
         start_node = dict(records[0]["start"]) if records[0]["start"] else {}
         neighbours = []
+        seen: set[tuple[str, str]] = set()
+        root_name = start_node.get("name") or start_node.get("title")
+        root_key = (params.label, root_name)
         for r in records:
-            if r["neighbour_name"]:
+            nname = r["neighbour_name"]
+            nlabel = r["neighbour_label"]
+            if nname and (nlabel, nname) not in seen and (nlabel, nname) != root_key:
+                seen.add((nlabel, nname))
                 neighbours.append({
-                    "label": r["neighbour_label"],
-                    "name": r["neighbour_name"],
-                    "via": r["rel_types"],
+                    "label": nlabel,
+                    "name": nname,
+                    "via": list(dict.fromkeys(r["rel_types"])),
                     "properties": {
                         k: v for k, v in (r["neighbour_props"] or {}).items()
                         if k not in {"created_at", "updated_at"}
@@ -568,12 +844,65 @@ def create_engrama_mcp(
         }
         merge_result = await _async_merge_node(driver, db, parsed.label, props)
 
+        # 5. DDR-002: merge frontmatter relations into Neo4j
+        fm_relations_merged = 0
+        stubs_created_count = 0
+        if parsed.relations:
+            for rel_type, targets in parsed.relations.items():
+                for target_name in targets:
+                    # Look up target label in graph
+                    target_label = None
+                    try:
+                        lookup_records, _, _ = await driver.execute_query(
+                            "MATCH (n) WHERE toLower(n.name) = toLower($name) "
+                            "RETURN labels(n)[0] AS label LIMIT 1",
+                            parameters_={"name": target_name},
+                            database_=db,
+                        )
+                        if lookup_records:
+                            target_label = lookup_records[0]["label"]
+                    except Exception:
+                        pass
+
+                    if target_label is None:
+                        # Create stub node
+                        from engrama.adapters.obsidian.sync import ObsidianSync
+                        target_label = ObsidianSync._infer_stub_label(rel_type)
+                        try:
+                            await _async_merge_node(driver, db, target_label, {
+                                "name": target_name,
+                                "status": "stub",
+                            })
+                            stubs_created_count += 1
+                        except Exception:
+                            continue
+
+                    # Merge the typed relation
+                    try:
+                        from_key = "title" if parsed.label in TITLE_KEYED_LABELS else "name"
+                        to_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
+                        async with driver.session(database=db) as session:
+                            await session.run(
+                                f"MATCH (a:{parsed.label} {{{from_key}: $from_name}}) "
+                                f"MATCH (b:{target_label} {{{to_key}: $to_name}}) "
+                                f"MERGE (a)-[:{rel_type}]->(b)",
+                                {
+                                    "from_name": parsed.name,
+                                    "to_name": target_name,
+                                },
+                            )
+                        fm_relations_merged += 1
+                    except Exception:
+                        pass
+
         return json.dumps({
             "status": "ok",
             "label": parsed.label,
             "name": parsed.name,
             "engrama_id": engrama_id,
             "created_or_updated": "created" if merge_result["created"] else "updated",
+            "frontmatter_relations": fm_relations_merged,
+            "stubs_created": stubs_created_count,
         }, default=str, indent=2)
 
     # -- Tool: engrama_sync_vault -----------------------------------------
@@ -612,6 +941,8 @@ def create_engrama_mcp(
         notes = obsidian.list_notes(folder=params.folder, recursive=True)
         created = updated = skipped = 0
 
+        # Pass 1: parse all notes and merge nodes
+        parsed_notes: list = []
         for note_meta in notes:
             path = note_meta["path"]
             note_data = obsidian.read_note(path)
@@ -644,12 +975,114 @@ def create_engrama_mcp(
                 created += 1
             else:
                 updated += 1
+            parsed_notes.append(parsed)
+
+        # Pass 2: resolve wiki-links → create LINKS_TO relations
+        from pathlib import Path as _Path
+        stem_to_node: dict[str, tuple[str, str]] = {}
+        for pn in parsed_notes:
+            stem = _Path(pn.path).stem.lower()
+            stem_to_node[stem] = (pn.label, pn.name)
+            stem_to_node[pn.name.lower()] = (pn.label, pn.name)
+
+        relations_created = 0
+        for pn in parsed_notes:
+            for link_target in pn.wiki_links:
+                target_key = link_target.strip().lower()
+                if target_key in stem_to_node:
+                    target_label, target_name = stem_to_node[target_key]
+                    if target_name == pn.name:
+                        continue
+                    try:
+                        async with driver.session(database=db) as session:
+                            await session.run(
+                                "MATCH (a {name: $from_name}) "
+                                "WHERE $from_label IN labels(a) "
+                                "MATCH (b {name: $to_name}) "
+                                "WHERE $to_label IN labels(b) "
+                                "MERGE (a)-[:LINKS_TO]->(b)",
+                                {
+                                    "from_name": pn.name,
+                                    "from_label": pn.label,
+                                    "to_name": target_name,
+                                    "to_label": target_label,
+                                },
+                            )
+                        relations_created += 1
+                    except Exception:
+                        pass  # skip unresolvable links
+
+        # Pass 3 (DDR-002): merge frontmatter relations into Neo4j
+        # Build a name→label lookup from all parsed notes
+        known_nodes: dict[str, str] = {
+            pn.name.lower(): pn.label for pn in parsed_notes
+        }
+        fm_relations = 0
+        stubs_created_count = 0
+
+        for pn in parsed_notes:
+            if not pn.relations:
+                continue
+            for rel_type, targets in pn.relations.items():
+                for target_name in targets:
+                    target_lower = target_name.lower()
+
+                    # Resolve target label
+                    if target_lower in known_nodes:
+                        target_label = known_nodes[target_lower]
+                    else:
+                        # Look up in graph
+                        try:
+                            lookup_records, _, _ = await driver.execute_query(
+                                "MATCH (n) WHERE toLower(n.name) = toLower($name) "
+                                "RETURN labels(n)[0] AS label LIMIT 1",
+                                parameters_={"name": target_name},
+                                database_=db,
+                            )
+                            target_label = lookup_records[0]["label"] if lookup_records else None
+                        except Exception:
+                            target_label = None
+
+                    if target_label is None:
+                        # Create stub node (DDR-002)
+                        from engrama.adapters.obsidian.sync import ObsidianSync
+                        target_label = ObsidianSync._infer_stub_label(rel_type)
+                        try:
+                            await _async_merge_node(driver, db, target_label, {
+                                "name": target_name,
+                                "status": "stub",
+                            })
+                            stubs_created_count += 1
+                            known_nodes[target_lower] = target_label
+                        except Exception:
+                            continue
+
+                    # Merge the typed relation
+                    try:
+                        from_key = "title" if pn.label in TITLE_KEYED_LABELS else "name"
+                        to_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
+                        async with driver.session(database=db) as session:
+                            await session.run(
+                                f"MATCH (a:{pn.label} {{{from_key}: $from_name}}) "
+                                f"MATCH (b:{target_label} {{{to_key}: $to_name}}) "
+                                f"MERGE (a)-[:{rel_type}]->(b)",
+                                {
+                                    "from_name": pn.name,
+                                    "to_name": target_name,
+                                },
+                            )
+                        fm_relations += 1
+                    except Exception:
+                        pass
 
         return json.dumps({
             "status": "ok",
             "created": created,
             "updated": updated,
             "skipped": skipped,
+            "relations": relations_created,
+            "frontmatter_relations": fm_relations,
+            "stubs_created": stubs_created_count,
         }, indent=2)
 
     # -- Tool: engrama_reflect --------------------------------------------
@@ -673,25 +1106,12 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_reflect(ctx: Context) -> str:
-        """Run cross-entity pattern detection across the memory graph.
-
-        Executes three detection queries looking for patterns that span
-        projects, problems, decisions, technologies, and courses.  Each
-        detected pattern is written as an ``Insight`` node with
-        ``status: "pending"`` — the human reviews and approves or dismisses.
-
-        Detection queries:
-
-        1. **Cross-project solution transfer** — an open Problem shares a
-           Concept with a resolved Problem that has a Decision in another
-           Project.
-        2. **Shared technology** — two active Projects use the same
-           Technology.
-        3. **Training opportunity** — an open Problem shares a Concept
-           with a Course.
-
-        Returns JSON with a list of insights created/updated, grouped by
-        detection query, plus total counts.
+        """Detect cross-entity patterns in the memory graph.  Call this
+        periodically (e.g. at the end of a session or when the user asks
+        for insights) to discover solution transfers between projects,
+        shared technologies, and training opportunities.  Detected patterns
+        are stored as Insight nodes with status "pending" — present them
+        to the user via engrama_surface_insights for review.
         """
         driver, db = _driver_and_db(ctx)
         insights: list[dict[str, Any]] = []
@@ -793,14 +1213,6 @@ def create_engrama_mcp(
 
     # -- Tool: engrama_surface_insights ------------------------------------
 
-    class SurfaceInput(BaseModel):
-        """Input for engrama_surface_insights."""
-        model_config = ConfigDict(extra="forbid")
-        limit: int = Field(
-            default=10,
-            description="Maximum number of pending Insights to return.",
-        )
-
     @mcp.tool(
         name="engrama_surface_insights",
         annotations=ToolAnnotations(
@@ -812,11 +1224,11 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_surface_insights(params: SurfaceInput, ctx: Context) -> str:
-        """Read all pending Insights and format them for presentation.
-
-        Returns JSON with a list of pending Insights, newest first.
-        The agent should present these to the human for review — never
-        act on them without explicit approval.
+        """Retrieve pending Insights for human review.  Call this after
+        engrama_reflect, or periodically, to show the user patterns the
+        graph has detected.  Present each Insight and ask the user to
+        approve or dismiss it — never act on an Insight without explicit
+        approval.
         """
         driver, db = _driver_and_db(ctx)
 
@@ -850,15 +1262,6 @@ def create_engrama_mcp(
         }, default=str, indent=2)
 
     # -- Tool: engrama_approve_insight -------------------------------------
-
-    class ApproveInput(BaseModel):
-        """Input for engrama_approve_insight."""
-        model_config = ConfigDict(extra="forbid")
-        title: str = Field(description="Exact title of the Insight.")
-        action: str = Field(
-            default="approve",
-            description="'approve' or 'dismiss'.",
-        )
 
     @mcp.tool(
         name="engrama_approve_insight",
@@ -915,14 +1318,6 @@ def create_engrama_mcp(
         }, indent=2)
 
     # -- Tool: engrama_write_insight_to_vault ------------------------------
-
-    class WriteInsightInput(BaseModel):
-        """Input for engrama_write_insight_to_vault."""
-        model_config = ConfigDict(extra="forbid")
-        title: str = Field(description="Exact title of the approved Insight.")
-        target_note: str = Field(
-            description="Relative path to the Obsidian note to append to.",
-        )
 
     @mcp.tool(
         name="engrama_write_insight_to_vault",
@@ -1028,5 +1423,105 @@ def create_engrama_mcp(
             "target_note": params.target_note,
             "written": True,
         }, indent=2)
+
+    # -- Prompt: engrama_session_guide --------------------------------------
+
+    @mcp.prompt("engrama_session_guide")
+    def engrama_session_guide() -> str:
+        """Full taxonomy and session protocol for the Engrama memory graph."""
+        return (
+            "# Engrama — Memory Graph Session Guide\n"
+            "\n"
+            "You have access to the Engrama memory graph.  Follow this protocol\n"
+            "to build and maintain the user's long-term knowledge base.\n"
+            "\n"
+            "## Session protocol\n"
+            "\n"
+            "1. **On session start** — call `engrama_search` with keywords relevant\n"
+            "   to the current topic.  Load context with `engrama_context` on the\n"
+            "   most important results.  This lets you ground your responses in\n"
+            "   what the user already knows and has done.\n"
+            "\n"
+            "2. **When learning something new** — call `engrama_remember` to store\n"
+            "   the entity, then *immediately* call `engrama_relate` to connect it\n"
+            "   to existing nodes.  Isolated nodes are nearly invisible to pattern\n"
+            "   detection — always wire new knowledge into the graph.\n"
+            "\n"
+            "3. **Proactive node creation** — if you detect that an important entity\n"
+            "   is missing (the user's Person node, a Technology being discussed, a\n"
+            "   Project being worked on), create it without waiting to be asked.\n"
+            "\n"
+            "4. **Periodically** — call `engrama_reflect` to run pattern detection,\n"
+            "   then `engrama_surface_insights` to review results with the user.\n"
+            "\n"
+            "## Node labels — when to use each\n"
+            "\n"
+            "| Label | Use for | Merge key |\n"
+            "|-------|---------|----------|\n"
+            "| Person | People — the user, colleagues, contacts | name |\n"
+            "| Project | Products, repos, major initiatives | name |\n"
+            "| Technology | Languages, frameworks, infra components | name |\n"
+            "| Concept | Ideas, knowledge areas, domains | name |\n"
+            "| Decision | Decisions with rationale (title-keyed) | title |\n"
+            "| Problem | Challenges, blockers, bugs (title-keyed) | title |\n"
+            "| Tool | Security tools, scanners, utilities | name |\n"
+            "| Technique | Attack techniques (MITRE ATT&CK) | name |\n"
+            "| Target | Machines, networks under assessment | name |\n"
+            "| Vulnerability | CVEs, misconfigs found (title-keyed) | title |\n"
+            "| CTF | CTF challenges, HackTheBox machines | name |\n"
+            "| Course | Training courses delivered | name |\n"
+            "| Client | Organisations commissioning training | name |\n"
+            "| Exercise | Hands-on labs, practicals (title-keyed) | title |\n"
+            "| Photo | Photographs, sessions (title-keyed) | title |\n"
+            "| Location | Geographic locations, birding spots | name |\n"
+            "| Species | Birds, mammals, insects, plants | name |\n"
+            "| Gear | Camera bodies, lenses, equipment | name |\n"
+            "| Model | AI/ML models — LLMs, classifiers | name |\n"
+            "| Dataset | Training/evaluation datasets | name |\n"
+            "| Experiment | ML experiments, evaluation runs (title-keyed) | title |\n"
+            "| Pipeline | Data/ML pipelines | name |\n"
+            "| Insight | Cross-entity patterns (created by reflect) | title |\n"
+            "\n"
+            "## Relationship types — which to use between which labels\n"
+            "\n"
+            "| rel_type | Typical from → to | Meaning |\n"
+            "|----------|-------------------|--------|\n"
+            "| USES | Project → Technology | Project uses a technology |\n"
+            "| INFORMED_BY | Decision → Concept | Decision informed by a concept |\n"
+            "| HAS | Project → Problem, Project → Decision | Project has a problem/decision |\n"
+            "| APPLIES | Project → Concept | Project applies a concept |\n"
+            "| SOLVED_BY | Problem → Decision | Problem resolved by a decision |\n"
+            "| INVOLVES | Problem → Concept | Problem involves a concept |\n"
+            "| IMPLEMENTS | Project → Concept | Project implements a concept |\n"
+            "| EXPLOITS | Technique → Vulnerability | Technique exploits a vuln |\n"
+            "| EXECUTED_WITH | Technique → Tool | Technique executed with a tool |\n"
+            "| TARGETS | Vulnerability → Target | Vuln found on a target |\n"
+            "| DOCUMENTS | CTF → Target | CTF documents a target |\n"
+            "| COVERS | Course → Concept | Course covers a concept |\n"
+            "| TEACHES | Person → Course | Person teaches a course |\n"
+            "| FOR | Course → Client | Course delivered for a client |\n"
+            "| INCLUDES | Course → Exercise | Course includes an exercise |\n"
+            "| PRACTICES | Exercise → Concept | Exercise practises a concept |\n"
+            "| REQUIRES | Exercise → Technology | Exercise requires a technology |\n"
+            "| TAKEN_AT | Photo → Location | Photo taken at a location |\n"
+            "| FEATURES | Photo → Species | Photo features a species |\n"
+            "| SHOT_WITH | Photo → Gear | Photo shot with gear |\n"
+            "| INHABITS | Species → Location | Species inhabits a location |\n"
+            "| ORIGIN_OF | Location → Species | Location is origin of species |\n"
+            "| TRAINS_ON | Model → Dataset | Model trained on a dataset |\n"
+            "| RUNS | Pipeline → Model | Pipeline runs a model |\n"
+            "| EVALUATES | Experiment → Model | Experiment evaluates a model |\n"
+            "| FEEDS | Dataset → Pipeline | Dataset feeds a pipeline |\n"
+            "\n"
+            "## Tips\n"
+            "\n"
+            "- Use `engrama_search` before `engrama_remember` to avoid duplicates.\n"
+            "- Title-keyed labels (Decision, Problem, Vulnerability, Exercise,\n"
+            "  Photo, Experiment) use `title` instead of `name` as the merge key.\n"
+            "- When the user mentions a person, technology, or project for the\n"
+            "  first time, create the node proactively.\n"
+            "- Keep node properties concise — the graph is for structure and\n"
+            "  connections, not full documents.\n"
+        )
 
     return mcp

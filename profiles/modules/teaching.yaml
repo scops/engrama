@@ -1,0 +1,42 @@
+name: teaching
+description: Corporate training, course delivery, and instructional design
+
+nodes:
+  - label: Course
+    properties: [name, cohort, date, level, status, description]
+    required: [name]
+    description: "A training course or workshop delivered."
+  - label: Exercise
+    properties: [title, difficulty, duration, status, notes]
+    required: [title]
+    description: "A hands-on lab, exercise, or practical challenge."
+  - label: Material
+    properties: [name, type, format, status, notes]
+    required: [name]
+    description: "A teaching artifact: cheatsheet, slides, exercise sheet, or reference card."
+
+relations:
+  # -- Structural --
+  - {type: COVERS,          from: Course,    to: Concept}
+  - {type: TEACHES,         from: Course,    to: Technology}
+  - {type: FOR,             from: Course,    to: Client}
+  - {type: INCLUDES,        from: Course,    to: Exercise}
+  - {type: ORIGIN_OF,       from: Project,   to: Course}
+  - {type: PRACTICES,       from: Exercise,  to: Concept}
+  - {type: REQUIRES,        from: Exercise,  to: Technology}
+  - {type: PREREQUISITE_OF, from: Course,    to: Course}
+  - {type: HAS_MATERIAL,   from: Course,    to: Material}
+  - {type: COVERS,         from: Material,  to: Concept}
+  - {type: USES,           from: Material,  to: Technology}
+
+  # -- Faceted --
+  - {type: IN_DOMAIN,       from: Course,    to: Domain}
+  - {type: BELONGS_TO,      from: Course,    to: Client}
+  - {type: INSTANCE_OF,     from: Exercise,  to: Concept}
+  - {type: BELONGS_TO,      from: Material,  to: Course}
+  - {type: IN_DOMAIN,       from: Material,  to: Domain}
+
+  # -- Vault sync --
+  - {type: LINKS_TO,        from: Course,    to: Course}
+  - {type: LINKS_TO,        from: Course,    to: Concept}
+  - {type: LINKS_TO,        from: Course,    to: Project}

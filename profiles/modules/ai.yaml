@@ -1,0 +1,28 @@
+name: ai
+description: AI, machine learning, and data science work
+
+nodes:
+  - label: Model
+    properties: [name, type, provider, version, notes]
+    required: [name]
+    description: "An AI/ML model — LLM, classifier, embedding model, etc."
+  - label: Dataset
+    properties: [name, source, size, format, notes]
+    required: [name]
+    description: "A dataset used for training, evaluation, or analysis."
+  - label: Experiment
+    properties: [title, status, metric, result, date, notes]
+    required: [title]
+    description: "An ML experiment or evaluation run."
+  - label: Pipeline
+    properties: [name, status, steps, notes]
+    required: [name]
+    description: "A data or ML pipeline — preprocessing, training, inference."
+
+relations:
+  - {type: TRAINS_ON,   from: Model,      to: Dataset}
+  - {type: RUNS,        from: Experiment,  to: Model}
+  - {type: EVALUATES,   from: Experiment,  to: Dataset}
+  - {type: FEEDS,       from: Pipeline,    to: Model}
+  - {type: IMPLEMENTS,  from: Model,       to: Concept}
+  - {type: USES,        from: Pipeline,    to: Technology}

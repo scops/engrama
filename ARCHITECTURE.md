@@ -201,7 +201,7 @@ engrama/
 │   │   ├── reflect.py       # ★ cross-entity pattern detection
 │   │   ├── proactive.py     # ★ surfaces Insights without being asked
 │   │   ├── forget.py        # decay, archiving, TTL
-│   │   └── summarize.py     # condense subgraph into synthesis node
+│   │   └── summarize.py     # (planned — Phase 9) condense subgraph into synthesis node
 │   │
 │   ├── adapters/
 │   │   ├── mcp/             # MCP server (FastMCP + neo4j async driver)
@@ -219,9 +219,13 @@ engrama/
 │                            # (document ingestion → adapters/obsidian/)
 │
 ├── profiles/
-│   ├── developer.yaml
-│   ├── researcher.yaml
-│   └── assistant.yaml
+│   ├── base.yaml             # Universal base (Project, Concept, Decision, ...)
+│   ├── developer.yaml        # Standalone example profile
+│   └── modules/
+│       ├── hacking.yaml      # Domain module examples
+│       ├── teaching.yaml     # (users create their own for any domain)
+│       ├── photography.yaml
+│       └── ai.yaml
 │
 ├── scripts/
 │   └── init-schema.cypher
@@ -342,28 +346,28 @@ Exposes ten tools:
 
 ## Profile system
 
-```yaml
-# profiles/developer.yaml
-name: developer
-description: Profile for developers and technical instructors
-nodes:
-  - label: Project
-    properties: [name, status, repo, stack, description]
-    required: [name]
-    description: "A software project or product."
-  - label: Technology
-    properties: [name, version, type, notes]
-    required: [name]
-    description: "A language, framework, tool, or infrastructure component."
-  # ... etc (7 node types + Insight auto-included)
-relations:
-  - {type: USES,        from: Project,    to: Technology}
-  - {type: INFORMED_BY, from: Project,    to: Decision}
-  # ... etc (10 relationship types)
+Profiles are the single source of truth for the graph schema.  There are two
+modes: standalone profiles and composable modules.
+
+**Standalone** (one YAML, complete schema):
+```bash
+uv run engrama init --profile developer
 ```
 
-Profiles are the single source of truth.  Run `engrama init --profile developer`
-to generate `schema.py` and `init-schema.cypher` from the YAML.
+**Composable** (base + domain modules, recommended for multi-role users):
+```bash
+uv run engrama init --profile base --modules hacking teaching photography
+```
+
+The base profile (`profiles/base.yaml`) defines universal nodes: Project,
+Concept, Decision, Problem, Technology, Person.  Domain modules in
+`profiles/modules/` add domain-specific nodes and can reference base labels
+in their relations.  The merge engine unions properties, deduplicates
+relations, and validates all endpoints.
+
+Users can create modules for **any** domain — the included modules are
+examples, not a fixed set.  The onboard skill generates custom modules
+through a conversational interview.
 
 ## Implementation rules
 

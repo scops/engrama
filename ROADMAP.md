@@ -129,12 +129,31 @@
 - [ ] Push to `github.com/scops/engrama` (phases 1–7 accumulated, not yet pushed)
 - [ ] Publish `engrama` to PyPI (v0.1.0) — after repo push
 
-## Phase 8 · Additional adapters
+## Phase 8 · Composable profiles ✅
+
+> Goal: support multi-role users with modular, composable graph schemas.
+
+- [x] `profiles/base.yaml` — universal base with Project, Concept, Decision, Problem, Technology, Person
+- [x] `profiles/modules/hacking.yaml` — Target, Vulnerability, Technique, Tool, CTF
+- [x] `profiles/modules/teaching.yaml` — Course, Client, Exercise, Material
+- [x] `profiles/modules/photography.yaml` — Photo, Location, Species, Gear
+- [x] `profiles/modules/ai.yaml` — Model, Dataset, Experiment, Pipeline
+- [x] `scripts/generate_from_profile.py` — `merge_profiles()` function + `--modules` flag
+  - Merges nodes by label (property union, longer description wins)
+  - Deduplicates relations by (type, from, to)
+  - Validates all relation endpoints exist in merged node set
+- [x] CLI: `uv run engrama init --profile base --modules hacking teaching photography ai`
+- [x] Backward compatible: standalone `--profile developer` still works
+- [x] Onboard skill updated: documents composable approach + module YAML template
+- [x] `example-profiles.md` updated with composable section
+- [x] Integration tests: `tests/test_composable.py` — merge logic (9), codegen (3), real files (5), CLI (4)
+
+## Phase 9 · Additional adapters
 
 - [ ] `adapters/langchain/` — LangChain Memory + Tool
 - [ ] `adapters/rest/` — FastAPI HTTP endpoints
 
-## Phase 9 · Vectors (v2)
+## Phase 10 · Vectors (v2)
 
 - [ ] Vector index in Neo4j 5.26
 - [ ] Local embeddings (ollama / nomic-embed-text)
@@ -150,7 +169,7 @@
 
 ## Test suite status
 
-79 tests passing:
+100 tests expected:
 
 - `test_core.py` — core engine integration tests
 - `test_adapters.py` — relate title-key fix (Decision, Problem, name-keyed regression)
@@ -160,3 +179,4 @@
 - `test_proactive.py` — surface (3), approve/dismiss (5), write to vault (4)
 - `test_sdk.py` — SDK public API (14)
 - `test_cli.py` — CLI commands via subprocess (6)
+- `test_composable.py` — merge logic (9), codegen (3), real files (5), CLI (4)

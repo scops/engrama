@@ -4,14 +4,14 @@ engrama/adapters/obsidian/parser.py
 Extracts Engrama entities from Obsidian note content.
 
 Strategy:
-  1. Frontmatter fields map directly to node properties.
-  2. The note title (H1 or filename stem) becomes the node name.
-  3. Tags are stored as-is; Engrama labels are inferred from the
-     profile mapping or from an explicit `engrama_label:` frontmatter field.
+  1. Frontmatter ``engrama_label`` wins — explicit label.
+  2. Vault folder structure infers the label (10-projects → Project, etc.).
+  3. The note title (H1 or filename stem) becomes the node name.
+  4. Wiki-links ([[Target]]) are collected for relation creation by the sync.
+  5. Tags are stored as-is on the node.
 
-All notes in the vault are candidates for parsing.  The parser infers
-the node label from frontmatter or folder structure.  Notes that
-cannot be classified are skipped by the sync tools.
+All notes in the vault are candidates for parsing.  Notes that cannot be
+classified are skipped by the sync tools.
 """
 
 from __future__ import annotations
@@ -32,11 +32,12 @@ class ParsedNote:
     properties: dict[str, Any] = field(default_factory=dict)
     engrama_id: str | None = None
     tags: list[str] = field(default_factory=list)
+    wiki_links: list[str] = field(default_factory=list)
+    relations: dict[str, list[str]] = field(default_factory=dict)
     raw_content: str = ""
 
 
 # Frontmatter fields that map directly to node properties per label.
-# Keys are frontmatter field names, values are node property names.
 _FIELD_MAP: dict[str, dict[str, str]] = {
     "Project": {
         "status": "status",
@@ -50,6 +51,9 @@ _FIELD_MAP: dict[str, dict[str, str]] = {
         "client": "client",
     },
 }
+
+# Regex: [[link]] or [[link|alias]] — captures the target (before the pipe).
+_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
 
 
 class NoteParser:
@@ -90,6 +94,12 @@ class NoteParser:
         if description:
             props["description"] = description
 
+        # Extract wiki-links for relation creation
+        wiki_links = self._extract_wiki_links(content)
+
+        # Extract relations from frontmatter (DDR-002: bidirectional sync)
+        relations = self._extract_relations(frontmatter)
+
         return ParsedNote(
             path=path,
             label=label,
@@ -97,6 +107,8 @@ class NoteParser:
             properties=props,
             engrama_id=frontmatter.get("engrama_id"),
             tags=tags,
+            wiki_links=wiki_links,
+            relations=relations,
             raw_content=content,
         )
 
@@ -117,6 +129,8 @@ class NoteParser:
             return "Project"
         if path_lower.startswith("50-cursos"):
             return "Course"
+        if path_lower.startswith("20-areas"):
+            return "Concept"
 
         return None
 
@@ -142,3 +156,47 @@ class NoteParser:
         if para:
             return para.group(1).strip()[:200]
         return None
+
+    @staticmethod
+    def _extract_relations(frontmatter: dict[str, Any]) -> dict[str, list[str]]:
+        """Extract relations map from frontmatter.
+
+        Expected format::
+
+            relations:
+              INSTANCE_OF: [concept-a]
+              USES: [Python, Neo4j]
+
+        Returns a dict mapping relationship type → list of target node names.
+        Normalises scalar values to single-element lists.
+        """
+        raw = frontmatter.get("relations")
+        if not raw or not isinstance(raw, dict):
+            return {}
+        result: dict[str, list[str]] = {}
+        for rel_type, targets in raw.items():
+            rel_type = str(rel_type).upper()
+            if isinstance(targets, str):
+                targets = [targets]
+            elif not isinstance(targets, list):
+                continue
+            cleaned = [str(t).strip() for t in targets if t]
+            if cleaned:
+                result[rel_type] = cleaned
+        return result
+
+    @staticmethod
+    def _extract_wiki_links(content: str) -> list[str]:
+        """Extract all wiki-link targets from note content.
+
+        Handles [[Target]], [[Target|alias]], and [[Target#section]].
+        Returns deduplicated list preserving first-seen order.
+        """
+        seen: set[str] = set()
+        result: list[str] = []
+        for match in _WIKILINK_RE.finditer(content):
+            target = match.group(1).strip()
+            if target and target not in seen:
+                seen.add(target)
+                result.append(target)
+        return result

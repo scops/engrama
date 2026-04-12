@@ -4,6 +4,9 @@ engrama/skills/associate.py
 The associate skill creates relationships between existing nodes in the
 memory graph.  It is the primary "link A to B" entry point for agents.
 
+DDR-002: When a vault adapter is available, every relation created in the
+graph is also written to the source note's YAML frontmatter (dual-write).
+
 Validation:
 
 * Both endpoint labels must exist in :class:`~engrama.core.schema.NodeType`.
@@ -16,12 +19,16 @@ The skill delegates to :meth:`EngramaEngine.merge_relation`.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from engrama.core.schema import NodeType, RelationType, TITLE_KEYED_LABELS
 
 if TYPE_CHECKING:
     from engrama.core.engine import EngramaEngine
+    from engrama.adapters.obsidian.adapter import ObsidianAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class AssociateSkill:
@@ -29,6 +36,9 @@ class AssociateSkill:
 
     Validates labels and relationship types against the schema before
     calling :meth:`EngramaEngine.merge_relation`.
+
+    When an :class:`ObsidianAdapter` is provided, also writes the relation
+    to the source note's frontmatter (DDR-002 dual-write contract).
     """
 
     # Pre-compute valid values for fast lookups.
@@ -44,6 +54,7 @@ class AssociateSkill:
         rel_type: str,
         to_name: str,
         to_label: str,
+        obsidian: "ObsidianAdapter | None" = None,
     ) -> dict:
         """Create or update a relationship between two nodes.
 
@@ -54,10 +65,14 @@ class AssociateSkill:
             rel_type: Relationship type (e.g. ``"USES"``).
             to_name: Identity value of the target node.
             to_label: Label of the target node.
+            obsidian: Optional :class:`ObsidianAdapter` for dual-write to
+                      vault frontmatter (DDR-002).
 
         Returns:
             A dict with ``from_name``, ``rel_type``, ``to_name``, ``matched``
-            (bool — True if both endpoints existed and the rel was created).
+            (bool — True if both endpoints existed and the rel was created),
+            and ``vault_written`` (bool — True if the relation was also
+            written to the vault frontmatter).
 
         Raises:
             ValueError: If any label or relationship type is not in the schema.
@@ -79,7 +94,7 @@ class AssociateSkill:
                 f"Valid: {sorted(self._VALID_RELS)}"
             )
 
-        # --- Execute ---
+        # --- Execute: graph write ---
         records = engine.merge_relation(
             from_name=from_name,
             from_label=from_label,
@@ -88,11 +103,60 @@ class AssociateSkill:
             to_label=to_label,
         )
 
+        matched = len(records) > 0
+
+        # --- DDR-002: vault dual-write ---
+        vault_written = False
+        if matched and obsidian is not None:
+            vault_written = self._write_relation_to_vault(
+                engine, obsidian,
+                from_name=from_name,
+                from_label=from_label,
+                rel_type=rel_type,
+                to_name=to_name,
+            )
+
         return {
             "from_name": from_name,
             "from_label": from_label,
             "rel_type": rel_type,
             "to_name": to_name,
             "to_label": to_label,
-            "matched": len(records) > 0,
+            "matched": matched,
+            "vault_written": vault_written,
         }
+
+    @staticmethod
+    def _write_relation_to_vault(
+        engine: "EngramaEngine",
+        obsidian: "ObsidianAdapter",
+        *,
+        from_name: str,
+        from_label: str,
+        rel_type: str,
+        to_name: str,
+    ) -> bool:
+        """Write a relation to the source node's Obsidian note frontmatter.
+
+        Looks up the source node's ``obsidian_path`` property in the graph,
+        then calls ``adapter.add_relation()`` to append to the frontmatter.
+
+        Returns True if the vault was updated.
+        """
+        from_key = "title" if from_label in TITLE_KEYED_LABELS else "name"
+        try:
+            records = engine.run(
+                f"MATCH (n:{from_label} {{{from_key}: $name}}) "
+                "RETURN n.obsidian_path AS path",
+                {"name": from_name},
+            )
+            if not records or not records[0]["path"]:
+                return False
+            vault_path = records[0]["path"]
+            return obsidian.add_relation(vault_path, rel_type, to_name)
+        except Exception as e:
+            logger.warning(
+                "DDR-002 vault write failed for %s -[%s]-> %s: %s",
+                from_name, rel_type, to_name, e,
+            )
+            return False
