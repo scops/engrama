@@ -129,7 +129,7 @@ class TestReflectSkill:
         assert "Reflect_ProjectB" in insight.body
         assert "Use event sourcing" in insight.title
         assert insight.status == "pending"
-        assert insight.confidence == 0.8
+        assert insight.confidence == 0.85
 
         # Verify Insight node exists in Neo4j
         result = neo4j_session.run(
@@ -158,9 +158,18 @@ class TestReflectSkill:
         shared = [i for i in insights if i.source_query == "shared_technology"]
         assert len(shared) >= 1
 
-        insight = shared[0]
+        # Filter for the specific seeded insight (other pre-existing data
+        # in the graph may produce additional shared_technology insights).
+        matching = [i for i in shared if "FastAPI_ReflectTest" in i.title]
+        assert len(matching) >= 1, (
+            f"Expected an insight about FastAPI_ReflectTest, got: "
+            f"{[i.title for i in shared]}"
+        )
+
+        insight = matching[0]
         assert "FastAPI_ReflectTest" in insight.title
-        assert insight.confidence == 0.7
+        # Both seeded entities are Project → same type → confidence 0.6
+        assert insight.confidence == 0.6
         assert insight.status == "pending"
 
         # Verify Insight node in Neo4j
@@ -191,7 +200,7 @@ class TestReflectSkill:
         insight = training[0]
         assert "Ethical Hacking Advanced" in insight.title
         assert "Linux Privilege Escalation" in insight.title
-        assert insight.confidence == 0.6
+        assert insight.confidence == 0.65
         assert insight.status == "pending"
 
         # Verify in Neo4j

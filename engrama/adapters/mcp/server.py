@@ -260,6 +260,11 @@ def create_engrama_mcp(
     """
 
     # -- Lifespan: manage the async Neo4j driver + Obsidian adapter ------
+    #
+    # DDR-003 Phase A: the lifespan also creates a sync graph store via the
+    # backend factory.  MCP tools continue using the async driver directly
+    # (Phase A is extraction, not rewrite), but the store is available in
+    # the context for gradual migration in later phases.
 
     @asynccontextmanager
     async def lifespan(server: FastMCP):  # noqa: ARG001
@@ -278,6 +283,24 @@ def create_engrama_mcp(
         else:
             logger.info("VAULT_PATH not set — Obsidian sync tools disabled")
 
+        # DDR-003: create graph store via factory (sync, for engine/skills)
+        graph_store = None
+        try:
+            from engrama.backends import create_stores, create_embedding_provider
+            config = {
+                "GRAPH_BACKEND": "neo4j",
+                "NEO4J_URI": db_url,
+                "NEO4J_USERNAME": username,
+                "NEO4J_PASSWORD": password,
+            }
+            graph_store, vector_store = create_stores(config)
+            embedder = create_embedding_provider()
+            logger.info("Backend factory: graph=%r, vector=%r, embedder=%r",
+                        graph_store, vector_store, embedder)
+        except Exception as e:
+            logger.warning("Backend factory failed (non-fatal): %s", e)
+            graph_store = None
+
         try:
             await driver.verify_connectivity()
             logger.info("Engrama MCP connected to Neo4j at %s", db_url)
@@ -286,8 +309,15 @@ def create_engrama_mcp(
                 "database": database,
                 "obsidian": obsidian,
                 "parser": NoteParser(),
+                # DDR-003 Phase A — protocol-based stores (for gradual migration)
+                "graph_store": graph_store,
             }
         finally:
+            if graph_store is not None:
+                try:
+                    graph_store.close()
+                except Exception:
+                    pass
             await driver.close()
             logger.info("Engrama MCP disconnected from Neo4j")
 

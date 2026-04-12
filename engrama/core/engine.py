@@ -2,12 +2,16 @@
 Engrama — Memory engine.
 
 :class:`EngramaEngine` is the main write/read pipeline for the memory graph.
-It wraps an :class:`~engrama.core.client.EngramaClient` and enforces the
-project's invariants:
+It delegates all storage operations to a ``GraphStore`` backend (see
+:mod:`engrama.core.protocols`), enforcing the project's invariants:
 
 * Every write uses ``MERGE`` — never bare ``CREATE``.
 * Every node receives ``created_at`` (set once) and ``updated_at`` (refreshed).
 * All Cypher uses ``$param`` parameters — no string formatting.
+
+**Backward compatibility:** The constructor still accepts an
+:class:`~engrama.core.client.EngramaClient` and wraps it in a
+:class:`~engrama.backends.neo4j.backend.Neo4jGraphStore` automatically.
 """
 
 from __future__ import annotations
@@ -24,11 +28,29 @@ class EngramaEngine:
     """High-level read/write interface for the Engrama memory graph.
 
     Parameters:
-        client: An initialised :class:`EngramaClient` connected to Neo4j.
+        client_or_store: Either a legacy :class:`EngramaClient` (sync
+            Neo4j driver wrapper) **or** a ``GraphStore`` implementation
+            such as :class:`~engrama.backends.neo4j.backend.Neo4jGraphStore`
+            or :class:`~engrama.backends.null.NullGraphStore`.
+
+    When an :class:`EngramaClient` is passed, it is automatically wrapped
+    in a :class:`Neo4jGraphStore` so that all internal methods use the
+    protocol-based backend.  Existing code that creates an engine as
+    ``EngramaEngine(client)`` continues to work unchanged.
     """
 
-    def __init__(self, client: EngramaClient) -> None:
-        self._client = client
+    def __init__(self, client_or_store: Any) -> None:
+        if isinstance(client_or_store, EngramaClient):
+            from engrama.backends.neo4j.backend import Neo4jGraphStore
+
+            self._store = Neo4jGraphStore(client_or_store)
+            self._client = client_or_store
+        else:
+            # Protocol-based backend (Neo4jGraphStore, NullGraphStore, …)
+            self._store = client_or_store
+            # Expose the underlying client if the store has one (needed by
+            # reflect / recall skills that call engine._client.run()).
+            self._client = getattr(client_or_store, "client", None)
 
     # ------------------------------------------------------------------
     # Write operations
@@ -66,46 +88,17 @@ class EngramaEngine:
 
         merge_value = properties[merge_key]
 
-        # Build the SET clause for all remaining properties (excluding the
-        # merge key and the engine-managed timestamps).
+        # Build the extra properties dict (excluding the merge key and
+        # engine-managed timestamps).
         extra_props = {
             k: v
             for k, v in properties.items()
             if k not in {merge_key, "created_at", "updated_at"}
         }
 
-        # Cypher template:
-        #   MERGE (n:Label {name: $merge_value})
-        #   ON CREATE SET n.created_at = datetime(), n.updated_at = datetime(), ...
-        #   ON MATCH  SET n.updated_at = datetime(), ...
-        #   RETURN n
-        set_clauses_create: list[str] = [
-            "n.created_at = datetime()",
-            "n.updated_at = datetime()",
-        ]
-        set_clauses_match: list[str] = [
-            "n.updated_at = datetime()",
-        ]
-
-        params: dict[str, Any] = {"merge_value": merge_value}
-
-        for idx, (key, value) in enumerate(extra_props.items()):
-            param_name = f"p{idx}"
-            set_clauses_create.append(f"n.{key} = ${param_name}")
-            set_clauses_match.append(f"n.{key} = ${param_name}")
-            params[param_name] = value
-
-        on_create = ", ".join(set_clauses_create)
-        on_match = ", ".join(set_clauses_match)
-
-        query = (
-            f"MERGE (n:{label} {{{merge_key}: $merge_value}}) "
-            f"ON CREATE SET {on_create} "
-            f"ON MATCH SET {on_match} "
-            "RETURN n"
+        return self._store.merge_node(
+            label, merge_key, merge_value, extra_props,
         )
-
-        return self._client.run(query, params)
 
     def merge_relation(
         self,
@@ -117,41 +110,37 @@ class EngramaEngine:
     ) -> list[Record]:
         """Create or update a relationship between two existing nodes.
 
-        Both endpoints are matched by ``name``.  If either node does not
-        exist the relationship simply won't be created (no error).
+        Both endpoints are matched by ``name`` (or ``title`` for
+        title-keyed labels).  If either node does not exist the
+        relationship simply won't be created (no error).
 
         Parameters:
-            from_name: ``name`` property of the source node.
+            from_name: ``name`` (or ``title``) of the source node.
             from_label: Neo4j label of the source node.
             rel_type: Relationship type (e.g. ``"USES"``).
-            to_name: ``name`` property of the target node.
+            to_name: ``name`` (or ``title``) of the target node.
             to_label: Neo4j label of the target node.
 
         Returns:
             The list of result records from the query.
         """
-        # Decision and Problem nodes use `title` as their unique key;
-        # all other node types use `name`.
         from_key = "title" if from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if to_label in TITLE_KEYED_LABELS else "name"
 
-        query = (
-            f"MATCH (a:{from_label} {{{from_key}: $from_name}}) "
-            f"MATCH (b:{to_label} {{{to_key}: $to_name}}) "
-            f"MERGE (a)-[r:{rel_type}]->(b) "
-            "RETURN type(r) AS rel_type"
+        return self._store.merge_relation(
+            from_label, from_key, from_name,
+            rel_type,
+            to_label, to_key, to_name,
         )
-        params = {"from_name": from_name, "to_name": to_name}
-        return self._client.run(query, params)
 
     def run(self, query: str, params: dict[str, Any] | None = None) -> list[Record]:
-        """Execute a raw Cypher query (delegates to the underlying client).
+        """Execute a raw Cypher query (delegates to the backend).
 
         Prefer the higher-level methods (``merge_node``, ``merge_relation``,
         ``search``, ``get_context``) when possible.  Use ``run`` only when
         none of them cover the query you need.
         """
-        return self._client.run(query, params)
+        return self._store.run_cypher(query, params)
 
     # ------------------------------------------------------------------
     # Read operations
@@ -167,13 +156,7 @@ class EngramaEngine:
         Returns:
             Records with ``type``, ``name``, and ``score`` fields.
         """
-        cypher = (
-            'CALL db.index.fulltext.queryNodes("memory_search", $query) '
-            "YIELD node, score "
-            "RETURN labels(node)[0] AS type, node.name AS name, score "
-            "ORDER BY score DESC LIMIT $limit"
-        )
-        return self._client.run(cypher, {"query": query, "limit": limit})
+        return self._store.fulltext_search(query, limit=limit)
 
     def get_context(self, name: str, label: str, hops: int = 1) -> list[Record]:
         """Retrieve the local neighbourhood of a node.
@@ -186,8 +169,7 @@ class EngramaEngine:
         Returns:
             Records with ``start``, ``rel``, and ``neighbour`` fields.
         """
-        cypher = (
-            f"MATCH (start:{label} {{name: $name}})-[rel*1..{hops}]-(neighbour) "
-            "RETURN start, rel, neighbour"
-        )
-        return self._client.run(cypher, {"name": name})
+        # Use "name" as default key field (matches original behaviour).
+        # Title-keyed nodes could be supported by checking TITLE_KEYED_LABELS
+        # here, but that would change existing behaviour — left for a future PR.
+        return self._store.get_neighbours(label, "name", name, hops=hops)

@@ -396,7 +396,21 @@ freelance creative).
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+License
+Engrama is licensed under the Apache License 2.0.
+Copyright 2026 Sinensia IT Solutions
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+You are free to use, modify, and distribute Engrama in both personal and commercial projects. The Apache 2.0 license includes an explicit patent grant, giving you confidence to adopt Engrama in enterprise environments without IP concerns.
+Contributing
+By submitting a pull request or contribution, you agree that your contribution is licensed under the same Apache 2.0 terms. We use a Developer Certificate of Origin (DCO) — sign off your commits with git commit -s to certify that you have the right to submit the code under this license.
+Commercial Extensions
+Certain premium features (such as managed hosting, multi-tenant collaboration, and advanced analytics) may be offered under a separate commercial license. The core engine, MCP tools, and all community-facing functionality remain fully open source under Apache 2.0.
+For commercial licensing inquiries, contact sinensiaitsolutions@gmail.com.
 
 ## Related
 
