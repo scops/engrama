@@ -1,7 +1,7 @@
 """
 Engrama MCP server — high-level memory tools for AI agents.
 
-Exposes ten tools via the Model Context Protocol:
+Exposes eleven tools via the Model Context Protocol:
 
 * **engrama_search** — fulltext search across the memory graph.
 * **engrama_remember** — create or update a node (always MERGE).
@@ -9,6 +9,7 @@ Exposes ten tools via the Model Context Protocol:
 * **engrama_context** — retrieve the neighbourhood of a node.
 * **engrama_sync_note** — sync a single Obsidian note to the graph.
 * **engrama_sync_vault** — full vault scan, reconcile all notes.
+* **engrama_ingest** — read content + return extraction guidance for the agent.
 * **engrama_reflect** — cross-entity pattern detection → Insight nodes.
 * **engrama_surface_insights** — read pending Insights for agent presentation.
 * **engrama_approve_insight** — human approves or dismisses an Insight.
@@ -48,6 +49,16 @@ logger.setLevel(logging.INFO)
 
 _VALID_LABELS: set[str] = {member.value for member in NodeType}
 _VALID_RELATIONS: set[str] = {member.value for member in RelationType}
+
+# ---------------------------------------------------------------------------
+# Proactivity state (module-level — survives across tool calls within process)
+# ---------------------------------------------------------------------------
+
+_proactive_state: dict[str, int | bool] = {
+    "remember_count": 0,
+    "last_reflect_at": 0,
+    "enabled": True,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +174,34 @@ class SyncVaultInput(BaseModel):
         default="",
         description="Optional folder to restrict the scan (vault-relative). "
                     "Empty string scans the entire vault.",
+    )
+
+
+class IngestInput(BaseModel):
+    """Input for ``engrama_ingest``."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    source: str = Field(
+        ...,
+        description=(
+            "Content to ingest. Either a vault-relative path to a note "
+            "(e.g. '10-projects/websocket-debugging.md') or raw text content."
+        ),
+    )
+    source_type: str = Field(
+        default="note",
+        description=(
+            "Type of source: 'note' (vault path — will be read), "
+            "'text' (raw text content), or 'conversation' (conversation transcript)."
+        ),
+    )
+    context_hint: str = Field(
+        default="",
+        description=(
+            "Optional hint about the context (e.g. project name, domain, course). "
+            "Helps guide entity extraction."
+        ),
     )
 
 
@@ -299,7 +338,33 @@ def create_engrama_mcp(
         results = [dict(r) for r in records]
         if not results:
             return f"No results found for '{params.query}'."
-        return json.dumps(results, default=str, indent=2)
+
+        # --- Proactivity: check for pending Insights related to search ---
+        related_insights: list[dict[str, Any]] = []
+        if _proactive_state.get("enabled", True):
+            try:
+                insight_records, _, _ = await driver.execute_query(
+                    'CALL db.index.fulltext.queryNodes("memory_search", $query) '
+                    "YIELD node, score "
+                    "WHERE 'Insight' IN labels(node) AND node.status = 'pending' "
+                    "RETURN node.title AS title, node.body AS body, "
+                    "node.confidence AS confidence, score "
+                    "ORDER BY score DESC LIMIT 3",
+                    parameters_={"query": params.query},
+                    database_=db,
+                )
+                related_insights = [dict(r) for r in insight_records]
+            except Exception:
+                pass
+
+        response: dict[str, Any] = {"results": results}
+        if related_insights:
+            response["pending_insights"] = related_insights
+            response["proactive_hint"] = (
+                "There are pending Insights related to your search. "
+                "Consider presenting them to the user with engrama_surface_insights."
+            )
+        return json.dumps(response, default=str, indent=2)
 
     # -- Tool: engrama_remember -------------------------------------------
 
@@ -524,18 +589,27 @@ def create_engrama_mcp(
                         except Exception:
                             pass
 
-        return json.dumps(
-            {
-                "status": "ok",
-                "label": label,
-                "node": node,
-                "vault_path": vault_path,
-                "engrama_id": engrama_id,
-                "relations_created": relations_created,
-            },
-            default=str,
-            indent=2,
-        )
+        # --- Proactivity: increment counter and check threshold ---
+        result: dict[str, Any] = {
+            "status": "ok",
+            "label": label,
+            "node": node,
+            "vault_path": vault_path,
+            "engrama_id": engrama_id,
+            "relations_created": relations_created,
+        }
+
+        if _proactive_state.get("enabled", True):
+            _proactive_state["remember_count"] = _proactive_state.get("remember_count", 0) + 1
+            since_last = _proactive_state["remember_count"] - _proactive_state.get("last_reflect_at", 0)
+            if since_last >= 10:
+                result["proactive_hint"] = (
+                    f"You've stored {since_last} entities since the last reflect. "
+                    "Consider running engrama_reflect to detect cross-domain patterns, "
+                    "then engrama_surface_insights to present findings to the user."
+                )
+
+        return json.dumps(result, default=str, indent=2)
 
     # -- Tool: engrama_relate ---------------------------------------------
 
@@ -1085,20 +1159,163 @@ def create_engrama_mcp(
             "stubs_created": stubs_created_count,
         }, indent=2)
 
+    # -- Tool: engrama_ingest ---------------------------------------------
+
+    @mcp.tool(
+        name="engrama_ingest",
+        annotations=ToolAnnotations(
+            title="Ingest (Extract Knowledge from Content)",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def engrama_ingest(params: IngestInput, ctx: Context) -> str:
+        """Read a document, conversation, or text and return its content with
+        entity extraction guidance.  After calling this tool, use the returned
+        content and extraction prompt to identify entities and relationships,
+        then call ``engrama_remember`` with inline relations for each entity.
+
+        This is the primary way to populate the graph from existing content.
+        The tool reads and prepares — YOU (the agent) extract and store.
+
+        Workflow:
+        1. Call ``engrama_ingest(source, source_type)``
+        2. Read the returned content and extraction guidance
+        3. Identify entities (Problems, Technologies, Decisions, Concepts, etc.)
+        4. For each entity, call ``engrama_remember`` with inline relations
+        5. Report what was extracted to the user
+        """
+        state = ctx.request_context.lifespan_context
+        obsidian: ObsidianAdapter | None = state.get("obsidian")
+        driver, db = _driver_and_db(ctx)
+
+        # --- Read source content ---
+        content: str = ""
+        source_path: str | None = None
+
+        if params.source_type == "note":
+            if obsidian is None:
+                return json.dumps({
+                    "status": "error",
+                    "message": "No Obsidian vault configured. Cannot read notes.",
+                })
+            note_data = obsidian.read_note(params.source)
+            if not note_data["success"]:
+                return json.dumps({
+                    "status": "error",
+                    "message": f"Note not found: {params.source}",
+                })
+            content = note_data["content"]
+            source_path = params.source
+        elif params.source_type in ("text", "conversation"):
+            content = params.source
+        else:
+            return json.dumps({
+                "status": "error",
+                "message": f"Unknown source_type: {params.source_type}. "
+                           "Use 'note', 'text', or 'conversation'.",
+            })
+
+        if not content.strip():
+            return json.dumps({
+                "status": "error",
+                "message": "Source content is empty.",
+            })
+
+        # --- Query graph for existing nodes to help deduplication ---
+        existing_nodes: list[dict[str, str]] = []
+        try:
+            records, _, _ = await driver.execute_query(
+                "MATCH (n) WHERE n.name IS NOT NULL OR n.title IS NOT NULL "
+                "RETURN labels(n)[0] AS label, "
+                "coalesce(n.name, n.title) AS name "
+                "ORDER BY name LIMIT 200",
+                database_=db,
+            )
+            existing_nodes = [{"label": r["label"], "name": r["name"]} for r in records]
+        except Exception:
+            pass
+
+        # --- Build extraction guidance ---
+        valid_labels_str = ", ".join(sorted(_VALID_LABELS))
+        valid_rels_str = ", ".join(sorted(_VALID_RELATIONS))
+
+        existing_summary = ""
+        if existing_nodes:
+            by_label: dict[str, list[str]] = {}
+            for n in existing_nodes:
+                by_label.setdefault(n["label"], []).append(n["name"])
+            parts = []
+            for label, names in sorted(by_label.items()):
+                sample = names[:10]
+                suffix = f" (+{len(names) - 10} more)" if len(names) > 10 else ""
+                parts.append(f"  {label}: {', '.join(sample)}{suffix}")
+            existing_summary = (
+                "\n\nExisting nodes in graph (reuse these, don't create duplicates):\n"
+                + "\n".join(parts)
+            )
+
+        context_line = ""
+        if params.context_hint:
+            context_line = f"\nContext hint from user: {params.context_hint}\n"
+
+        extraction_prompt = (
+            "## Entity extraction guidance\n\n"
+            "Analyse the content above and extract all relevant entities and "
+            "relationships. For each entity, call `engrama_remember` with inline relations.\n\n"
+            "### Valid node labels\n"
+            f"{valid_labels_str}\n\n"
+            "### Valid relationship types\n"
+            f"{valid_rels_str}\n\n"
+            "### Extraction rules\n"
+            "1. **Search before creating** — check the existing nodes list below. "
+            "If an entity already exists, skip it or update it.\n"
+            "2. **Every entity needs at minimum**: BELONGS_TO (project/client/course) "
+            "and IN_DOMAIN (domain).\n"
+            "3. **For Problems, Decisions, Vulnerabilities**: also add INSTANCE_OF → Concept.\n"
+            "4. **Concepts must be project-agnostic**: 'sql-injection' yes, 'ticket-42-bug' no.\n"
+            "5. **Technologies are reusable**: 'Python', 'Neo4j', 'Docker' — search first.\n"
+            "6. **Use inline relations** in engrama_remember to create the node AND "
+            "its relationships in a single call.\n"
+            f"{context_line}"
+            f"{existing_summary}\n\n"
+            "### Expected output\n"
+            "For each entity you identify, call:\n"
+            "```\n"
+            "engrama_remember(label=\"...\", properties={...}, relations={...})\n"
+            "```\n"
+            "After all entities are stored, report a summary to the user: "
+            "what was extracted, how many entities and relationships were created."
+        )
+
+        return json.dumps({
+            "status": "ok",
+            "source_type": params.source_type,
+            "source_path": source_path,
+            "content_length": len(content),
+            "content": content,
+            "extraction_prompt": extraction_prompt,
+        }, default=str, indent=2)
+
     # -- Tool: engrama_reflect --------------------------------------------
 
-    # Import the query constants from the reflect skill so they stay in one
-    # place.  The skill module is pure Python with no heavy deps.
     from engrama.skills.reflect import (
         _QUERY_CROSS_PROJECT_SOLUTION,
         _QUERY_SHARED_TECHNOLOGY,
         _QUERY_TRAINING_OPPORTUNITY,
+        _QUERY_TECHNIQUE_TRANSFER,
+        _QUERY_CONCEPT_CLUSTERING,
+        _QUERY_STALE_KNOWLEDGE,
+        _QUERY_UNDER_CONNECTED,
+        _QUERY_GRAPH_PROFILE,
     )
 
     @mcp.tool(
         name="engrama_reflect",
         annotations=ToolAnnotations(
-            title="Reflect (Cross-Entity Pattern Detection)",
+            title="Reflect (Adaptive Pattern Detection)",
             readOnlyHint=False,
             destructiveHint=False,
             idempotentHint=True,
@@ -1109,104 +1326,298 @@ def create_engrama_mcp(
         """Detect cross-entity patterns in the memory graph.  Call this
         periodically (e.g. at the end of a session or when the user asks
         for insights) to discover solution transfers between projects,
-        shared technologies, and training opportunities.  Detected patterns
-        are stored as Insight nodes with status "pending" — present them
-        to the user via engrama_surface_insights for review.
+        shared technologies, training opportunities, technique transfers,
+        concept clusters, stale knowledge, and under-connected nodes.
+
+        The reflect skill is **adaptive**: it inspects what's actually in the
+        graph and only runs queries that apply to the current content.
+        Previously dismissed Insights are never re-surfaced.
+
+        Detected patterns are stored as Insight nodes with status "pending" —
+        present them to the user via engrama_surface_insights for review.
         """
         driver, db = _driver_and_db(ctx)
         insights: list[dict[str, Any]] = []
+        queries_run: list[str] = []
+        queries_skipped: list[str] = []
 
-        # --- Query 1: cross-project solution transfer ---
-        records, _, _ = await driver.execute_query(
-            _QUERY_CROSS_PROJECT_SOLUTION,
-            parameters_={"open_status": "open", "resolved_status": "resolved"},
-            database_=db,
-        )
-        for r in records:
-            title = (
-                f"Solution transfer: {r['decision']} "
-                f"({r['source_project']} → {r['target_project']})"
+        # --- Step 1: Profile the graph ---
+        profile: dict[str, int] = {}
+        try:
+            records, _, _ = await driver.execute_query(
+                _QUERY_GRAPH_PROFILE, database_=db,
             )
+            profile = {r["label"]: r["cnt"] for r in records}
+        except Exception as e:
+            logger.warning("Could not profile graph: %s", e)
+
+        # --- Step 2: Get dismissed titles ---
+        dismissed: set[str] = set()
+        try:
+            records, _, _ = await driver.execute_query(
+                "MATCH (i:Insight {status: 'dismissed'}) "
+                "RETURN i.title AS title",
+                database_=db,
+            )
+            dismissed = {r["title"] for r in records}
+        except Exception:
+            pass
+
+        # --- Helper to run a query and create Insights ---
+        async def _run_pattern(
+            query_name: str,
+            query: str,
+            params: dict,
+            required_labels: list[str] | None = None,
+            any_labels: list[list[str]] | None = None,
+            min_label_count: dict[str, int] | None = None,
+            builder_fn=None,
+        ):
+            # Check if ALL required labels have data
+            for label in (required_labels or []):
+                if not profile.get(label):
+                    queries_skipped.append(query_name)
+                    return
+            # Check any_labels: each entry is an OR-group — at least one must exist
+            for group in (any_labels or []):
+                if not any(profile.get(l) for l in group):
+                    queries_skipped.append(query_name)
+                    return
+            if min_label_count:
+                for label, min_cnt in min_label_count.items():
+                    if profile.get(label, 0) < min_cnt:
+                        queries_skipped.append(query_name)
+                        return
+
+            queries_run.append(query_name)
+            try:
+                records, _, _ = await driver.execute_query(
+                    query, parameters_=params, database_=db,
+                )
+            except Exception as e:
+                logger.warning("Reflect query %s failed: %s", query_name, e)
+                return
+
+            if builder_fn:
+                await builder_fn(records)
+
+        # --- Query builders ---
+
+        async def _build_cross_project(records):
+            for r in records:
+                title = (
+                    f"Solution transfer: {r['decision']} "
+                    f"({r['source_project']} → {r['target_project']})"
+                )
+                if title in dismissed:
+                    continue
+                body = (
+                    f"The open problem \"{r['open_problem']}\" in project "
+                    f"\"{r['target_project']}\" shares the concept "
+                    f"\"{r['concept']}\" with a resolved problem in project "
+                    f"\"{r['source_project']}\". The decision "
+                    f"\"{r['decision']}\" may apply here."
+                )
+                await _async_merge_node(driver, db, "Insight", {
+                    "title": title, "body": body, "confidence": 0.85,
+                    "status": "pending", "source_query": "cross_project_solution",
+                })
+                insights.append({"query": "cross_project_solution",
+                                 "title": title, "confidence": 0.85})
+
+        async def _build_shared_tech(records):
+            for r in records:
+                a_desc = f"{r['type_a']}:{r['entity_a']}"
+                b_desc = f"{r['type_b']}:{r['entity_b']}"
+                title = (
+                    f"Shared technology: {r['technology']} "
+                    f"({a_desc} & {b_desc})"
+                )
+                if title in dismissed:
+                    continue
+                confidence = 0.75 if r["type_a"] != r["type_b"] else 0.6
+                body = (
+                    f"{a_desc} and {b_desc} both use {r['technology']}. "
+                    f"Consider sharing knowledge or materials between them."
+                )
+                await _async_merge_node(driver, db, "Insight", {
+                    "title": title, "body": body, "confidence": confidence,
+                    "status": "pending", "source_query": "shared_technology",
+                })
+                insights.append({"query": "shared_technology",
+                                 "title": title, "confidence": confidence})
+
+        async def _build_training(records):
+            for r in records:
+                issue_desc = f"{r['issue_type']}:{r['issue']}"
+                title = (
+                    f"Training opportunity: {r['course']} "
+                    f"covers {r['concept']} (relates to: {issue_desc})"
+                )
+                if title in dismissed:
+                    continue
+                body = (
+                    f"The {r['issue_type'].lower()} \"{r['issue']}\" involves "
+                    f"the concept \"{r['concept']}\", which is covered by the "
+                    f"course \"{r['course']}\". Reviewing this material may help."
+                )
+                await _async_merge_node(driver, db, "Insight", {
+                    "title": title, "body": body, "confidence": 0.65,
+                    "status": "pending", "source_query": "training_opportunity",
+                })
+                insights.append({"query": "training_opportunity",
+                                 "title": title, "confidence": 0.65})
+
+        async def _build_technique_transfer(records):
+            for r in records:
+                title = (
+                    f"Technique transfer: {r['technique']} "
+                    f"({r['source_domain']} → {r['target_domain']})"
+                )
+                if title in dismissed:
+                    continue
+                related = r["related_entities"]
+                confidence = min(0.5 + (related * 0.1), 0.9)
+                body = (
+                    f"The technique \"{r['technique']}\" is used in "
+                    f"\"{r['source_domain']}\" but not in "
+                    f"\"{r['target_domain']}\". There are {related} "
+                    f"entities in {r['target_domain']} sharing concepts "
+                    f"with this technique."
+                )
+                await _async_merge_node(driver, db, "Insight", {
+                    "title": title, "body": body, "confidence": confidence,
+                    "status": "pending", "source_query": "technique_transfer",
+                })
+                insights.append({"query": "technique_transfer",
+                                 "title": title, "confidence": confidence})
+
+        async def _build_concept_clustering(records):
+            for r in records:
+                concept = r["concept"]
+                count = r["entity_count"]
+                sample = r["sample"]
+                title = f"Concept cluster: {concept} ({count} entities)"
+                if title in dismissed:
+                    continue
+                sample_desc = ", ".join(
+                    f"{s['label']}:{s['name']}" for s in (sample or [])[:5]
+                )
+                confidence = min(0.5 + (count * 0.05), 0.9)
+                body = (
+                    f"The concept \"{concept}\" connects {count} entities: "
+                    f"{sample_desc}. This cluster may reveal a pattern."
+                )
+                await _async_merge_node(driver, db, "Insight", {
+                    "title": title, "body": body, "confidence": confidence,
+                    "status": "pending", "source_query": "concept_clustering",
+                })
+                insights.append({"query": "concept_clustering",
+                                 "title": title, "confidence": confidence})
+
+        async def _build_stale(records):
+            for r in records:
+                name = r["name"]
+                title = (
+                    f"Stale knowledge: {r['label']}:{name} "
+                    f"(linked to {r['project']})"
+                )
+                if title in dismissed:
+                    continue
+                last_updated = r["last_updated"]
+                if hasattr(last_updated, "isoformat"):
+                    last_updated = last_updated.isoformat()[:10]
+                body = (
+                    f"The {r['label']} \"{name}\" is connected to the active "
+                    f"project \"{r['project']}\" via {r['rel']}, but hasn't been "
+                    f"updated since {last_updated}. Consider reviewing or archiving."
+                )
+                await _async_merge_node(driver, db, "Insight", {
+                    "title": title, "body": body, "confidence": 0.5,
+                    "status": "pending", "source_query": "stale_knowledge",
+                })
+                insights.append({"query": "stale_knowledge",
+                                 "title": title, "confidence": 0.5})
+
+        async def _build_under_connected(records):
+            if not records:
+                return
+            names = [f"{r['label']}:{r['name']}" for r in records[:10]]
+            total = len(records)
+            title = f"Under-connected nodes: {total} nodes with <2 relationships"
+            if title in dismissed:
+                return
             body = (
-                f"The open problem \"{r['open_problem']}\" in project "
-                f"\"{r['target_project']}\" shares the concept "
-                f"\"{r['concept']}\" with a resolved problem in project "
-                f"\"{r['source_project']}\". The decision "
-                f"\"{r['decision']}\" may apply here."
+                f"Found {total} nodes with fewer than 2 relationships. "
+                f"Candidates for enrichment: {', '.join(names)}."
             )
             await _async_merge_node(driver, db, "Insight", {
-                "title": title,
-                "body": body,
-                "confidence": 0.8,
-                "status": "pending",
-                "source_query": "cross_project_solution",
+                "title": title, "body": body, "confidence": 0.4,
+                "status": "pending", "source_query": "under_connected",
             })
-            insights.append({
-                "query": "cross_project_solution",
-                "title": title,
-                "confidence": 0.8,
-            })
+            insights.append({"query": "under_connected",
+                             "title": title, "confidence": 0.4})
 
-        # --- Query 2: shared technology ---
-        records, _, _ = await driver.execute_query(
-            _QUERY_SHARED_TECHNOLOGY,
-            parameters_={"active_status": "active"},
-            database_=db,
+        # --- Step 3: Run applicable patterns ---
+        await _run_pattern(
+            "cross_project_solution", _QUERY_CROSS_PROJECT_SOLUTION,
+            {"open_status": "open", "resolved_status": "resolved"},
+            required_labels=["Problem", "Project"],
+            builder_fn=_build_cross_project,
         )
-        for r in records:
-            title = (
-                f"Shared technology: {r['technology']} "
-                f"({r['project_a']} & {r['project_b']})"
-            )
-            body = (
-                f"Both \"{r['project_a']}\" and \"{r['project_b']}\" "
-                f"use {r['technology']}. Consider sharing knowledge, "
-                f"libraries, or configuration between these projects."
-            )
-            await _async_merge_node(driver, db, "Insight", {
-                "title": title,
-                "body": body,
-                "confidence": 0.7,
-                "status": "pending",
-                "source_query": "shared_technology",
-            })
-            insights.append({
-                "query": "shared_technology",
-                "title": title,
-                "confidence": 0.7,
-            })
+        await _run_pattern(
+            "shared_technology", _QUERY_SHARED_TECHNOLOGY,
+            {},
+            required_labels=["Technology"],
+            builder_fn=_build_shared_tech,
+        )
+        await _run_pattern(
+            "training_opportunity", _QUERY_TRAINING_OPPORTUNITY,
+            {"open_status": "open"},
+            any_labels=[["Problem", "Vulnerability"], ["Course"]],
+            builder_fn=_build_training,
+        )
+        await _run_pattern(
+            "technique_transfer", _QUERY_TECHNIQUE_TRANSFER, {},
+            required_labels=["Technique"],
+            min_label_count={"Domain": 2},
+            builder_fn=_build_technique_transfer,
+        )
+        await _run_pattern(
+            "concept_clustering", _QUERY_CONCEPT_CLUSTERING, {},
+            required_labels=["Concept"],
+            builder_fn=_build_concept_clustering,
+        )
+        await _run_pattern(
+            "stale_knowledge", _QUERY_STALE_KNOWLEDGE,
+            {"active_status": "active"},
+            any_labels=[["Project", "Course"]],
+            builder_fn=_build_stale,
+        )
 
-        # --- Query 3: training opportunity ---
-        records, _, _ = await driver.execute_query(
-            _QUERY_TRAINING_OPPORTUNITY,
-            parameters_={"open_status": "open"},
-            database_=db,
-        )
-        for r in records:
-            title = (
-                f"Training opportunity: {r['course']} "
-                f"covers {r['concept']} (relates to: {r['problem']})"
-            )
-            body = (
-                f"The open problem \"{r['problem']}\" involves the concept "
-                f"\"{r['concept']}\", which is covered by the course "
-                f"\"{r['course']}\". Reviewing this material may help."
-            )
-            await _async_merge_node(driver, db, "Insight", {
-                "title": title,
-                "body": body,
-                "confidence": 0.6,
-                "status": "pending",
-                "source_query": "training_opportunity",
-            })
-            insights.append({
-                "query": "training_opportunity",
-                "title": title,
-                "confidence": 0.6,
-            })
+        # Under-connected: always run if enough nodes
+        total_nodes = sum(profile.values())
+        if total_nodes >= 5:
+            queries_run.append("under_connected")
+            try:
+                uc_records, _, _ = await driver.execute_query(
+                    _QUERY_UNDER_CONNECTED, database_=db,
+                )
+                await _build_under_connected(uc_records)
+            except Exception as e:
+                logger.warning("Under-connected query failed: %s", e)
+        else:
+            queries_skipped.append("under_connected")
+
+        # --- Proactivity: reset counter ---
+        _proactive_state["last_reflect_at"] = _proactive_state.get("remember_count", 0)
 
         return json.dumps({
             "status": "ok",
+            "graph_profile": profile,
+            "queries_run": queries_run,
+            "queries_skipped": queries_skipped,
+            "dismissed_count": len(dismissed),
             "insights_count": len(insights),
             "insights": insights,
         }, default=str, indent=2)

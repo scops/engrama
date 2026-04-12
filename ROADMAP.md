@@ -148,12 +148,46 @@
 - [x] `example-profiles.md` updated with composable section
 - [x] Integration tests: `tests/test_composable.py` — merge logic (9), codegen (3), real files (5), CLI (4)
 
-## Phase 9 · Additional adapters
+## Phase 9 · Core features ✅
+
+> Goal: make Engrama discover what the user didn't know they knew.
+
+### 9a — Ingestion ✅
+- [x] `engrama_ingest` MCP tool — reads vault note, raw text, or conversation transcript
+- [x] Returns content + extraction guidance with existing-node deduplication hints
+- [x] Agent-driven (Option B): tool reads, agent extracts and calls `engrama_remember`
+
+### 9b — Adaptive Reflect ✅
+- [x] Reflect inspects graph profile before generating queries
+- [x] Four new detection patterns: technique transfer, concept clustering, stale knowledge, under-connected nodes
+- [x] Dismissed Insights never re-surfaced
+- [x] Confidence scoring: path-based, scaled by connection strength and entity count
+- [x] Reflect skill and MCP tool both updated
+
+### 9c — Proactivity ✅
+- [x] Session state tracks `engrama_remember` calls
+- [x] Proactive hint after 10+ entities stored since last reflect
+- [x] `engrama_search` surfaces pending Insights related to search query
+- [x] Reflect resets proactivity counter
+
+### 9d — Bug fixes ✅
+- [x] Proactivity counter moved from lifespan context to module-level `_proactive_state` (cross-call persistence)
+- [x] `_run_pattern` supports `any_labels` for OR-logic activation (Problem OR Vulnerability + Course, Project OR Course)
+- [x] `training_opportunity` broadened: matches Vulnerability OR Problem
+- [x] `shared_technology` broadened: any entity via USES/TEACHES/COMPOSED_OF, activation needs only Technology
+- [x] `stale_knowledge` broadened: activates on Project OR Course
+
+### System prompt v0.5 + reference docs ✅
+- [x] System prompt slimmed to ~100 lines (token-efficient)
+- [x] Detailed content extracted to `docs/reference/` (faceted-classification, query-patterns, node-schema, sync-contract)
+- [x] Dual-vault routing (obsidian-mcp vs engrama) added to prompt
+
+## Phase 10 · Additional adapters
 
 - [ ] `adapters/langchain/` — LangChain Memory + Tool
 - [ ] `adapters/rest/` — FastAPI HTTP endpoints
 
-## Phase 10 · Vectors (v2)
+## Phase 11 · Vectors (v2)
 
 - [ ] Vector index in Neo4j 5.26
 - [ ] Local embeddings (ollama / nomic-embed-text)

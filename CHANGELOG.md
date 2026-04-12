@@ -7,6 +7,31 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.5.0] — 2026-04-12
+
+Three core features that make Engrama valuable beyond a raw Neo4j wrapper. System prompt v0.5.
+
+### Added
+- **Phase 1 — Ingestion**: `engrama_ingest` MCP tool. Reads a vault note, raw text, or conversation transcript and returns content with entity extraction guidance. The agent extracts entities and calls `engrama_remember` for each one. Includes graph deduplication hints (existing nodes listed in response).
+- **Phase 2 — Adaptive Reflect**: `engrama_reflect` now inspects the graph before querying. Selects only applicable patterns based on what labels have data. Four new detection patterns: technique transfer (cross-domain technique applicability), concept clustering (3+ entities sharing a Concept), stale knowledge (90+ day old nodes linked to active Projects), under-connected nodes (<2 relationships). Previously dismissed Insights are never re-surfaced. Confidence scoring based on connection strength and entity count.
+- **Phase 3 — Proactivity**: Session state tracks `engrama_remember` calls. After 10+ entities stored since last reflect, `engrama_remember` returns a `proactive_hint` suggesting the agent run reflect. `engrama_search` checks for pending Insights related to the search query and surfaces them inline. `engrama_reflect` resets the counter.
+- **Reference docs**: Extracted v0.4 detailed content into `docs/reference/` (faceted-classification, query-patterns, node-schema, sync-contract). System prompt v0.5 is lean; reference docs are the "workshop manual".
+- **DDR-001**: Design decision record for the faceted classification system.
+
+### Fixed
+- **Phase 3 proactivity counter not firing**: `_proactive_state` moved from FastMCP lifespan context (not reliably mutable across tool calls) to a module-level dict. Counter now persists correctly across `engrama_remember` invocations.
+- **training_opportunity never activating**: query only matched `Problem {status: "open"}` but real graphs have `Vulnerability` nodes (status: "demonstrated"). Broadened WHERE clause: `(issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status)`.
+- **shared_technology skipped in most graphs**: required both `Project` AND `Technology` labels, but many graphs have Courses or Decisions sharing technologies. Broadened: matches any entity via `USES`/`TEACHES`/`COMPOSED_OF`, activation requires only `Technology` label.
+- **stale_knowledge skipped when only Courses exist**: activation required `Project` but the query also checks `Course` connections. Broadened: activates when either `Project` OR `Course` exists.
+- **`_run_pattern` too rigid for OR-logic**: added `any_labels` parameter — each entry is an OR-group where at least one label must have data. Used by `training_opportunity` (Problem OR Vulnerability + Course) and `stale_knowledge` (Project OR Course).
+
+### Changed
+- System prompt v0.5: shorter, token-efficient. Adds dual-vault routing (obsidian-mcp vs engrama). References `docs/reference/` for details.
+- `engrama_search` response now wraps results in `{"results": [...]}` object (was bare array) to accommodate optional `pending_insights` and `proactive_hint` fields.
+- Reflect skill confidence scores adjusted: cross-project 0.85, shared-tech 0.7, training 0.65, technique-transfer 0.5–0.9 (scaled by related entities), concept-clustering 0.5–0.9 (scaled by count), stale 0.5, under-connected 0.4.
+
+---
+
 ## [0.4.0] — 2026-04-12
 
 Bug-fix sprint + schema expansion. System prompt v0.4.

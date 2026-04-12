@@ -305,41 +305,52 @@ The local Obsidian MCP server currently generates `date` and `tags` in frontmatt
 Engrama extends this by injecting `engrama_id` — making it a first-class frontmatter
 citizen for bidirectional sync between notes and the Neo4j graph.
 
-## The distinctive skills: reflect + proactive
+## The distinctive skills: reflect + proactive + ingest
 
-`skills/reflect.py` runs cross-entity pattern detection using multi-hop Cypher.
-It finds Problems sharing Concepts with resolved Problems, projects using the
-same Technologies, courses covering Concepts that appear in open Problems.
-Results are written as `Insight` nodes with a confidence score.
+`skills/reflect.py` runs **adaptive** cross-entity pattern detection. Before
+executing any Cypher, it profiles the graph (counts labels with data) and only
+runs patterns whose preconditions are met. Seven detection patterns:
+
+1. **Cross-project solution** — Problems sharing Concepts with resolved Problems in other Projects
+2. **Shared technology** — any two entities connected to the same Technology via USES/TEACHES/COMPOSED_OF
+3. **Training opportunity** — Vulnerabilities or open Problems linked to Concepts that a Course covers
+4. **Technique transfer** — Techniques used in 2+ Domains
+5. **Concept clustering** — 3+ entities sharing a Concept
+6. **Stale knowledge** — nodes >90 days old still linked to active Projects or Courses
+7. **Under-connected** — nodes with <2 relationships (enrichment candidates)
+
+Results are written as `Insight` nodes with confidence scores scaled by
+connection strength and entity count. Previously dismissed Insights are never
+re-surfaced.
 
 `skills/proactive.py` surfaces pending Insights to the agent and writes them
 back to Obsidian via `vault_append_note`. The agent proposes — the human
 approves. Insights are never acted upon automatically.
 
-Example Cypher behind a proactive insight:
+**Proactivity triggers** (module-level state in the MCP server):
+- After 10+ `engrama_remember` calls since last reflect → `proactive_hint` returned
+- `engrama_search` checks for pending Insights related to the query
+- `engrama_reflect` resets the counter
 
-```cypher
-// "A solution from project A might apply to project B"
-MATCH (open:Problem {status: "open"})<-[:HAS]-(pB:Project),
-      (open)-[:APPLIES]->(c:Concept)<-[:APPLIES]-(resolved:Problem {status: "resolved"}),
-      (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project)
-WHERE pA <> pB
-RETURN pB.name, open.title, d.title, pA.name, c.name
-```
+**Ingestion** (`engrama_ingest`): reads a vault note, raw text, or conversation
+transcript and returns the content with entity extraction guidance plus
+deduplication hints (existing nodes in the graph). The agent then calls
+`engrama_remember` for each extracted entity — agent-driven, not opaque.
 
 ## MCP adapter
 
 Native MCP server built with FastMCP and the official `neo4j` async driver.
 No intermediate mcp-neo4j-cypher layer — Engrama owns its Cypher directly.
 
-Exposes ten tools:
+Exposes eleven tools:
 - `engrama_search` — fulltext search across the memory graph
 - `engrama_remember` — create or update a node (always MERGE)
 - `engrama_relate` — create a relationship (handles title-keyed nodes)
 - `engrama_context` — retrieve the neighbourhood of a node up to N hops
 - `engrama_sync_note` — sync a single Obsidian note to the graph
 - `engrama_sync_vault` — full vault scan, reconcile all notes
-- `engrama_reflect` — cross-entity pattern detection → Insight nodes
+- `engrama_ingest` — read content and return extraction guidance
+- `engrama_reflect` — adaptive cross-entity pattern detection → Insight nodes
 - `engrama_surface_insights` — read pending Insights for agent presentation
 - `engrama_approve_insight` — human approves or dismisses an Insight
 - `engrama_write_insight_to_vault` — append approved Insight to Obsidian note

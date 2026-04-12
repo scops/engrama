@@ -199,7 +199,7 @@ No database credentials are needed here — the server reads them from `.env`.
 
 **3. Restart Claude Desktop** completely (quit and reopen, not just close the window).
 
-You should now see the Engrama tools available. There are ten:
+You should now see the Engrama tools available. There are eleven:
 
 | Tool | Description |
 |------|-------------|
@@ -209,7 +209,8 @@ You should now see the Engrama tools available. There are ten:
 | `engrama_context` | Retrieve the neighbourhood of a node |
 | `engrama_sync_note` | Sync a single Obsidian note to the graph |
 | `engrama_sync_vault` | Full vault scan, reconcile all notes |
-| `engrama_reflect` | Cross-entity pattern detection → Insight nodes |
+| `engrama_ingest` | Read content + extract knowledge automatically |
+| `engrama_reflect` | Adaptive cross-entity pattern detection → Insights |
 | `engrama_surface_insights` | Read pending Insights for review |
 | `engrama_approve_insight` | Approve or dismiss an Insight |
 | `engrama_write_insight_to_vault` | Write approved Insight to Obsidian |
@@ -314,7 +315,7 @@ Technology, Person) with domain-specific nodes and relations from
 | Module | Adds |
 |---|---|
 | `hacking` | Target, Vulnerability, Technique, Tool, CTF |
-| `teaching` | Course, Client, Exercise |
+| `teaching` | Course, Client, Exercise, Material |
 | `photography` | Photo, Location, Species, Gear |
 | `ai` | Model, Dataset, Experiment, Pipeline |
 
