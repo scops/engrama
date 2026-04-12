@@ -20,6 +20,9 @@ Commands:
 
     engrama search <query>
         Fulltext search across the memory graph.
+
+    engrama reindex [--batch-size 50] [--force]
+        Batch re-embed all nodes and store vectors.
 """
 
 from __future__ import annotations
@@ -267,6 +270,113 @@ def cmd_reflect(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_reindex(args: argparse.Namespace) -> int:
+    """Batch re-embed all nodes and store vectors.
+
+    Iterates over every node in the graph, generates embeddings using the
+    configured provider, and stores them via the vector store.  Existing
+    embeddings are overwritten.
+    """
+    try:
+        from engrama.core.client import EngramaClient
+        from engrama.backends import create_embedding_provider
+        from engrama.backends.neo4j.vector import Neo4jVectorStore
+        from engrama.embeddings.text import node_to_text
+
+        embedder = create_embedding_provider()
+        if getattr(embedder, "dimensions", 0) == 0:
+            print(
+                "Error: EMBEDDING_PROVIDER is 'none'. "
+                "Set EMBEDDING_PROVIDER=ollama in .env first.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Health check the embedder
+        if not embedder.health_check():
+            print(
+                "Error: embedding provider health check failed. "
+                "Is Ollama running and the model pulled?",
+                file=sys.stderr,
+            )
+            return 1
+
+        client = EngramaClient()
+        client.verify()
+        vector_store = Neo4jVectorStore(
+            client,
+            dimensions=embedder.dimensions,
+        )
+        vector_store.ensure_index()
+
+        # Fetch all nodes
+        print("Fetching all nodes from graph...")
+        records = client.run(
+            "MATCH (n) WHERE NOT 'Embedded' IN labels(n) OR $force "
+            "RETURN elementId(n) AS eid, labels(n) AS labels, "
+            "properties(n) AS props",
+            {"force": args.force},
+        )
+
+        if not records:
+            print("No nodes to embed.")
+            client.close()
+            return 0
+
+        total = len(records)
+        batch_size = args.batch_size
+        embedded = 0
+        errors = 0
+
+        print(f"Embedding {total} nodes (batch_size={batch_size})...")
+
+        for i in range(0, total, batch_size):
+            batch = records[i : i + batch_size]
+            texts = []
+            metas = []
+
+            for r in batch:
+                labels = r["labels"]
+                props = dict(r["props"])
+                # Pick primary label (skip system labels)
+                primary = next(
+                    (l for l in labels if l != "Embedded"), labels[0]
+                )
+                text = node_to_text(primary, props)
+                texts.append(text)
+                metas.append({
+                    "eid": r["eid"],
+                    "label": primary,
+                    "name": props.get("name") or props.get("title", "?"),
+                })
+
+            try:
+                embeddings = embedder.embed_batch(texts)
+                items = list(zip(
+                    [m["eid"] for m in metas],
+                    embeddings,
+                ))
+                stored = vector_store.store_vectors(items)
+                embedded += stored
+            except Exception as e:
+                print(f"  Batch {i // batch_size + 1} failed: {e}", file=sys.stderr)
+                errors += len(batch)
+
+            done = min(i + batch_size, total)
+            pct = done / total * 100
+            print(f"  [{done}/{total}] {pct:.0f}%% — {embedded} embedded", end="")
+
+        print(f"\nDone: {embedded} nodes embedded, {errors} errors.")
+        count = vector_store.count()
+        print(f"Total vectors in index: {count}")
+        client.close()
+        return 0
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_search(args: argparse.Namespace) -> int:
     """Fulltext search."""
     try:
@@ -284,69 +394,84 @@ def cmd_search(args: argparse.Namespace) -> int:
         return 1
 
 
-def main() -> int:
-    """Main CLI entry point."""
+def main() -> None:
+    """Entry point for ``engrama`` CLI."""
     parser = argparse.ArgumentParser(
         prog="engrama",
-        description="Engrama — graph-based long-term memory for AI agents",
+        description="Engrama — Memory graph CLI",
     )
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    sub = parser.add_subparsers(dest="command")
 
     # --- init ---
-    init_p = subparsers.add_parser(
-        "init",
-        help="Generate schema from a profile and apply to Neo4j",
+    p_init = sub.add_parser("init", help="Generate schema from profile and apply to Neo4j")
+    p_init.add_argument(
+        "--profile", "-p", required=True,
+        help="Profile name (e.g. 'developer') or path to YAML file",
     )
-    init_p.add_argument(
-        "--profile", "-p",
-        required=True,
-        help="Profile name (e.g. 'developer', 'base') or path to YAML file",
+    p_init.add_argument(
+        "--modules", "-m", nargs="*", default=[],
+        help="Domain modules to compose (e.g. hacking teaching photography ai)",
     )
-    init_p.add_argument(
-        "--modules", "-m",
-        nargs="+",
-        default=[],
-        help=(
-            "Domain modules to compose with the base profile "
-            "(e.g. 'hacking teaching photography ai')"
-        ),
+    p_init.add_argument(
+        "--no-apply", action="store_true",
+        help="Generate files only, don't apply to Neo4j",
     )
-    init_p.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview generated output without writing files",
-    )
-    init_p.add_argument(
-        "--no-apply",
-        action="store_true",
-        help="Generate files but don't apply schema to Neo4j",
+    p_init.add_argument(
+        "--dry-run", action="store_true",
+        help="Print generated content to stdout without writing files",
     )
 
     # --- verify ---
-    subparsers.add_parser("verify", help="Check Neo4j connectivity")
+    sub.add_parser("verify", help="Check Neo4j connectivity")
 
     # --- reflect ---
-    subparsers.add_parser("reflect", help="Run cross-entity pattern detection")
+    sub.add_parser("reflect", help="Run cross-entity pattern detection")
 
     # --- search ---
-    search_p = subparsers.add_parser("search", help="Fulltext search the memory graph")
-    search_p.add_argument("query", help="Search string")
-    search_p.add_argument("--limit", "-n", type=int, default=10, help="Max results")
+    p_search = sub.add_parser("search", help="Fulltext search")
+    p_search.add_argument("query", help="Search query")
+    p_search.add_argument(
+        "--limit", "-l", type=int, default=10,
+        help="Max results (default: 10)",
+    )
+
+    # --- reindex ---
+    p_reindex = sub.add_parser(
+        "reindex", help="Batch re-embed all nodes and store vectors",
+    )
+    p_reindex.add_argument(
+        "--batch-size", "-b", type=int, default=50,
+        help="Batch size for embedding (default: 50)",
+    )
+    p_reindex.add_argument(
+        "--force", "-f", action="store_true",
+        help="Re-embed nodes that already have embeddings",
+    )
 
     args = parser.parse_args()
-
-    if args.command is None:
-        parser.print_help()
-        return 0
 
     handlers = {
         "init": cmd_init,
         "verify": cmd_verify,
         "reflect": cmd_reflect,
         "search": cmd_search,
+        "reindex": cmd_reindex,
     }
-    return handlers[args.command](args)
+
+    if args.command is None:
+        parser.print_help()
+        sys.exit(0)
+
+    handler = handlers.get(args.command)
+    if handler is None:
+        parser.print_help()
+        sys.exit(1)
+
+    sys.exit(handler(args))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
+
+
+d

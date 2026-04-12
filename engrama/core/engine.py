@@ -16,12 +16,15 @@ It delegates all storage operations to a ``GraphStore`` backend (see
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from neo4j import Record
 
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
+
+logger = logging.getLogger("engrama.core.engine")
 
 
 class EngramaEngine:
@@ -32,6 +35,11 @@ class EngramaEngine:
             Neo4j driver wrapper) **or** a ``GraphStore`` implementation
             such as :class:`~engrama.backends.neo4j.backend.Neo4jGraphStore`
             or :class:`~engrama.backends.null.NullGraphStore`.
+        vector_store: Optional ``VectorStore`` for embedding storage.
+        embedder: Optional ``EmbeddingProvider`` for generating embeddings
+            on write.  When both *vector_store* and *embedder* are provided
+            (and the embedder has ``dimensions > 0``), new nodes are
+            automatically embedded during :meth:`merge_node`.
 
     When an :class:`EngramaClient` is passed, it is automatically wrapped
     in a :class:`Neo4jGraphStore` so that all internal methods use the
@@ -39,44 +47,36 @@ class EngramaEngine:
     ``EngramaEngine(client)`` continues to work unchanged.
     """
 
-    def __init__(self, client_or_store: Any) -> None:
+    def __init__(
+        self,
+        client_or_store: Any,
+        vector_store: Any = None,
+        embedder: Any = None,
+    ) -> None:
         if isinstance(client_or_store, EngramaClient):
             from engrama.backends.neo4j.backend import Neo4jGraphStore
 
             self._store = Neo4jGraphStore(client_or_store)
             self._client = client_or_store
         else:
-            # Protocol-based backend (Neo4jGraphStore, NullGraphStore, …)
             self._store = client_or_store
-            # Expose the underlying client if the store has one (needed by
-            # reflect / recall skills that call engine._client.run()).
             self._client = getattr(client_or_store, "client", None)
+
+        self._vector_store = vector_store
+        self._embedder = embedder
+        self._embed_on_write: bool = (
+            embedder is not None
+            and vector_store is not None
+            and getattr(embedder, "dimensions", 0) > 0
+            and getattr(vector_store, "dimensions", 0) > 0
+        )
 
     # ------------------------------------------------------------------
     # Write operations
     # ------------------------------------------------------------------
 
     def merge_node(self, label: str, properties: dict[str, Any]) -> list[Record]:
-        """Create or update a node using ``MERGE``.
-
-        The node is matched by its ``name`` property (which must be present
-        in *properties*).  ``created_at`` is set only on the first write;
-        ``updated_at`` is refreshed on every call.
-
-        Parameters:
-            label: The Neo4j node label (e.g. ``"Project"``).
-            properties: Property dict — **must** include ``"name"``
-                        (or ``"title"`` for Decision / Problem nodes).
-
-        Returns:
-            The list of result records from the query.
-
-        Raises:
-            ValueError: If *properties* contains neither ``"name"`` nor
-                        ``"title"``.
-        """
-        # Determine the merge key — most nodes use `name`, but Decision
-        # and Problem use `title` as their unique key.
+        """Create or update a node using ``MERGE``."""
         if "name" in properties:
             merge_key = "name"
         elif "title" in properties:
@@ -88,17 +88,38 @@ class EngramaEngine:
 
         merge_value = properties[merge_key]
 
-        # Build the extra properties dict (excluding the merge key and
-        # engine-managed timestamps).
         extra_props = {
             k: v
             for k, v in properties.items()
             if k not in {merge_key, "created_at", "updated_at"}
         }
 
-        return self._store.merge_node(
-            label, merge_key, merge_value, extra_props,
+        # --- Embed on write (DDR-003 Phase C) ---
+        embedding: list[float] | None = None
+        if self._embed_on_write:
+            try:
+                from engrama.embeddings.text import node_to_text
+
+                text = node_to_text(label, properties)
+                embedding = self._embedder.embed(text)
+            except Exception as e:
+                logger.warning("Embedding failed for %s/%s: %s", label, merge_value, e)
+                embedding = None
+
+        result = self._store.merge_node(
+            label, merge_key, merge_value, extra_props, embedding=embedding,
         )
+
+        # Store vector via VectorStore (adds :Embedded label for index)
+        if embedding and self._vector_store is not None:
+            try:
+                store_by_key = getattr(self._vector_store, "store_vector_by_key", None)
+                if store_by_key:
+                    store_by_key(label, merge_key, merge_value, embedding)
+            except Exception as e:
+                logger.warning("Vector store failed for %s/%s: %s", label, merge_value, e)
+
+        return result
 
     def merge_relation(
         self,
@@ -108,22 +129,7 @@ class EngramaEngine:
         to_name: str,
         to_label: str,
     ) -> list[Record]:
-        """Create or update a relationship between two existing nodes.
-
-        Both endpoints are matched by ``name`` (or ``title`` for
-        title-keyed labels).  If either node does not exist the
-        relationship simply won't be created (no error).
-
-        Parameters:
-            from_name: ``name`` (or ``title``) of the source node.
-            from_label: Neo4j label of the source node.
-            rel_type: Relationship type (e.g. ``"USES"``).
-            to_name: ``name`` (or ``title``) of the target node.
-            to_label: Neo4j label of the target node.
-
-        Returns:
-            The list of result records from the query.
-        """
+        """Create or update a relationship between two existing nodes."""
         from_key = "title" if from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if to_label in TITLE_KEYED_LABELS else "name"
 
@@ -134,12 +140,7 @@ class EngramaEngine:
         )
 
     def run(self, query: str, params: dict[str, Any] | None = None) -> list[Record]:
-        """Execute a raw Cypher query (delegates to the backend).
-
-        Prefer the higher-level methods (``merge_node``, ``merge_relation``,
-        ``search``, ``get_context``) when possible.  Use ``run`` only when
-        none of them cover the query you need.
-        """
+        """Execute a raw Cypher query (delegates to the backend)."""
         return self._store.run_cypher(query, params)
 
     # ------------------------------------------------------------------
@@ -147,29 +148,36 @@ class EngramaEngine:
     # ------------------------------------------------------------------
 
     def search(self, query: str, limit: int = 10) -> list[Record]:
-        """Run a fulltext search against the ``memory_search`` index.
-
-        Parameters:
-            query: Lucene-syntax search string (e.g. ``"neo4j"``).
-            limit: Maximum number of results to return.
-
-        Returns:
-            Records with ``type``, ``name``, and ``score`` fields.
-        """
+        """Run a fulltext search against the ``memory_search`` index."""
         return self._store.fulltext_search(query, limit=limit)
 
-    def get_context(self, name: str, label: str, hops: int = 1) -> list[Record]:
-        """Retrieve the local neighbourhood of a node.
+    def hybrid_search(self, query: str, limit: int = 10) -> list[Any]:
+        """Run a hybrid search combining fulltext and vector similarity.
 
-        Parameters:
-            name: The ``name`` property of the starting node.
-            label: The Neo4j label of the starting node.
-            hops: Maximum relationship depth (default ``1``).
-
-        Returns:
-            Records with ``start``, ``rel``, and ``neighbour`` fields.
+        Falls back to plain fulltext search when no embedder/vector store
+        is configured.
         """
-        # Use "name" as default key field (matches original behaviour).
-        # Title-keyed nodes could be supported by checking TITLE_KEYED_LABELS
-        # here, but that would change existing behaviour — left for a future PR.
+        if self._embed_on_write:
+            from engrama.core.search import HybridSearchEngine
+            engine = HybridSearchEngine(
+                self._store, self._vector_store, self._embedder,
+            )
+            return engine.search(query, limit=limit)
+
+        # Fallback: plain fulltext, wrapped as SearchResult for consistency
+        from engrama.core.search import SearchResult
+        records = self._store.fulltext_search(query, limit=limit)
+        results = []
+        for r in records:
+            d = dict(r) if not isinstance(r, dict) else r
+            results.append(SearchResult(
+                label=d.get("type", ""),
+                name=d.get("name", ""),
+                fulltext_score=d.get("score", 0.0),
+                final_score=d.get("score", 0.0),
+            ))
+        return results
+
+    def get_context(self, name: str, label: str, hops: int = 1) -> list[Record]:
+        """Retrieve the local neighbourhood of a node."""
         return self._store.get_neighbours(label, "name", name, hops=hops)

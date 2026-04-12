@@ -470,6 +470,18 @@ def generate_cypher(profile: dict[str, Any]) -> str:
     lines.append(f"ON EACH [{prop_list}];")
     lines.append("")
 
+    # Vector index for embeddings (DDR-003 Phase C)
+    # Uses secondary :Embedded label so one index covers all primary labels
+    lines.append("// === VECTOR INDEX (DDR-003) ===")
+    lines.append("")
+    lines.append("CREATE VECTOR INDEX memory_vectors IF NOT EXISTS")
+    lines.append("FOR (n:Embedded) ON (n.embedding)")
+    lines.append("OPTIONS {indexConfig: {")
+    lines.append("  `vector.dimensions`: 768,")
+    lines.append("  `vector.similarity_function`: 'cosine'")
+    lines.append("}};")
+    lines.append("")
+
     # Range indexes for status fields
     lines.append("// === RANGE INDEXES ===")
     lines.append("")
@@ -603,6 +615,7 @@ def main() -> None:
         cypher_path = root / "scripts" / "init-schema.cypher"
 
         schema_path.write_text(schema_content, encoding="utf-8")
+        print(f"Written: {schema_path}")
         print(f"Written: {schema_path}")
 
         cypher_path.write_text(cypher_content, encoding="utf-8")

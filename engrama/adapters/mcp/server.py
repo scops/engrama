@@ -285,6 +285,8 @@ def create_engrama_mcp(
 
         # DDR-003: create graph store via factory (sync, for engine/skills)
         graph_store = None
+        vector_store = None
+        embedder = None
         try:
             from engrama.backends import create_stores, create_embedding_provider
             config = {
@@ -309,8 +311,10 @@ def create_engrama_mcp(
                 "database": database,
                 "obsidian": obsidian,
                 "parser": NoteParser(),
-                # DDR-003 Phase A — protocol-based stores (for gradual migration)
+                # DDR-003 — protocol-based stores + embedding
                 "graph_store": graph_store,
+                "vector_store": vector_store if graph_store else None,
+                "embedder": embedder if graph_store else None,
             }
         finally:
             if graph_store is not None:
@@ -347,13 +351,55 @@ def create_engrama_mcp(
         to load context relevant to the current topic, and whenever you need
         to check whether a node already exists before creating it.
 
-        Queries the ``memory_search`` fulltext index across all node types
-        and text properties (name, title, description, notes, rationale,
-        solution, context).
+        Uses hybrid search (fulltext + vector similarity) when embeddings
+        are configured, otherwise falls back to fulltext only.
 
         Returns a JSON array of matches with ``type``, ``name``, and ``score``.
         """
         driver, db = _driver_and_db(ctx)
+        state = ctx.request_context.lifespan_context
+
+        # --- DDR-003 Phase C: Hybrid search when available ---
+        _embedder = state.get("embedder")
+        _vector_store = state.get("vector_store")
+        use_hybrid = (
+            _embedder is not None
+            and _vector_store is not None
+            and getattr(_embedder, "dimensions", 0) > 0
+            and getattr(_vector_store, "dimensions", 0) > 0
+        )
+
+        if use_hybrid:
+            try:
+                from engrama.core.search import HybridSearchEngine
+                _graph_store = state.get("graph_store")
+                if _graph_store is not None:
+                    hybrid = HybridSearchEngine(_graph_store, _vector_store, _embedder)
+                    hybrid_results = hybrid.search(params.query, limit=params.limit)
+                    results = [
+                        {
+                            "type": r.label,
+                            "name": r.name,
+                            "score": round(r.final_score, 4),
+                            "vector_score": round(r.vector_score, 4),
+                            "fulltext_score": round(r.fulltext_score, 4),
+                        }
+                        for r in hybrid_results
+                    ]
+                    if not results:
+                        return f"No results found for '{params.query}'."
+
+                    # --- Proactivity: check for pending Insights ---
+                    response = _build_search_response(
+                        results, params.query, driver, db
+                    )
+                    return json.dumps(
+                        await response, default=str, indent=2
+                    )
+            except Exception as e:
+                logger.warning("Hybrid search failed, falling back to fulltext: %s", e)
+
+        # --- Fulltext fallback ---
         cypher = (
             'CALL db.index.fulltext.queryNodes("memory_search", $query) '
             "YIELD node, score "
@@ -369,6 +415,18 @@ def create_engrama_mcp(
         if not results:
             return f"No results found for '{params.query}'."
 
+        response = await _build_search_response(
+            results, params.query, driver, db
+        )
+        return json.dumps(response, default=str, indent=2)
+
+    async def _build_search_response(
+        results: list[dict[str, Any]],
+        query: str,
+        driver: AsyncDriver,
+        db: str,
+    ) -> dict[str, Any]:
+        """Build the search response with optional proactivity hints."""
         # --- Proactivity: check for pending Insights related to search ---
         related_insights: list[dict[str, Any]] = []
         if _proactive_state.get("enabled", True):
@@ -380,7 +438,7 @@ def create_engrama_mcp(
                     "RETURN node.title AS title, node.body AS body, "
                     "node.confidence AS confidence, score "
                     "ORDER BY score DESC LIMIT 3",
-                    parameters_={"query": params.query},
+                    parameters_={"query": query},
                     database_=db,
                 )
                 related_insights = [dict(r) for r in insight_records]
@@ -394,7 +452,7 @@ def create_engrama_mcp(
                 "There are pending Insights related to your search. "
                 "Consider presenting them to the user with engrama_surface_insights."
             )
-        return json.dumps(response, default=str, indent=2)
+        return response
 
     # -- Tool: engrama_remember -------------------------------------------
 
@@ -546,6 +604,32 @@ def create_engrama_mcp(
             cypher, parameters_=cypher_params, database_=db
         )
         node = dict(records[0]["n"]) if records else {}
+
+        # --- DDR-003 Phase C: Embed on write ---
+        _embedder = state.get("embedder")
+        _vector_store = state.get("vector_store")
+        if (
+            _embedder is not None
+            and _vector_store is not None
+            and getattr(_embedder, "dimensions", 0) > 0
+            and getattr(_vector_store, "dimensions", 0) > 0
+        ):
+            try:
+                from engrama.embeddings.text import node_to_text
+
+                text = node_to_text(label, props)
+                embedding = _embedder.embed(text)
+                if embedding:
+                    store_fn = getattr(_vector_store, "store_vector_by_key", None)
+                    if store_fn:
+                        store_fn(label, merge_key, merge_value, embedding)
+                    else:
+                        # Fallback: get elementId and use store_vectors
+                        if records:
+                            eid = records[0]["n"].element_id
+                            _vector_store.store_vectors([(eid, embedding)])
+            except Exception as e:
+                logger.warning("Embed-on-write failed for %s/%s: %s", label, merge_value, e)
 
         # --- BUG-005: Process inline relations ---
         # Merge both sources: top-level params.relations + extracted from properties

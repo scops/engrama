@@ -78,10 +78,24 @@ def _create_vector_store(
 ) -> Any:
     """Instantiate the vector store for the given backend name."""
     if backend == "neo4j":
-        # When graph and vector are both Neo4j, reuse the same backend.
-        # The Neo4jGraphStore can serve as a vector store in future phases.
-        from engrama.backends.null import NullVectorStore
-        return NullVectorStore()  # Phase A: vectors not yet implemented
+        from engrama.backends.neo4j.vector import Neo4jVectorStore
+
+        # Reuse the same EngramaClient from the graph store
+        client = getattr(graph_store, "_client", None)
+        if client is None:
+            raise ValueError(
+                "VECTOR_BACKEND=neo4j requires GRAPH_BACKEND=neo4j "
+                "(shared client)."
+            )
+
+        dimensions = int(
+            config.get("EMBEDDING_DIMENSIONS")
+            or os.getenv("EMBEDDING_DIMENSIONS", "768")
+        )
+        store = Neo4jVectorStore(client, dimensions=dimensions)
+        # Ensure the vector index exists (idempotent)
+        store.ensure_index()
+        return store
 
     if backend in ("none", "null"):
         from engrama.backends.null import NullVectorStore

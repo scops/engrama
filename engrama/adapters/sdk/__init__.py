@@ -80,7 +80,31 @@ class Engrama:
         vault_path: str | Path | None = None,
     ) -> None:
         self._client = EngramaClient(uri=uri, user=username, password=password)
-        self._engine = EngramaEngine(self._client)
+
+        # DDR-003 Phase C: create vector store + embedder via factory
+        self._vector_store = None
+        self._embedder = None
+        try:
+            from engrama.backends import create_embedding_provider
+            from engrama.backends.neo4j.vector import Neo4jVectorStore
+            import os
+
+            self._embedder = create_embedding_provider()
+            dims = int(os.getenv("EMBEDDING_DIMENSIONS", "768"))
+            vector_backend = os.getenv("VECTOR_BACKEND", "none")
+            if vector_backend == "neo4j":
+                self._vector_store = Neo4jVectorStore(
+                    self._client, dimensions=dims,
+                )
+                self._vector_store.ensure_index()
+        except Exception:
+            pass
+
+        self._engine = EngramaEngine(
+            self._client,
+            vector_store=self._vector_store,
+            embedder=self._embedder,
+        )
 
         # Skills
         self._remember = RememberSkill()
@@ -189,6 +213,31 @@ class Engrama:
         return [
             {"type": r["type"], "name": r["name"], "score": r["score"]}
             for r in records
+        ]
+
+    def hybrid_search(self, query: str, *, limit: int = 10) -> list[dict]:
+        """Run a hybrid search combining fulltext and vector similarity.
+
+        Falls back to plain fulltext when embeddings are not configured.
+
+        Args:
+            query: Natural-language search string.
+            limit: Max results.
+
+        Returns:
+            List of dicts with ``type``, ``name``, ``score``,
+            ``vector_score``, ``fulltext_score``.
+        """
+        results = self._engine.hybrid_search(query, limit=limit)
+        return [
+            {
+                "type": r.label,
+                "name": r.name,
+                "score": round(r.final_score, 4),
+                "vector_score": round(r.vector_score, 4),
+                "fulltext_score": round(r.fulltext_score, 4),
+            }
+            for r in results
         ]
 
     # ------------------------------------------------------------------
