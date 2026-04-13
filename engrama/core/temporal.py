@@ -108,6 +108,9 @@ def days_since(dt: datetime | str | None) -> float:
     if isinstance(dt, str):
         # Neo4j ISO strings may have timezone info or not
         dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+    # Neo4j driver returns neo4j.time.DateTime — convert to stdlib
+    if hasattr(dt, "to_native"):
+        dt = dt.to_native()
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)

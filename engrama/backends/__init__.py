@@ -107,6 +107,35 @@ def _create_vector_store(
     )
 
 
+def create_async_store(
+    driver: Any,
+    database: str = "neo4j",
+    config: dict[str, Any] | None = None,
+) -> Any:
+    """Create an async Neo4j store for MCP server usage.
+
+    Parameters:
+        driver: An initialised ``neo4j.AsyncDriver``.
+        database: Neo4j database name.
+        config: Optional config dict for dimensions etc.
+
+    Returns:
+        A :class:`Neo4jAsyncStore` instance.
+    """
+    from engrama.backends.neo4j.async_store import Neo4jAsyncStore
+
+    cfg = config or {}
+    dimensions = int(
+        cfg.get("EMBEDDING_DIMENSIONS")
+        or os.getenv("EMBEDDING_DIMENSIONS", "0")
+    )
+    return Neo4jAsyncStore(
+        driver,
+        database=database,
+        vector_dimensions=dimensions,
+    )
+
+
 def create_embedding_provider(
     config: dict[str, Any] | None = None,
 ) -> Any:

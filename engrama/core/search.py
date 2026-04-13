@@ -163,6 +163,37 @@ class HybridSearchEngine:
         merged.sort(key=lambda r: r.final_score, reverse=True)
         return merged[:limit]
 
+    async def asearch(self, query: str, limit: int = 10) -> list[SearchResult]:
+        """Async hybrid search — for MCP server and async callers.
+
+        Same algorithm as :meth:`search` but uses ``aembed`` and async
+        store methods.
+        """
+        alpha = self.config.alpha
+
+        # --- Vector branch ---
+        v_results: list[dict[str, Any]] = []
+        if self._vector_enabled:
+            try:
+                query_vec = await self.embedder.aembed(query)
+                if query_vec:
+                    v_results = await self.vector.search_similar(
+                        query_vec, limit=self.config.vector_k,
+                    )
+            except (ConnectionError, RuntimeError, Exception) as e:
+                logger.warning("Async vector search failed, falling back: %s", e)
+                alpha = 0.0
+        else:
+            alpha = 0.0
+
+        # --- Fulltext branch ---
+        f_results = await self.graph.fulltext_search(query, limit=self.config.fulltext_k)
+
+        # --- Merge + rank (sync computation) ---
+        merged = self._merge(v_results, f_results, alpha)
+        merged.sort(key=lambda r: r.final_score, reverse=True)
+        return merged[:limit]
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
@@ -185,13 +216,15 @@ class HybridSearchEngine:
         if v_results:
             v_scores = [r.get("score", 0.0) for r in v_results]
             v_min, v_max = min(v_scores), max(v_scores)
-            v_range = v_max - v_min if v_max > v_min else 1.0
+            v_range = v_max - v_min
+            # When all scores are identical (inc. single result), normalise to 1.0
+            v_all_equal = v_range == 0
 
             for r in v_results:
                 name = r.get("name", "")
                 if not name:
                     continue
-                norm = (r.get("score", 0.0) - v_min) / v_range
+                norm = 1.0 if v_all_equal else (r.get("score", 0.0) - v_min) / v_range
                 sr = SearchResult(
                     node_id=r.get("node_id", ""),
                     label=r.get("label", ""),
@@ -206,13 +239,14 @@ class HybridSearchEngine:
             f_dicts = [dict(r) if not isinstance(r, dict) else r for r in f_results]
             f_scores = [d.get("score", 0.0) for d in f_dicts]
             f_min, f_max = min(f_scores), max(f_scores)
-            f_range = f_max - f_min if f_max > f_min else 1.0
+            f_range = f_max - f_min
+            f_all_equal = f_range == 0
 
             for d in f_dicts:
                 name = d.get("name", "")
                 if not name:
                     continue
-                norm = (d.get("score", 0.0) - f_min) / f_range
+                norm = 1.0 if f_all_equal else (d.get("score", 0.0) - f_min) / f_range
                 # Build temporal properties for Phase D scoring
                 temporal_props = {}
                 if "confidence" in d:

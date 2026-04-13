@@ -33,3 +33,23 @@ class NullProvider:
 
     def __repr__(self) -> str:
         return "NullProvider(dimensions=0)"
+
+    # ------------------------------------------------------------------
+    # Async API (for MCP server — mirrors sync methods)
+    # ------------------------------------------------------------------
+
+    async def aembed(self, text: str) -> list[float]:
+        """Async no-op embed."""
+        return []
+
+    async def aembed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Async no-op batch embed."""
+        return [[] for _ in texts]
+
+    async def ahealth_check(self) -> bool:
+        """Async no-op health check."""
+        return True
+
+    async def aclose(self) -> None:
+        """No-op close."""
+        pass

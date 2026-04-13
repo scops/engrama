@@ -201,10 +201,33 @@
 - [x] Embed-on-write in `EngramaEngine.merge_node()` (DDR-003 Phase C)
 - [x] `engrama reindex` CLI command (DDR-003 Phase C)
 - [x] 18 new tests: vector store, hybrid search, engine embed, factory (DDR-003 Phase C)
-- [ ] Temporal reasoning — valid_from/valid_to, confidence decay (DDR-003 Phase D)
-- [ ] Security hardening — sanitisation, provenance, trust levels (DDR-003 Phase E)
-- [ ] Multi-scope — scope isolation and hierarchy (DDR-003 Phase F)
-- [ ] Benchmarks — LOCOMO/LongMemEval harness (DDR-003 Phase G)
+- [x] Temporal reasoning — confidence decay, valid_to, query_at_date, enhanced stale_knowledge (DDR-003 Phase D) ✅
+
+## Phase 12 · Security hardening
+
+> DDR-003 Phase E — input sanitization, provenance tracking, trust-aware retrieval.
+
+- [ ] Input sanitisation layer
+- [ ] Provenance fields: source, source_agent, source_session, trust_level
+- [ ] Trust-aware retrieval weighting
+- [ ] Scope isolation (Phase F)
+
+## Phase 13 · Multi-scope memory
+
+> DDR-003 Phase F — scope hierarchy: org_id → user_id → agent_id → session_id.
+
+- [ ] Scope model definition
+- [ ] Scope-filtered queries
+- [ ] Cross-scope sharing policies
+
+## Phase 14 · Standard benchmarks
+
+> DDR-003 Phase G — LOCOMO (target 70–80%) and LongMemEval (target 75–85%).
+
+- [ ] LOCOMO harness
+- [ ] LongMemEval harness
+- [ ] Baseline measurements
+- [ ] Iterative improvement
 
 
 ## Definition of done
@@ -216,15 +239,20 @@
 
 ## Test suite status
 
-127 tests expected:
+280+ tests across 15 test files:
 
 - `test_core.py` — core engine integration tests
-- `test_adapters.py` — relate title-key fix (Decision, Problem, name-keyed regression)
+- `test_adapters.py` — MCP server integration
 - `test_obsidian_sync.py` — adapter, parser, engrama_id injection
-- `test_skills.py` — reflect skill (cross-project, shared tech, training, empty graph)
-- `test_phase4_skills.py` — remember (4), recall (3), associate (5), forget (7)
-- `test_proactive.py` — surface (3), approve/dismiss (5), write to vault (4)
-- `test_sdk.py` — SDK public API (14)
-- `test_cli.py` — CLI commands via subprocess (6)
-- `test_composable.py` — merge logic (9), codegen (3), real files (5), CLI (4)
-- `test_embeddings.py` — NullProvider (4), OllamaProvider mocked (10), node_to_text (6), factory (3), live Ollama (5, skip if unavailable)
+- `test_skills.py` — reflect skill (cross-project, shared tech, training, adaptive patterns)
+- `test_phase4_skills.py` — remember, recall, associate, forget
+- `test_proactive.py` — surface, approve/dismiss, write to vault
+- `test_sdk.py` — SDK public API
+- `test_cli.py` — CLI commands
+- `test_composable.py` — profile merge logic, codegen, CLI
+- `test_embeddings.py` — NullProvider, OllamaProvider (mocked+live), text, factory
+- `test_protocols.py` — protocol conformance
+- `test_neo4j_store.py` — async store integration
+- `test_hybrid_search.py` — HybridSearchEngine sync+async, scoring, degradation
+- `test_vector_store.py` — vector index operations
+- `test_temporal.py` — confidence decay, valid_to, temporal queries, CLI decay

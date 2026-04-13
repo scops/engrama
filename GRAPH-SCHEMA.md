@@ -88,6 +88,54 @@
 })
 ```
 
+### Insight
+```
+(:Insight {
+  title:        string,  // UNIQUE, required
+  body:         string,
+  confidence:   float,   // 0.0–1.0
+  status:       string,  // "pending"|"approved"|"dismissed"
+  source_query: string,
+  created_at:   datetime,
+  updated_at:   datetime,
+  approved_at:  datetime,
+  dismissed_at: datetime,
+  synced_at:    datetime,
+  obsidian_path: string
+})
+```
+
+### Material
+```
+(:Material {
+  name:       string,  // UNIQUE, required
+  type:       string,  // "cheatsheet"|"slides"|"exercise"|"reference"
+  format:     string,
+  status:     string,
+  notes:      string,
+  created_at: datetime,
+  updated_at: datetime
+})
+```
+
+## Temporal fields (all nodes)
+
+Every node carries temporal metadata managed by the engine (DDR-003 Phase D):
+
+```
+{
+  created_at:  datetime,   // auto-set on first MERGE
+  updated_at:  datetime,   // auto-updated on every MERGE
+  valid_from:  datetime,   // when the fact became true (auto-set on creation)
+  valid_to:    datetime,   // when superseded (null = still true)
+  confidence:  float,      // 0.0–1.0, decays over time (default 1.0)
+  decayed_at:  datetime,   // last time confidence was decayed
+  embedding:   [float],    // 768-dim vector (when EMBEDDING_PROVIDER != none)
+}
+```
+
+Nodes with embeddings also carry the `:Embedded` secondary label for vector indexing.
+
 ## Relationships
 
 ```
@@ -101,6 +149,7 @@
 (Course)     -[:COVERS]--------> (Concept)
 (Course)     -[:TEACHES]-------> (Technology)
 (Technology) -[:IMPLEMENTS]----> (Concept)
+(Course)     -[:HAS_MATERIAL]-> (Material)
 ```
 
 ## Common queries
@@ -142,5 +191,6 @@ RETURN path LIMIT 50
 - **`MERGE` always** — engine never uses bare `CREATE`
 - **Automatic timestamps** — engine manages `created_at` / `updated_at`
 - **No relationship properties in v1** — added only when demonstrated need arises
-- **Embeddings are optional** — local embeddings via Ollama enhance search when enabled (DDR-003 Phase B); vector index storage planned for Phase C
+- **Embeddings are optional** — local embeddings via Ollama enhance search when enabled (DDR-003 Phase B+C). Vector index on `(:Embedded)` covers all node types.
 - **Always use Cypher parameters** — never string-format queries
+- **Temporal fields auto-managed** — `valid_from`, `confidence` set on creation; `valid_to` cleared on revival (MATCH). Decay applied via `engrama decay` CLI.

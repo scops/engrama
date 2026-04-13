@@ -7,6 +7,79 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.8.0] — 2026-04-14
+
+Temporal reasoning — confidence decay, fact supersession, and time-travel queries (DDR-003 Phase D).
+
+### Added
+- **Confidence decay**: `decay_confidence()` in `Neo4jAsyncStore` applies exponential decay (`confidence × exp(-rate × days_old)`) to stale nodes. Supports dry-run mode, label filtering, and auto-archival of nodes below a confidence threshold. Sync equivalent was already in `Neo4jGraphStore.decay_scores()`.
+- **`valid_to` support**: `merge_node()` now accepts `valid_to` to mark facts as superseded. Setting `valid_to` auto-halves confidence. Updating a superseded node clears `valid_to` (revival) and returns a conflict warning.
+- **Temporal queries**: `query_at_date(date, label?)` in both async and sync stores — returns nodes valid at a specific date (`valid_from <= date AND (valid_to IS NULL OR valid_to >= date)`).
+- **Enhanced CLI `engrama decay`**: `--dry-run` now shows a sample table of nodes that would be affected with current vs projected confidence values.
+- **Enhanced stale knowledge detection**: `reflect` stale_knowledge pattern now also considers nodes with `confidence < 0.3` as stale regardless of age. Insight body includes confidence value for severity assessment.
+- **Async store tests**: `TestAsyncDecayConfidence` (5 tests), `TestAsyncValidTo` (3 tests), `TestAsyncQueryAtDate` (3 tests) added to `test_temporal.py`.
+
+### Changed
+- ARCHITECTURE.md: rewritten 5-layer diagram (Adapters → Skills → Engine → Protocols → Backends), added temporal reasoning section, configuration reference table, updated directory structure to match reality (15 test files).
+- GRAPH-SCHEMA.md: added temporal fields (`valid_to`, `decayed_at`, `embedding`) to all-nodes section.
+- `temporal.py`: `days_since()` now handles Neo4j `DateTime` objects via `.to_native()`.
+- `search.py`: min-max normalization returns `1.0` for single-result sets (was `0.0`).
+
+### Fixed
+- Search normalization bug: a single search result normalized to score 0.0 instead of 1.0.
+- Neo4j `DateTime` incompatibility in `days_since()`: `TypeError` when subtracting `neo4j.time.DateTime` from `datetime.datetime`.
+- `valid_to` and caller-supplied `valid_from` now stored as Neo4j `datetime()` instead of raw strings, fixing `query_at_date` comparisons.
+
+---
+
+## [0.7.0] — 2026-04-13
+
+Async embedding providers and hybrid search (DDR-003 Phase B + C).
+
+### Added
+- **Async embedding methods**: `OllamaProvider` now has `aembed()`, `aembed_batch()`, `ahealth_check()`, `aclose()` using `httpx.AsyncClient`. Sync methods (urllib) remain for CLI/SDK backward compatibility. `NullProvider` also has async counterparts.
+- **Async hybrid search**: `HybridSearchEngine.asearch()` — async counterpart of `search()`. Uses `aembed()` and async store methods. Deployed in MCP server for non-blocking search.
+- **Embed-on-write**: `engrama_remember` and `engrama_sync_note` MCP tools now embed nodes automatically when `EMBEDDING_PROVIDER` is configured. Uses async `aembed()` to avoid blocking the event loop.
+- `core/text.py` — re-export of `embeddings/text.py` for import convenience.
+- `httpx>=0.27` added as optional dependency (`embeddings` and `mcp` extras).
+- **Test suite**: `test_hybrid_search.py` (unit tests with mock stores for sync+async search, scoring formula, graceful degradation, integration tests with real Neo4j+Ollama). Async embedding tests added to `test_embeddings.py` (NullProvider + OllamaProvider async methods).
+
+### Changed
+- **MCP server lifespan**: simplified — no longer creates redundant sync stores for hybrid search. The async store serves as both `GraphStore` and `VectorStore` for `HybridSearchEngine.asearch()`.
+- **MCP `engrama_search`**: uses `HybridSearchEngine.asearch()` with the async store directly, eliminating the sync→async impedance mismatch.
+- **MCP embed-on-write**: uses `await embedder.aembed()` instead of sync `embedder.embed()`, preventing event loop blocking.
+- ARCHITECTURE.md: added "Embedding and hybrid search" section documenting dual-mode providers, embed-on-write, vector index strategy, and scoring formula.
+
+### Fixed
+- **Event loop blocking in MCP server**: embedding and hybrid search previously called sync methods from async context, blocking the event loop. Now fully async.
+
+---
+
+## [0.6.0] — 2026-04-13
+
+Protocol extraction and bug fixes (DDR-003 Phase A). Zero Cypher in server.py.
+
+### Added
+- **DDR-003 Phase A — Protocol layer**: abstract `GraphStore`, `VectorStore`, `EmbeddingProvider` protocols in `core/protocols.py`. All storage operations route through backend implementations — no adapter, skill, or tool writes Cypher directly.
+- `Neo4jAsyncStore` (`backends/neo4j/async_store.py`) — async backend for the MCP server. Contains **all** Cypher that was previously inline in `server.py`. Methods: `merge_node`, `get_node`, `delete_node`, `merge_relation`, `get_neighbours`, `get_node_with_neighbours`, `fulltext_search`, `count_labels`, `run_pattern`, `lookup_node_label`, plus vector ops (`store_embedding`, `search_similar`, `delete_embedding`, `count_embeddings`) and Insight ops (`get_dismissed_titles`, `get_pending_insights`, `get_insight_by_title`, `update_insight_status`, `mark_insight_synced`, `find_insight_by_source_query`, `list_existing_nodes`).
+- `create_async_store()` factory in `backends/__init__.py` — reads `EMBEDDING_DIMENSIONS` from config/env, returns configured `Neo4jAsyncStore`.
+- `count_labels()` and `close()` methods on sync `Neo4jGraphStore`.
+- `NullGraphStore` and `NullVectorStore` — no-op implementations for testing and dry-run mode.
+- **Test suites**: `test_protocols.py` (protocol conformance for all stores, NullGraphStore/NullVectorStore behaviour, async store method inventory) and `test_neo4j_store.py` (integration tests against real Neo4j: merge, dedup, update, relations, fulltext COALESCE, neighbours, count_labels, run_cypher, get/delete node, health_check).
+- `.env.example`: `HYBRID_ALPHA` (fulltext vs vector weight) and `HYBRID_GRAPH_BETA` (graph topology boost).
+
+### Fixed
+- **BUG-006**: `engrama_search` returned `null` names for title-keyed nodes (Decision, Problem, Vulnerability, etc.). Fulltext search and neighbour queries now use `COALESCE(node.name, node.title)`.
+- **BUG-007**: `engrama_reflect` generated duplicate under-connected Insights on repeated runs. `_detect_under_connected` now checks for existing pending/approved Insight by `source_query` before creating; updates in place if found; respects previously dismissed Insights.
+- **BUG-008**: `engrama_context` showed duplicate relation entries in the `via` array. Deduplicated in `get_node_with_neighbours`.
+
+### Changed
+- **server.py**: rewired from inline Cypher to `Neo4jAsyncStore` method calls. Contains **zero** Cypher strings (was ~2053 lines, now ~1753). MCP tools handle orchestration, validation, vault I/O, and response formatting only.
+- **server.py lifespan**: creates `Neo4jAsyncStore` via `create_async_store(driver, database, config)` and stores it in context alongside the raw driver.
+- ARCHITECTURE.md: updated stack table, directory structure, and added "Protocol layer (DDR-003 Phase A)" section documenting sync/async stores, null implementations, and factory pattern.
+
+---
+
 ## [0.5.0] — 2026-04-12
 
 Three core features that make Engrama valuable beyond a raw Neo4j wrapper. System prompt v0.5.

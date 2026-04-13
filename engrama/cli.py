@@ -378,7 +378,11 @@ def cmd_reindex(args: argparse.Namespace) -> int:
 
 
 def cmd_decay(args: argparse.Namespace) -> int:
-    """Apply confidence decay to all nodes (DDR-003 Phase D)."""
+    """Apply confidence decay to all nodes (DDR-003 Phase D).
+
+    Uses the sync backend's ``decay_scores`` for writes and provides
+    a detailed sample table when ``--dry-run`` is set.
+    """
     try:
         from engrama.adapters.sdk import Engrama
         with Engrama() as eng:
@@ -388,9 +392,35 @@ def cmd_decay(args: argparse.Namespace) -> int:
             label = args.label
 
             if args.dry_run:
-                print("Dry run — no changes will be made.")
+                print("[DRY RUN] No changes will be written.\n")
                 print(f"  rate={rate}, min_confidence={min_conf}, "
-                      f"max_age_days={max_age}, label={label or 'all'}")
+                      f"max_age_days={max_age}, label={label or 'all'}\n")
+                # Show a preview of what would be decayed
+                try:
+                    preview = eng._store.query_at_date(
+                        "2099-12-31", label=label, limit=20,
+                    )
+                except Exception:
+                    preview = []
+                if not preview:
+                    print("  No nodes with confidence data found.")
+                    return 0
+                import math
+                from datetime import datetime, timezone
+                print(f"  {'Name':<30} {'Label':<12} {'Conf':>6} {'→ New':>6} {'Days':>5}")
+                print(f"  {'─' * 30} {'─' * 12} {'─' * 6} {'─' * 6} {'─' * 5}")
+                now = datetime.now(timezone.utc)
+                for r in preview:
+                    old_c = r.get("confidence") or 1.0
+                    vf = r.get("valid_from")
+                    if vf and hasattr(vf, "to_native"):
+                        vf = vf.to_native()
+                    days = 0.0
+                    if vf and hasattr(vf, "timestamp"):
+                        days = max(0.0, (now - vf.replace(tzinfo=timezone.utc)).total_seconds() / 86400)
+                    new_c = old_c * math.exp(-rate * days)
+                    name = (r.get("name") or "?")[:30]
+                    print(f"  {name:<30} {r.get('label', '?'):<12} {old_c:>6.3f} {new_c:>6.3f} {days:>5.0f}")
                 return 0
 
             result = eng.decay_scores(

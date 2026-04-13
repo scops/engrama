@@ -25,6 +25,11 @@ import urllib.request
 import urllib.error
 from typing import Any
 
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
 logger = logging.getLogger("engrama.embeddings.ollama")
 
 
@@ -61,6 +66,7 @@ class OllamaProvider:
         ).rstrip("/")
         self._timeout: int = timeout
         self._embed_url: str = f"{self._base_url}/api/embed"
+        self._async_client: httpx.AsyncClient | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -177,3 +183,86 @@ class OllamaProvider:
             f"dimensions={self.dimensions}, "
             f"url={self._base_url!r})"
         )
+
+    # ------------------------------------------------------------------
+    # Async API (for MCP server — uses httpx)
+    # ------------------------------------------------------------------
+
+    async def aembed(self, text: str) -> list[float]:
+        """Async embed a single text via POST /api/embed."""
+        client = self._get_async_client()
+        response = await client.post(
+            self._embed_url,
+            json={"model": self.model, "input": text},
+            timeout=self._timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        embeddings = data.get("embeddings")
+        if not embeddings or not embeddings[0]:
+            raise RuntimeError(
+                f"Ollama returned no embeddings for model {self.model!r}"
+            )
+        return embeddings[0]
+
+    async def aembed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Async embed a batch of texts."""
+        if not texts:
+            return []
+        client = self._get_async_client()
+        response = await client.post(
+            self._embed_url,
+            json={"model": self.model, "input": texts},
+            timeout=self._timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        embeddings = data.get("embeddings", [])
+        if len(embeddings) != len(texts):
+            raise RuntimeError(
+                f"Expected {len(texts)} embeddings, got {len(embeddings)}"
+            )
+        return embeddings
+
+    async def ahealth_check(self) -> bool:
+        """Async health check — verify Ollama is running and model available."""
+        try:
+            client = self._get_async_client()
+            response = await client.get(
+                f"{self._base_url}/api/tags", timeout=5.0,
+            )
+            if response.status_code != 200:
+                return False
+            data = response.json()
+            models = [m.get("name", "") for m in data.get("models", [])]
+            available = any(
+                m == self.model or m.startswith(f"{self.model}:")
+                for m in models
+            )
+            if not available:
+                logger.warning(
+                    "Ollama is running but model %r not found. Available: %s",
+                    self.model,
+                    ", ".join(models[:10]),
+                )
+            return available
+        except Exception as e:
+            logger.warning("Ollama async health check failed: %s", e)
+            return False
+
+    async def aclose(self) -> None:
+        """Close the async HTTP client."""
+        if self._async_client is not None:
+            await self._async_client.aclose()
+            self._async_client = None
+
+    def _get_async_client(self) -> httpx.AsyncClient:
+        """Lazily create the httpx async client."""
+        if self._async_client is None:
+            if httpx is None:
+                raise ImportError(
+                    "httpx is required for async embedding. "
+                    "Install it: pip install httpx"
+                )
+            self._async_client = httpx.AsyncClient()
+        return self._async_client

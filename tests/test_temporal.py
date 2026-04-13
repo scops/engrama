@@ -438,3 +438,262 @@ class TestCLIDecay:
         # Dry run should succeed without DB
         result = cmd_decay(args)
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# 6. Async store integration tests (DDR-003 Phase D)
+# ---------------------------------------------------------------------------
+
+
+def _unique(prefix: str) -> str:
+    """Generate a unique name for test isolation."""
+    import uuid
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+async def async_store():
+    """Create an async store backed by the test Neo4j instance."""
+    from neo4j import AsyncGraphDatabase
+    from engrama.backends.neo4j.async_store import Neo4jAsyncStore
+
+    uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    user = os.getenv("NEO4J_USERNAME", "neo4j")
+    password = os.getenv("NEO4J_PASSWORD", "")
+    driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+    store = Neo4jAsyncStore(driver, database="neo4j")
+    yield store
+    await driver.close()
+
+
+@pytest.fixture
+async def acleanup(async_store):
+    """Track nodes created during a test for cleanup."""
+    created: list[tuple[str, str, str]] = []
+
+    def track(label: str, key_field: str, key_value: str) -> None:
+        created.append((label, key_field, key_value))
+
+    yield track
+
+    for label, key_field, key_value in created:
+        try:
+            await async_store.delete_node(label, key_field, key_value, soft=False)
+        except Exception:
+            pass
+
+
+class TestAsyncDecayConfidence:
+    """Async store decay_confidence integration tests."""
+
+    @pytest.mark.asyncio
+    async def test_decay_reduces_confidence(self, async_store, acleanup):
+        """Old nodes should have lower confidence after decay."""
+        name = _unique("adecay")
+        acleanup("Technology", "name", name)
+
+        await async_store.merge_node("Technology", "name", name, {"_test_phase_d": True})
+        # Backdate updated_at to 30 days ago
+        await async_store.run_pattern(
+            "MATCH (n:Technology {name: $name}) "
+            "SET n.updated_at = datetime() - duration({days: 30})",
+            {"name": name},
+        )
+
+        result = await async_store.decay_confidence(decay_rate=0.01, dry_run=False)
+        assert "affected" in result
+        assert "sample" in result
+
+        node = await async_store.get_node("Technology", "name", name)
+        conf = node.get("confidence", 1.0)
+        expected = 1.0 * math.exp(-0.01 * 30)
+        assert conf < 0.9, f"Expected decay, got {conf}"
+        assert abs(conf - expected) < 0.1
+
+    @pytest.mark.asyncio
+    async def test_decay_dry_run_no_changes(self, async_store, acleanup):
+        """Dry run should report changes without writing."""
+        name = _unique("adecay-dry")
+        acleanup("Technology", "name", name)
+
+        await async_store.merge_node("Technology", "name", name, {"_test_phase_d": True})
+        await async_store.run_pattern(
+            "MATCH (n:Technology {name: $name}) "
+            "SET n.updated_at = datetime() - duration({days: 60})",
+            {"name": name},
+        )
+
+        result = await async_store.decay_confidence(decay_rate=0.01, dry_run=True)
+        assert "sample" in result
+
+        node = await async_store.get_node("Technology", "name", name)
+        assert node.get("confidence", 1.0) == 1.0
+
+    @pytest.mark.asyncio
+    async def test_fresh_nodes_not_affected(self, async_store, acleanup):
+        """Nodes updated today should not decay."""
+        name = _unique("adecay-fresh")
+        acleanup("Technology", "name", name)
+
+        await async_store.merge_node("Technology", "name", name, {"_test_phase_d": True})
+        node_before = await async_store.get_node("Technology", "name", name)
+        conf_before = node_before.get("confidence", 1.0)
+
+        await async_store.decay_confidence(decay_rate=0.1, dry_run=False)
+
+        node_after = await async_store.get_node("Technology", "name", name)
+        assert node_after.get("confidence", 1.0) == conf_before
+
+    @pytest.mark.asyncio
+    async def test_archived_nodes_not_affected(self, async_store, acleanup):
+        """Archived nodes should not decay."""
+        name = _unique("adecay-arch")
+        acleanup("Technology", "name", name)
+
+        await async_store.merge_node(
+            "Technology", "name", name,
+            {"_test_phase_d": True, "status": "archived"},
+        )
+        await async_store.run_pattern(
+            "MATCH (n:Technology {name: $name}) "
+            "SET n.updated_at = datetime() - duration({days: 60})",
+            {"name": name},
+        )
+
+        await async_store.decay_confidence(decay_rate=0.1, dry_run=False)
+        node = await async_store.get_node("Technology", "name", name)
+        assert node.get("confidence", 1.0) == 1.0
+
+    @pytest.mark.asyncio
+    async def test_very_low_confidence_not_affected(self, async_store, acleanup):
+        """Nodes with confidence < 0.05 should not decay further."""
+        name = _unique("adecay-low")
+        acleanup("Technology", "name", name)
+
+        await async_store.merge_node(
+            "Technology", "name", name,
+            {"_test_phase_d": True, "confidence": 0.03},
+        )
+        await async_store.run_pattern(
+            "MATCH (n:Technology {name: $name}) "
+            "SET n.updated_at = datetime() - duration({days: 60})",
+            {"name": name},
+        )
+
+        await async_store.decay_confidence(decay_rate=0.1, dry_run=False)
+        node = await async_store.get_node("Technology", "name", name)
+        assert node.get("confidence") == pytest.approx(0.03, abs=0.001)
+
+
+class TestAsyncValidTo:
+    """Async store valid_to integration tests."""
+
+    @pytest.mark.asyncio
+    async def test_valid_to_stored(self, async_store, acleanup):
+        """Setting valid_to marks a fact as superseded."""
+        name = _unique("avt-store")
+        acleanup("Technology", "name", name)
+
+        result = await async_store.merge_node(
+            "Technology", "name", name,
+            {"_test_phase_d": True, "valid_to": "2026-01-01T00:00:00Z"},
+        )
+        node = result["node"]
+        assert node.get("valid_to") is not None
+        assert node.get("confidence") == pytest.approx(0.5, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_update_superseded_node_warns(self, async_store, acleanup):
+        """Updating a node with valid_to should include warning."""
+        name = _unique("avt-warn")
+        acleanup("Technology", "name", name)
+
+        await async_store.merge_node(
+            "Technology", "name", name,
+            {"_test_phase_d": True, "valid_to": "2025-12-31T00:00:00Z"},
+        )
+
+        result = await async_store.merge_node(
+            "Technology", "name", name,
+            {"_test_phase_d": True, "description": "revived"},
+        )
+        assert "warning" in result, "Expected conflict warning on revival"
+        assert "superseded" in result["warning"].lower()
+
+    @pytest.mark.asyncio
+    async def test_valid_to_with_explicit_confidence(self, async_store, acleanup):
+        """Setting valid_to with explicit confidence halves the given value."""
+        name = _unique("avt-conf")
+        acleanup("Technology", "name", name)
+
+        result = await async_store.merge_node(
+            "Technology", "name", name,
+            {"_test_phase_d": True, "valid_to": "2026-06-01", "confidence": 0.8},
+        )
+        node = result["node"]
+        assert node.get("confidence") == pytest.approx(0.4, abs=0.01)
+
+
+class TestAsyncQueryAtDate:
+    """Async store query_at_date integration tests."""
+
+    @pytest.mark.asyncio
+    async def test_query_at_date_filters_correctly(self, async_store, acleanup):
+        """Only nodes valid at the given date should be returned."""
+        name = _unique("aqad")
+        acleanup("Technology", "name", name)
+
+        await async_store.merge_node("Technology", "name", name, {"_test_phase_d": True})
+        await async_store.run_pattern(
+            "MATCH (n:Technology {name: $name}) "
+            "SET n.valid_from = datetime('2026-01-01T00:00:00Z')",
+            {"name": name},
+        )
+
+        results = await async_store.query_at_date("2026-03-01")
+        names = [r["name"] for r in results]
+        assert name in names
+
+        results_before = await async_store.query_at_date("2025-12-01")
+        names_before = [r["name"] for r in results_before]
+        assert name not in names_before
+
+    @pytest.mark.asyncio
+    async def test_query_at_date_excludes_superseded(self, async_store, acleanup):
+        """Nodes with valid_to before the query date are excluded."""
+        name = _unique("aqad-excl")
+        acleanup("Technology", "name", name)
+
+        await async_store.merge_node(
+            "Technology", "name", name,
+            {"_test_phase_d": True, "valid_to": "2026-02-28T23:59:59Z"},
+        )
+        await async_store.run_pattern(
+            "MATCH (n:Technology {name: $name}) "
+            "SET n.valid_from = datetime('2026-01-01T00:00:00Z')",
+            {"name": name},
+        )
+
+        results_during = await async_store.query_at_date("2026-02-15")
+        names_during = [r["name"] for r in results_during]
+        assert name in names_during
+
+        results_after = await async_store.query_at_date("2026-04-01")
+        names_after = [r["name"] for r in results_after]
+        assert name not in names_after
+
+    @pytest.mark.asyncio
+    async def test_query_at_date_with_label_filter(self, async_store, acleanup):
+        """Label filter restricts results."""
+        name = _unique("aqad-lbl")
+        acleanup("Project", "name", name)
+
+        await async_store.merge_node("Project", "name", name, {"_test_phase_d": True})
+
+        results = await async_store.query_at_date("2026-12-31", label="Project")
+        names = [r["name"] for r in results]
+        assert name in names
+
+        results_wrong = await async_store.query_at_date("2026-12-31", label="Technology")
+        names_wrong = [r["name"] for r in results_wrong]
+        assert name not in names_wrong

@@ -21,6 +21,9 @@ Cypher parameters — never string formatting.
 The server uses an **async** Neo4j driver managed through FastMCP's
 lifespan hook, so the connection is shared across tool calls and
 properly closed on shutdown.
+
+This refactored version uses ``Neo4jAsyncStore`` exclusively — all inline
+Cypher has been moved to the async_store backend module.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from engrama.core.schema import NodeType, RelationType, TITLE_KEYED_LABELS
 from engrama.adapters.obsidian import ObsidianAdapter, NoteParser
+from engrama.backends.neo4j.async_store import Neo4jAsyncStore
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -259,12 +263,7 @@ def create_engrama_mcp(
         A :class:`FastMCP` instance ready to run.
     """
 
-    # -- Lifespan: manage the async Neo4j driver + Obsidian adapter ------
-    #
-    # DDR-003 Phase A: the lifespan also creates a sync graph store via the
-    # backend factory.  MCP tools continue using the async driver directly
-    # (Phase A is extraction, not rewrite), but the store is available in
-    # the context for gradual migration in later phases.
+    # -- Lifespan: manage the async Neo4j driver + async store ------
 
     @asynccontextmanager
     async def lifespan(server: FastMCP):  # noqa: ARG001
@@ -283,25 +282,28 @@ def create_engrama_mcp(
         else:
             logger.info("VAULT_PATH not set — Obsidian sync tools disabled")
 
-        # DDR-003: create graph store via factory (sync, for engine/skills)
-        graph_store = None
-        vector_store = None
+        # DDR-003: create async store + embedding provider
+        async_store = None
         embedder = None
         try:
-            from engrama.backends import create_stores, create_embedding_provider
+            from engrama.backends import create_async_store, create_embedding_provider
             config = {
                 "GRAPH_BACKEND": "neo4j",
                 "NEO4J_URI": db_url,
                 "NEO4J_USERNAME": username,
                 "NEO4J_PASSWORD": password,
             }
-            graph_store, vector_store = create_stores(config)
+            # Create async store for all MCP operations (graph + vector)
+            async_store = create_async_store(driver, database, config)
+            # Create embedding provider (sync+async methods)
             embedder = create_embedding_provider()
-            logger.info("Backend factory: graph=%r, vector=%r, embedder=%r",
-                        graph_store, vector_store, embedder)
+            logger.info(
+                "Async store: %r, embedder: %r (dims=%d)",
+                async_store, embedder, getattr(embedder, "dimensions", 0),
+            )
         except Exception as e:
-            logger.warning("Backend factory failed (non-fatal): %s", e)
-            graph_store = None
+            logger.warning("Store factory failed (non-fatal): %s", e)
+            async_store = None
 
         try:
             await driver.verify_connectivity()
@@ -309,17 +311,16 @@ def create_engrama_mcp(
             yield {
                 "driver": driver,
                 "database": database,
+                "async_store": async_store,
                 "obsidian": obsidian,
                 "parser": NoteParser(),
-                # DDR-003 — protocol-based stores + embedding
-                "graph_store": graph_store,
-                "vector_store": vector_store if graph_store else None,
-                "embedder": embedder if graph_store else None,
+                "embedder": embedder,
             }
         finally:
-            if graph_store is not None:
+            # Close async embedding client if present
+            if embedder is not None and hasattr(embedder, "aclose"):
                 try:
-                    graph_store.close()
+                    await embedder.aclose()
                 except Exception:
                     pass
             await driver.close()
@@ -327,14 +328,17 @@ def create_engrama_mcp(
 
     mcp = FastMCP("engrama_mcp", lifespan=lifespan)
 
-    # -- Helper: get driver from context ----------------------------------
+    # -- Helper: get async store from context -----
 
-    def _driver_and_db(ctx: Context) -> tuple[AsyncDriver, str]:
-        """Extract the Neo4j driver and database name from the lifespan state."""
+    def _store(ctx: Context) -> Neo4jAsyncStore:
+        """Extract the async store from the lifespan state."""
         state = ctx.request_context.lifespan_context
-        return state["driver"], state["database"]
+        store = state.get("async_store")
+        if store is None:
+            raise RuntimeError("Async store not initialised")
+        return store
 
-    # -- Tool: engrama_search ---------------------------------------------
+    # -- Tool: engrama_search -----
 
     @mcp.tool(
         name="engrama_search",
@@ -356,93 +360,72 @@ def create_engrama_mcp(
 
         Returns a JSON array of matches with ``type``, ``name``, and ``score``.
         """
-        driver, db = _driver_and_db(ctx)
+        store = _store(ctx)
         state = ctx.request_context.lifespan_context
 
         # --- DDR-003 Phase C: Hybrid search when available ---
         _embedder = state.get("embedder")
-        _vector_store = state.get("vector_store")
         use_hybrid = (
             _embedder is not None
-            and _vector_store is not None
             and getattr(_embedder, "dimensions", 0) > 0
-            and getattr(_vector_store, "dimensions", 0) > 0
+            and hasattr(_embedder, "aembed")
         )
 
         if use_hybrid:
             try:
                 from engrama.core.search import HybridSearchEngine
-                _graph_store = state.get("graph_store")
-                if _graph_store is not None:
-                    hybrid = HybridSearchEngine(_graph_store, _vector_store, _embedder)
-                    hybrid_results = hybrid.search(params.query, limit=params.limit)
-                    results = [
-                        {
-                            "type": r.label,
-                            "name": r.name,
-                            "score": round(r.final_score, 4),
-                            "vector_score": round(r.vector_score, 4),
-                            "fulltext_score": round(r.fulltext_score, 4),
-                            "temporal_score": round(r.temporal_score, 4),
-                        }
-                        for r in hybrid_results
-                    ]
-                    if not results:
-                        return f"No results found for '{params.query}'."
+                # Use the async store as both graph and vector backend
+                hybrid = HybridSearchEngine(store, store, _embedder)
+                hybrid_results = await hybrid.asearch(params.query, limit=params.limit)
+                results = [
+                    {
+                        "type": r.label,
+                        "name": r.name,
+                        "score": round(r.final_score, 4),
+                        "vector_score": round(r.vector_score, 4),
+                        "fulltext_score": round(r.fulltext_score, 4),
+                        "temporal_score": round(r.temporal_score, 4),
+                    }
+                    for r in hybrid_results
+                ]
+                if not results:
+                    return f"No results found for '{params.query}'."
 
-                    # --- Proactivity: check for pending Insights ---
-                    response = _build_search_response(
-                        results, params.query, driver, db
-                    )
-                    return json.dumps(
-                        await response, default=str, indent=2
-                    )
+                # --- Proactivity: check for pending Insights ---
+                response = await _build_search_response(
+                    results, params.query, store
+                )
+                return json.dumps(response, default=str, indent=2)
             except Exception as e:
                 logger.warning("Hybrid search failed, falling back to fulltext: %s", e)
 
         # --- Fulltext fallback ---
-        cypher = (
-            'CALL db.index.fulltext.queryNodes("memory_search", $query) '
-            "YIELD node, score "
-            "RETURN labels(node)[0] AS type, node.name AS name, score "
-            "ORDER BY score DESC LIMIT $limit"
-        )
-        records, _, _ = await driver.execute_query(
-            cypher,
-            parameters_={"query": params.query, "limit": params.limit},
-            database_=db,
-        )
-        results = [dict(r) for r in records]
+        results = await store.fulltext_search(params.query, params.limit)
         if not results:
             return f"No results found for '{params.query}'."
 
         response = await _build_search_response(
-            results, params.query, driver, db
+            results, params.query, store
         )
         return json.dumps(response, default=str, indent=2)
 
     async def _build_search_response(
         results: list[dict[str, Any]],
         query: str,
-        driver: AsyncDriver,
-        db: str,
+        store: Neo4jAsyncStore,
     ) -> dict[str, Any]:
         """Build the search response with optional proactivity hints."""
         # --- Proactivity: check for pending Insights related to search ---
         related_insights: list[dict[str, Any]] = []
         if _proactive_state.get("enabled", True):
             try:
-                insight_records, _, _ = await driver.execute_query(
-                    'CALL db.index.fulltext.queryNodes("memory_search", $query) '
-                    "YIELD node, score "
-                    "WHERE 'Insight' IN labels(node) AND node.status = 'pending' "
-                    "RETURN node.title AS title, node.body AS body, "
-                    "node.confidence AS confidence, score "
-                    "ORDER BY score DESC LIMIT 3",
-                    parameters_={"query": query},
-                    database_=db,
-                )
-                related_insights = [dict(r) for r in insight_records]
+                insight_results = await store.fulltext_search(query, limit=3)
+                # Filter for pending Insights
+                related_insights = [
+                    {k: v for k, v in r.items() if k in ("title", "body", "confidence", "score")}
+                    for r in insight_results
+                    if r.get("type") == "Insight"
+                ]
             except Exception:
                 pass
 
@@ -455,7 +438,7 @@ def create_engrama_mcp(
             )
         return response
 
-    # -- Tool: engrama_remember -------------------------------------------
+    # -- Tool: engrama_remember ---
 
     @mcp.tool(
         name="engrama_remember",
@@ -484,12 +467,11 @@ def create_engrama_mcp(
         """
         import re as _re
 
+        store = _store(ctx)
         label = params.label
         props = dict(params.properties)
 
         # Extract relations before MERGE — Neo4j can't store dicts as properties.
-        # Relations may arrive via the top-level `relations` field OR nested
-        # inside `properties`; merge both sources so either path works.
         inline_relations: dict[str, list[str]] = props.pop("relations", {}) or {}
         if not isinstance(inline_relations, dict):
             inline_relations = {}
@@ -519,11 +501,9 @@ def create_engrama_mcp(
             slug = _re.sub(r"[\s]+", "-", slug).strip("-")
             vault_path = f"{slug}.md"
 
-            # Check if a note already exists for this node (by obsidian_path
-            # stored on an existing graph node, or by filename)
+            # Check if a note already exists
             note_data = obsidian.read_note(vault_path)
             if note_data["success"]:
-                # Note exists — read its engrama_id
                 engrama_id = note_data["frontmatter"].get("engrama_id")
 
             if not engrama_id:
@@ -531,11 +511,9 @@ def create_engrama_mcp(
 
             # Build frontmatter for the note
             fm: dict[str, Any] = {"engrama_id": engrama_id, "type": label}
-            # Add all user-provided properties
             for k, v in props.items():
                 if k not in ("created_at", "updated_at"):
                     fm[k] = v
-            # Ensure relations block exists (DDR-002)
             if "relations" not in fm:
                 fm["relations"] = {}
 
@@ -562,7 +540,6 @@ def create_engrama_mcp(
                         "---\n" + fm_yaml + "---\n\n"
                         f"# {merge_value}\n"
                     )
-                    # Add notes/description as body text if present
                     desc = props.get("notes") or props.get("description")
                     if desc:
                         new_content += f"\n> {desc}\n"
@@ -573,8 +550,7 @@ def create_engrama_mcp(
                 logger.warning("Could not write vault note for %s: %s", merge_value, e)
                 vault_path = None
 
-        # --- Graph write ---
-        # Include obsidian metadata in node properties
+        # --- Graph write using async store ---
         if vault_path:
             props["obsidian_path"] = vault_path
         if engrama_id:
@@ -582,58 +558,33 @@ def create_engrama_mcp(
 
         extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
 
-        # Build parameterised SET clauses
-        set_create = ["n.created_at = datetime()", "n.updated_at = datetime()"]
-        set_match = ["n.updated_at = datetime()"]
-        cypher_params: dict[str, Any] = {"merge_value": merge_value}
+        result = await store.merge_node(label, merge_key, merge_value, extra)
+        node = result["node"]
 
-        for idx, (key, value) in enumerate(extra.items()):
-            pname = f"p{idx}"
-            set_create.append(f"n.{key} = ${pname}")
-            set_match.append(f"n.{key} = ${pname}")
-            cypher_params[pname] = value
-
-        cypher = (
-            f"MERGE (n:{label} {{{merge_key}: $merge_value}}) "
-            f"ON CREATE SET {', '.join(set_create)} "
-            f"ON MATCH SET {', '.join(set_match)} "
-            "RETURN n"
-        )
-
-        driver, db = _driver_and_db(ctx)
-        records, _, _ = await driver.execute_query(
-            cypher, parameters_=cypher_params, database_=db
-        )
-        node = dict(records[0]["n"]) if records else {}
-
-        # --- DDR-003 Phase C: Embed on write ---
+        # --- DDR-003 Phase C: Embed on write (async) ---
         _embedder = state.get("embedder")
-        _vector_store = state.get("vector_store")
         if (
             _embedder is not None
-            and _vector_store is not None
             and getattr(_embedder, "dimensions", 0) > 0
-            and getattr(_vector_store, "dimensions", 0) > 0
         ):
             try:
                 from engrama.embeddings.text import node_to_text
 
                 text = node_to_text(label, props)
-                embedding = _embedder.embed(text)
+                # Use async embed if available (non-blocking), fallback to sync
+                if hasattr(_embedder, "aembed"):
+                    embedding = await _embedder.aembed(text)
+                else:
+                    embedding = _embedder.embed(text)
                 if embedding:
-                    store_fn = getattr(_vector_store, "store_vector_by_key", None)
-                    if store_fn:
-                        store_fn(label, merge_key, merge_value, embedding)
-                    else:
-                        # Fallback: get elementId and use store_vectors
-                        if records:
-                            eid = records[0]["n"].element_id
-                            _vector_store.store_vectors([(eid, embedding)])
+                    # Store via async store (preferred) or sync vector store
+                    await store.store_embedding(
+                        label, merge_key, merge_value, embedding,
+                    )
             except Exception as e:
                 logger.warning("Embed-on-write failed for %s/%s: %s", label, merge_value, e)
 
         # --- BUG-005: Process inline relations ---
-        # Merge both sources: top-level params.relations + extracted from properties
         all_relations: dict[str, list[str]] = {}
         for src in (params.relations, inline_relations):
             for rtype, targets in (src or {}).items():
@@ -654,25 +605,13 @@ def create_engrama_mcp(
 
                 for target_name in targets:
                     # Find or create the target node
-                    target_label = None
-                    try:
-                        lookup_records, _, _ = await driver.execute_query(
-                            "MATCH (n) WHERE toLower(n.name) = toLower($name) "
-                            "RETURN labels(n)[0] AS label LIMIT 1",
-                            parameters_={"name": target_name},
-                            database_=db,
-                        )
-                        if lookup_records:
-                            target_label = lookup_records[0]["label"]
-                    except Exception:
-                        pass
+                    target_label = await store.lookup_node_label(target_name)
 
                     if target_label is None:
                         # Infer label from relation type and create stub
                         target_label = ObsidianSync._infer_stub_label(rel_type_upper)
                         try:
-                            await _async_merge_node(driver, db, target_label, {
-                                "name": target_name,
+                            await store.merge_node(target_label, "name", target_name, {
                                 "status": "stub",
                             })
                         except Exception as e:
@@ -681,14 +620,10 @@ def create_engrama_mcp(
 
                     # Create the relationship
                     try:
-                        from_key_r = "title" if label in TITLE_KEYED_LABELS else "name"
-                        to_key_r = "title" if target_label in TITLE_KEYED_LABELS else "name"
-                        await driver.execute_query(
-                            f"MATCH (a:{label} {{{from_key_r}: $from_name}}) "
-                            f"MATCH (b:{target_label} {{{to_key_r}: $to_name}}) "
-                            f"MERGE (a)-[:{rel_type_upper}]->(b)",
-                            parameters_={"from_name": merge_value, "to_name": target_name},
-                            database_=db,
+                        await store.merge_relation(
+                            label, merge_key, merge_value,
+                            rel_type_upper,
+                            target_label, "name", target_name
                         )
                         relations_created += 1
                     except Exception as e:
@@ -705,7 +640,7 @@ def create_engrama_mcp(
                             pass
 
         # --- Proactivity: increment counter and check threshold ---
-        result: dict[str, Any] = {
+        result_data: dict[str, Any] = {
             "status": "ok",
             "label": label,
             "node": node,
@@ -713,20 +648,23 @@ def create_engrama_mcp(
             "engrama_id": engrama_id,
             "relations_created": relations_created,
         }
+        # DDR-003 Phase D: propagate valid_to conflict warning
+        if result.get("warning"):
+            result_data["warning"] = result["warning"]
 
         if _proactive_state.get("enabled", True):
             _proactive_state["remember_count"] = _proactive_state.get("remember_count", 0) + 1
             since_last = _proactive_state["remember_count"] - _proactive_state.get("last_reflect_at", 0)
             if since_last >= 10:
-                result["proactive_hint"] = (
+                result_data["proactive_hint"] = (
                     f"You've stored {since_last} entities since the last reflect. "
                     "Consider running engrama_reflect to detect cross-domain patterns, "
                     "then engrama_surface_insights to present findings to the user."
                 )
 
-        return json.dumps(result, default=str, indent=2)
+        return json.dumps(result_data, default=str, indent=2)
 
-    # -- Tool: engrama_relate ---------------------------------------------
+    # -- Tool: engrama_relate ---
 
     @mcp.tool(
         name="engrama_relate",
@@ -754,42 +692,35 @@ def create_engrama_mcp(
         if params.rel_type not in _VALID_RELATIONS:
             return f"Error: Invalid rel_type '{params.rel_type}'. Must be one of: {', '.join(sorted(_VALID_RELATIONS))}."
 
-        # Decision and Problem nodes use `title` as their unique key;
-        # all other node types use `name`.
+        store = _store(ctx)
+        state = ctx.request_context.lifespan_context
+
+        # Determine merge keys
         from_key = "title" if params.from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if params.to_label in TITLE_KEYED_LABELS else "name"
 
-        cypher = (
-            f"MATCH (a:{params.from_label} {{{from_key}: $from_name}}) "
-            f"MATCH (b:{params.to_label} {{{to_key}: $to_name}}) "
-            f"MERGE (a)-[r:{params.rel_type}]->(b) "
-            f"RETURN type(r) AS rel_type, "
-            f"a.{from_key} AS from_name, b.{to_key} AS to_name, "
-            f"a.obsidian_path AS from_obsidian_path"
+        # Use the async store to create the relationship
+        r = await store.merge_relation(
+            params.from_label, from_key, params.from_name,
+            params.rel_type,
+            params.to_label, to_key, params.to_name
         )
-        cypher_params = {"from_name": params.from_name, "to_name": params.to_name}
-
-        driver, db = _driver_and_db(ctx)
-        records, _, _ = await driver.execute_query(
-            cypher, parameters_=cypher_params, database_=db
-        )
-        if not records:
+        if not r:
             return (
                 f"No relationship created — could not find "
                 f"(:{params.from_label} {{name: '{params.from_name}'}}) "
                 f"or (:{params.to_label} {{name: '{params.to_name}'}})."
             )
-        r = dict(records[0])
 
         # DDR-002: dual-write — also record the relation in vault frontmatter
         vault_written = False
-        state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
-        from_path = r.pop("from_obsidian_path", None)
+        from_path = r.get("from_obsidian_path")
+
         if obsidian is not None:
+            import re as _re
             # If the source node has no vault note yet, create one now
             if not from_path:
-                import re as _re
                 slug = _re.sub(r"[^\w\s-]", "", params.from_name.lower())
                 slug = _re.sub(r"[\s]+", "-", slug).strip("-")
                 from_path = f"{slug}.md"
@@ -816,12 +747,9 @@ def create_engrama_mcp(
                             encoding="utf-8",
                         )
                         # Update the graph node with obsidian metadata
-                        from_key_r = "title" if params.from_label in TITLE_KEYED_LABELS else "name"
-                        await driver.execute_query(
-                            f"MATCH (n:{params.from_label} {{{from_key_r}: $name}}) "
-                            "SET n.obsidian_path = $path, n.obsidian_id = $eid",
-                            parameters_={"name": params.from_name, "path": from_path, "eid": _eid},
-                            database_=db,
+                        await store.merge_node(
+                            params.from_label, from_key, params.from_name,
+                            {"obsidian_path": from_path, "obsidian_id": _eid}
                         )
                     except Exception as e:
                         logger.warning("Could not create vault note for %s: %s", params.from_name, e)
@@ -843,7 +771,7 @@ def create_engrama_mcp(
             default=str, indent=2,
         )
 
-    # -- Tool: engrama_context --------------------------------------------
+    # -- Tool: engrama_context ---
 
     @mcp.tool(
         name="engrama_context",
@@ -865,113 +793,23 @@ def create_engrama_mcp(
         if params.label not in _VALID_LABELS:
             return f"Error: Invalid label '{params.label}'."
 
+        store = _store(ctx)
         merge_key = "title" if params.label in TITLE_KEYED_LABELS else "name"
-        cypher = (
-            f"MATCH (start:{params.label} {{{merge_key}: $name}}) "
-            f"OPTIONAL MATCH (start)-[r*1..{params.hops}]-(neighbour) "
-            "RETURN start, "
-            "  [rel IN r | type(rel)] AS rel_types, "
-            "  labels(neighbour)[0] AS neighbour_label, "
-            "  neighbour.name AS neighbour_name, "
-            "  properties(neighbour) AS neighbour_props"
-        )
-        driver, db = _driver_and_db(ctx)
-        records, _, _ = await driver.execute_query(
-            cypher, parameters_={"name": params.name}, database_=db
-        )
 
-        if not records:
+        data = await store.get_node_with_neighbours(
+            params.label, merge_key, params.name, params.hops
+        )
+        if data is None:
             return f"No node found: (:{params.label} {{name: '{params.name}'}})."
 
-        # Format: start node + deduplicated list of neighbours
-        start_node = dict(records[0]["start"]) if records[0]["start"] else {}
-        neighbours = []
-        seen: set[tuple[str, str]] = set()
-        root_name = start_node.get("name") or start_node.get("title")
-        root_key = (params.label, root_name)
-        for r in records:
-            nname = r["neighbour_name"]
-            nlabel = r["neighbour_label"]
-            if nname and (nlabel, nname) not in seen and (nlabel, nname) != root_key:
-                seen.add((nlabel, nname))
-                neighbours.append({
-                    "label": nlabel,
-                    "name": nname,
-                    "via": list(dict.fromkeys(r["rel_types"])),
-                    "properties": {
-                        k: v for k, v in (r["neighbour_props"] or {}).items()
-                        if k not in {"created_at", "updated_at"}
-                    },
-                })
+        return json.dumps(data, default=str, indent=2)
 
-        result = {
-            "node": {
-                "label": params.label,
-                "properties": {
-                    k: v for k, v in start_node.items()
-                    if k not in {"created_at", "updated_at"}
-                },
-            },
-            "neighbours": neighbours,
-        }
-        return json.dumps(result, default=str, indent=2)
-
-    # -- Helper: async MERGE via the async driver (mirrors engine logic) --
-
-    async def _async_merge_node(
-        driver: AsyncDriver,
-        db: str,
-        label: str,
-        properties: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Merge a node using the async driver (same logic as EngramaEngine.merge_node).
-
-        Returns a dict with ``node`` properties and ``created`` flag.
-        """
-        if "name" in properties:
-            merge_key = "name"
-        elif "title" in properties:
-            merge_key = "title"
-        else:
-            raise ValueError("properties must include 'name' or 'title'")
-
-        merge_value = properties[merge_key]
-        extra = {
-            k: v for k, v in properties.items()
-            if k not in {merge_key, "created_at", "updated_at"}
-        }
-
-        set_create = ["n.created_at = datetime()", "n.updated_at = datetime()"]
-        set_match = ["n.updated_at = datetime()"]
-        params: dict[str, Any] = {"merge_value": merge_value}
-
-        for idx, (key, value) in enumerate(extra.items()):
-            pname = f"p{idx}"
-            set_create.append(f"n.{key} = ${pname}")
-            set_match.append(f"n.{key} = ${pname}")
-            params[pname] = value
-
-        cypher = (
-            f"MERGE (n:{label} {{{merge_key}: $merge_value}}) "
-            f"ON CREATE SET {', '.join(set_create)} "
-            f"ON MATCH SET {', '.join(set_match)} "
-            "RETURN n, "
-            "CASE WHEN n.created_at = n.updated_at THEN true ELSE false END AS created"
-        )
-
-        records, _, _ = await driver.execute_query(
-            cypher, parameters_=params, database_=db
-        )
-        if records:
-            return {"node": dict(records[0]["n"]), "created": records[0]["created"]}
-        return {"node": {}, "created": False}
-
-    # -- Tool: engrama_sync_note ------------------------------------------
+    # -- Tool: engrama_sync_note ---
 
     @mcp.tool(
         name="engrama_sync_note",
         annotations=ToolAnnotations(
-            title="Sync Obsidian Note to Graph",
+            title="Sync Single Note to Graph",
             readOnlyHint=False,
             destructiveHint=False,
             idempotentHint=True,
@@ -979,7 +817,7 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_sync_note(params: SyncNoteInput, ctx: Context) -> str:
-        """Sync a single Obsidian note to the Neo4j memory graph.
+        """Sync a single Obsidian note to the graph.
 
         Reads the note via ObsidianAdapter, parses entities via NoteParser,
         merges the node into Neo4j, and injects ``engrama_id`` back into
@@ -990,116 +828,113 @@ def create_engrama_mcp(
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
-        parser: NoteParser = state["parser"]
-        driver: AsyncDriver = state["driver"]
-        db: str = state["database"]
+        parser: NoteParser | None = state.get("parser")
 
-        if obsidian is None:
+        if obsidian is None or parser is None:
             return json.dumps({
                 "status": "error",
-                "error": "VAULT_PATH not configured — Obsidian sync disabled.",
-            })
+                "message": "Obsidian adapter not initialised — vault sync disabled."
+            }, indent=2)
 
-        # 1. Read note
         note_data = obsidian.read_note(params.path)
         if not note_data["success"]:
             return json.dumps({
                 "status": "error",
-                "error": f"Could not read note: {params.path}",
-            })
+                "message": f"Could not read note: {params.path}",
+                "details": note_data.get("error", "Unknown error"),
+            }, indent=2)
 
-        # 2. Parse entities
-        parsed = parser.parse(
-            path=params.path,
-            content=note_data["content"],
-            frontmatter=note_data["frontmatter"],
-        )
-        if parsed is None:
-            return json.dumps({
-                "status": "skipped",
-                "reason": "Note could not be classified into an Engrama label.",
-            })
+        frontmatter = note_data["frontmatter"]
+        engrama_id = frontmatter.get("engrama_id")
+        if not engrama_id:
+            engrama_id = str(uuid.uuid4())
 
-        # 3. Ensure engrama_id
-        engrama_id = parsed.engrama_id or str(uuid.uuid4())
-        if not parsed.engrama_id:
-            obsidian.inject_engrama_id(params.path, engrama_id)
+        node_label = frontmatter.get("type", "Concept")
+        if node_label not in _VALID_LABELS:
+            node_label = "Concept"
 
-        # 4. Merge node into Neo4j
-        props = {
-            **parsed.properties,
-            "obsidian_id": engrama_id,
-            "obsidian_path": params.path,
-        }
-        merge_result = await _async_merge_node(driver, db, parsed.label, props)
+        # Extract merge key from frontmatter
+        props = dict(frontmatter)
+        props.pop("relations", None)
+        if "engrama_id" in props:
+            props.pop("engrama_id")
+        if "type" in props:
+            props.pop("type")
 
-        # 5. DDR-002: merge frontmatter relations into Neo4j
-        fm_relations_merged = 0
-        stubs_created_count = 0
-        if parsed.relations:
-            for rel_type, targets in parsed.relations.items():
-                for target_name in targets:
-                    # Look up target label in graph
-                    target_label = None
-                    try:
-                        lookup_records, _, _ = await driver.execute_query(
-                            "MATCH (n) WHERE toLower(n.name) = toLower($name) "
-                            "RETURN labels(n)[0] AS label LIMIT 1",
-                            parameters_={"name": target_name},
-                            database_=db,
-                        )
-                        if lookup_records:
-                            target_label = lookup_records[0]["label"]
-                    except Exception:
-                        pass
+        # Determine merge key
+        merge_key = "title" if node_label in TITLE_KEYED_LABELS else "name"
+        if merge_key not in props:
+            # Try to use the filename as a fallback
+            filename = os.path.basename(params.path).replace(".md", "")
+            props[merge_key] = filename
 
-                    if target_label is None:
-                        # Create stub node
-                        from engrama.adapters.obsidian.sync import ObsidianSync
-                        target_label = ObsidianSync._infer_stub_label(rel_type)
-                        try:
-                            await _async_merge_node(driver, db, target_label, {
-                                "name": target_name,
-                                "status": "stub",
-                            })
-                            stubs_created_count += 1
-                        except Exception:
-                            continue
+        merge_value = props[merge_key]
+        store = _store(ctx)
 
-                    # Merge the typed relation
-                    try:
-                        from_key = "title" if parsed.label in TITLE_KEYED_LABELS else "name"
-                        to_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
-                        async with driver.session(database=db) as session:
-                            await session.run(
-                                f"MATCH (a:{parsed.label} {{{from_key}: $from_name}}) "
-                                f"MATCH (b:{target_label} {{{to_key}: $to_name}}) "
-                                f"MERGE (a)-[:{rel_type}]->(b)",
-                                {
-                                    "from_name": parsed.name,
-                                    "to_name": target_name,
-                                },
-                            )
-                        fm_relations_merged += 1
-                    except Exception:
-                        pass
+        # Merge the node
+        props["obsidian_path"] = params.path
+        props["obsidian_id"] = engrama_id
+
+        extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
+        result = await store.merge_node(node_label, merge_key, merge_value, extra)
+        node = result["node"]
+        created = result["created"]
+
+        # --- DDR-003 Phase C: Embed on sync ---
+        _embedder = state.get("embedder")
+        if _embedder is not None and getattr(_embedder, "dimensions", 0) > 0:
+            try:
+                from engrama.embeddings.text import node_to_text
+
+                text = node_to_text(node_label, props)
+                if hasattr(_embedder, "aembed"):
+                    embedding = await _embedder.aembed(text)
+                else:
+                    embedding = _embedder.embed(text)
+                if embedding:
+                    await store.store_embedding(
+                        node_label, merge_key, merge_value, embedding,
+                    )
+            except Exception as e:
+                logger.warning("Embed-on-sync failed for %s/%s: %s", node_label, merge_value, e)
+
+        # Update frontmatter with engrama_id if new
+        if not frontmatter.get("engrama_id"):
+            try:
+                import yaml as _yaml
+                fm = dict(frontmatter)
+                fm["engrama_id"] = engrama_id
+                fm_yaml = _yaml.dump(
+                    fm, default_flow_style=False,
+                    allow_unicode=True, sort_keys=False,
+                )
+                content = note_data["content"]
+                if content.startswith("---"):
+                    end_idx = content.index("---", 3)
+                    body = content[end_idx + 3:]
+                else:
+                    body = "\n\n" + content
+                new_content = "---\n" + fm_yaml + "---" + body
+                target = obsidian._resolve(params.path)
+                target.write_text(new_content, encoding="utf-8")
+            except Exception as e:
+                logger.warning("Could not update note frontmatter: %s", e)
 
         return json.dumps({
             "status": "ok",
-            "label": parsed.label,
-            "name": parsed.name,
+            "label": node_label,
+            "name": merge_value,
             "engrama_id": engrama_id,
-            "created_or_updated": "created" if merge_result["created"] else "updated",
-            "frontmatter_relations": fm_relations_merged,
-            "stubs_created": stubs_created_count,
+            "created": created,
+            "node": node,
         }, default=str, indent=2)
 
-    # -- Tool: engrama_sync_vault -----------------------------------------
+    # -- Tool: engrama_sync_vault ---
 
     @mcp.tool(
         name="engrama_sync_vault",
         annotations=ToolAnnotations(
-            title="Sync Obsidian Vault to Graph",
+            title="Sync Entire Vault to Graph",
             readOnlyHint=False,
             destructiveHint=False,
             idempotentHint=False,
@@ -1117,169 +952,111 @@ def create_engrama_mcp(
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
-        parser: NoteParser = state["parser"]
-        driver: AsyncDriver = state["driver"]
-        db: str = state["database"]
+        parser: NoteParser | None = state.get("parser")
 
-        if obsidian is None:
+        if obsidian is None or parser is None:
             return json.dumps({
                 "status": "error",
-                "error": "VAULT_PATH not configured — Obsidian sync disabled.",
-            })
+                "message": "Obsidian adapter not initialised — vault sync disabled."
+            }, indent=2)
 
-        notes = obsidian.list_notes(folder=params.folder, recursive=True)
-        created = updated = skipped = 0
+        store = _store(ctx)
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        errors: list[str] = []
 
-        # Pass 1: parse all notes and merge nodes
-        parsed_notes: list = []
-        for note_meta in notes:
-            path = note_meta["path"]
-            note_data = obsidian.read_note(path)
-            if not note_data["success"]:
-                skipped += 1
-                continue
+        try:
+            # Get list of notes in the vault
+            notes = obsidian.list_notes(params.folder if params.folder else "")
 
-            parsed = parser.parse(
-                path=path,
-                content=note_data["content"],
-                frontmatter=note_data["frontmatter"],
-            )
-            if parsed is None:
-                skipped += 1
-                continue
-
-            # Ensure engrama_id
-            engrama_id = parsed.engrama_id or str(uuid.uuid4())
-            if not parsed.engrama_id:
-                obsidian.inject_engrama_id(path, engrama_id)
-
-            # Merge node
-            props = {
-                **parsed.properties,
-                "obsidian_id": engrama_id,
-                "obsidian_path": path,
-            }
-            merge_result = await _async_merge_node(driver, db, parsed.label, props)
-            if merge_result["created"]:
-                created += 1
-            else:
-                updated += 1
-            parsed_notes.append(parsed)
-
-        # Pass 2: resolve wiki-links → create LINKS_TO relations
-        from pathlib import Path as _Path
-        stem_to_node: dict[str, tuple[str, str]] = {}
-        for pn in parsed_notes:
-            stem = _Path(pn.path).stem.lower()
-            stem_to_node[stem] = (pn.label, pn.name)
-            stem_to_node[pn.name.lower()] = (pn.label, pn.name)
-
-        relations_created = 0
-        for pn in parsed_notes:
-            for link_target in pn.wiki_links:
-                target_key = link_target.strip().lower()
-                if target_key in stem_to_node:
-                    target_label, target_name = stem_to_node[target_key]
-                    if target_name == pn.name:
+            for note_path in notes:
+                try:
+                    note_data = obsidian.read_note(note_path)
+                    if not note_data["success"]:
+                        skipped_count += 1
                         continue
-                    try:
-                        async with driver.session(database=db) as session:
-                            await session.run(
-                                "MATCH (a {name: $from_name}) "
-                                "WHERE $from_label IN labels(a) "
-                                "MATCH (b {name: $to_name}) "
-                                "WHERE $to_label IN labels(b) "
-                                "MERGE (a)-[:LINKS_TO]->(b)",
-                                {
-                                    "from_name": pn.name,
-                                    "from_label": pn.label,
-                                    "to_name": target_name,
-                                    "to_label": target_label,
-                                },
-                            )
-                        relations_created += 1
-                    except Exception:
-                        pass  # skip unresolvable links
 
-        # Pass 3 (DDR-002): merge frontmatter relations into Neo4j
-        # Build a name→label lookup from all parsed notes
-        known_nodes: dict[str, str] = {
-            pn.name.lower(): pn.label for pn in parsed_notes
-        }
-        fm_relations = 0
-        stubs_created_count = 0
+                    frontmatter = note_data["frontmatter"]
+                    engrama_id = frontmatter.get("engrama_id")
+                    if not engrama_id:
+                        engrama_id = str(uuid.uuid4())
 
-        for pn in parsed_notes:
-            if not pn.relations:
-                continue
-            for rel_type, targets in pn.relations.items():
-                for target_name in targets:
-                    target_lower = target_name.lower()
+                    node_label = frontmatter.get("type", "Concept")
+                    if node_label not in _VALID_LABELS:
+                        skipped_count += 1
+                        continue
 
-                    # Resolve target label
-                    if target_lower in known_nodes:
-                        target_label = known_nodes[target_lower]
+                    props = dict(frontmatter)
+                    props.pop("relations", None)
+                    if "engrama_id" in props:
+                        props.pop("engrama_id")
+                    if "type" in props:
+                        props.pop("type")
+
+                    merge_key = "title" if node_label in TITLE_KEYED_LABELS else "name"
+                    if merge_key not in props:
+                        filename = os.path.basename(note_path).replace(".md", "")
+                        props[merge_key] = filename
+
+                    merge_value = props[merge_key]
+                    props["obsidian_path"] = note_path
+                    props["obsidian_id"] = engrama_id
+
+                    extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
+                    result = await store.merge_node(node_label, merge_key, merge_value, extra)
+                    if result["created"]:
+                        created_count += 1
                     else:
-                        # Look up in graph
-                        try:
-                            lookup_records, _, _ = await driver.execute_query(
-                                "MATCH (n) WHERE toLower(n.name) = toLower($name) "
-                                "RETURN labels(n)[0] AS label LIMIT 1",
-                                parameters_={"name": target_name},
-                                database_=db,
-                            )
-                            target_label = lookup_records[0]["label"] if lookup_records else None
-                        except Exception:
-                            target_label = None
+                        updated_count += 1
 
-                    if target_label is None:
-                        # Create stub node (DDR-002)
-                        from engrama.adapters.obsidian.sync import ObsidianSync
-                        target_label = ObsidianSync._infer_stub_label(rel_type)
+                    # Update note with engrama_id if needed
+                    if not frontmatter.get("engrama_id"):
                         try:
-                            await _async_merge_node(driver, db, target_label, {
-                                "name": target_name,
-                                "status": "stub",
-                            })
-                            stubs_created_count += 1
-                            known_nodes[target_lower] = target_label
-                        except Exception:
-                            continue
-
-                    # Merge the typed relation
-                    try:
-                        from_key = "title" if pn.label in TITLE_KEYED_LABELS else "name"
-                        to_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
-                        async with driver.session(database=db) as session:
-                            await session.run(
-                                f"MATCH (a:{pn.label} {{{from_key}: $from_name}}) "
-                                f"MATCH (b:{target_label} {{{to_key}: $to_name}}) "
-                                f"MERGE (a)-[:{rel_type}]->(b)",
-                                {
-                                    "from_name": pn.name,
-                                    "to_name": target_name,
-                                },
+                            import yaml as _yaml
+                            fm = dict(frontmatter)
+                            fm["engrama_id"] = engrama_id
+                            fm_yaml = _yaml.dump(
+                                fm, default_flow_style=False,
+                                allow_unicode=True, sort_keys=False,
                             )
-                        fm_relations += 1
-                    except Exception:
-                        pass
+                            content = note_data["content"]
+                            if content.startswith("---"):
+                                end_idx = content.index("---", 3)
+                                body = content[end_idx + 3:]
+                            else:
+                                body = "\n\n" + content
+                            new_content = "---\n" + fm_yaml + "---" + body
+                            target = obsidian._resolve(note_path)
+                            target.write_text(new_content, encoding="utf-8")
+                        except Exception as e:
+                            logger.warning("Could not update note %s: %s", note_path, e)
+
+                except Exception as e:
+                    logger.warning("Error syncing note %s: %s", note_path, e)
+                    errors.append(f"{note_path}: {str(e)}")
+                    skipped_count += 1
+
+        except Exception as e:
+            return json.dumps({
+                "status": "error",
+                "message": f"Could not scan vault: {str(e)}",
+            }, indent=2)
 
         return json.dumps({
             "status": "ok",
-            "created": created,
-            "updated": updated,
-            "skipped": skipped,
-            "relations": relations_created,
-            "frontmatter_relations": fm_relations,
-            "stubs_created": stubs_created_count,
-        }, indent=2)
+            "created": created_count,
+            "updated": updated_count,
+            "skipped": skipped_count,
+            "errors": errors,
+        }, default=str, indent=2)
 
-    # -- Tool: engrama_ingest ---------------------------------------------
+    # -- Tool: engrama_ingest ---
 
     @mcp.tool(
         name="engrama_ingest",
         annotations=ToolAnnotations(
-            title="Ingest (Extract Knowledge from Content)",
+            title="Ingest Content",
             readOnlyHint=True,
             destructiveHint=False,
             idempotentHint=True,
@@ -1293,116 +1070,56 @@ def create_engrama_mcp(
         then call ``engrama_remember`` with inline relations for each entity.
 
         This is the primary way to populate the graph from existing content.
-        The tool reads and prepares — YOU (the agent) extract and store.
-
-        Workflow:
-        1. Call ``engrama_ingest(source, source_type)``
-        2. Read the returned content and extraction guidance
-        3. Identify entities (Problems, Technologies, Decisions, Concepts, etc.)
-        4. For each entity, call ``engrama_remember`` with inline relations
-        5. Report what was extracted to the user
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
-        driver, db = _driver_and_db(ctx)
+        parser: NoteParser | None = state.get("parser")
 
-        # --- Read source content ---
-        content: str = ""
-        source_path: str | None = None
+        source_path = None
+        content = ""
 
         if params.source_type == "note":
             if obsidian is None:
                 return json.dumps({
                     "status": "error",
-                    "message": "No Obsidian vault configured. Cannot read notes.",
-                })
+                    "message": "Obsidian adapter not initialised — cannot read notes.",
+                }, indent=2)
             note_data = obsidian.read_note(params.source)
             if not note_data["success"]:
                 return json.dumps({
                     "status": "error",
-                    "message": f"Note not found: {params.source}",
-                })
-            content = note_data["content"]
+                    "message": f"Could not read note: {params.source}",
+                    "details": note_data.get("error"),
+                }, indent=2)
             source_path = params.source
-        elif params.source_type in ("text", "conversation"):
+            content = note_data["content"]
+        elif params.source_type == "text":
+            content = params.source
+        elif params.source_type == "conversation":
             content = params.source
         else:
             return json.dumps({
                 "status": "error",
-                "message": f"Unknown source_type: {params.source_type}. "
-                           "Use 'note', 'text', or 'conversation'.",
-            })
+                "message": f"Unknown source_type: {params.source_type}",
+            }, indent=2)
 
-        if not content.strip():
-            return json.dumps({
-                "status": "error",
-                "message": "Source content is empty.",
-            })
-
-        # --- Query graph for existing nodes to help deduplication ---
-        existing_nodes: list[dict[str, str]] = []
-        try:
-            records, _, _ = await driver.execute_query(
-                "MATCH (n) WHERE n.name IS NOT NULL OR n.title IS NOT NULL "
-                "RETURN labels(n)[0] AS label, "
-                "coalesce(n.name, n.title) AS name "
-                "ORDER BY name LIMIT 200",
-                database_=db,
-            )
-            existing_nodes = [{"label": r["label"], "name": r["name"]} for r in records]
-        except Exception:
-            pass
-
-        # --- Build extraction guidance ---
-        valid_labels_str = ", ".join(sorted(_VALID_LABELS))
-        valid_rels_str = ", ".join(sorted(_VALID_RELATIONS))
-
-        existing_summary = ""
-        if existing_nodes:
-            by_label: dict[str, list[str]] = {}
-            for n in existing_nodes:
-                by_label.setdefault(n["label"], []).append(n["name"])
-            parts = []
-            for label, names in sorted(by_label.items()):
-                sample = names[:10]
-                suffix = f" (+{len(names) - 10} more)" if len(names) > 10 else ""
-                parts.append(f"  {label}: {', '.join(sample)}{suffix}")
-            existing_summary = (
-                "\n\nExisting nodes in graph (reuse these, don't create duplicates):\n"
-                + "\n".join(parts)
-            )
-
-        context_line = ""
-        if params.context_hint:
-            context_line = f"\nContext hint from user: {params.context_hint}\n"
-
+        # Generate extraction guidance
         extraction_prompt = (
-            "## Entity extraction guidance\n\n"
-            "Analyse the content above and extract all relevant entities and "
-            "relationships. For each entity, call `engrama_remember` with inline relations.\n\n"
-            "### Valid node labels\n"
-            f"{valid_labels_str}\n\n"
-            "### Valid relationship types\n"
-            f"{valid_rels_str}\n\n"
-            "### Extraction rules\n"
-            "1. **Search before creating** — check the existing nodes list below. "
-            "If an entity already exists, skip it or update it.\n"
-            "2. **Every entity needs at minimum**: BELONGS_TO (project/client/course) "
-            "and IN_DOMAIN (domain).\n"
-            "3. **For Problems, Decisions, Vulnerabilities**: also add INSTANCE_OF → Concept.\n"
-            "4. **Concepts must be project-agnostic**: 'sql-injection' yes, 'ticket-42-bug' no.\n"
-            "5. **Technologies are reusable**: 'Python', 'Neo4j', 'Docker' — search first.\n"
-            "6. **Use inline relations** in engrama_remember to create the node AND "
-            "its relationships in a single call.\n"
-            f"{context_line}"
-            f"{existing_summary}\n\n"
-            "### Expected output\n"
-            "For each entity you identify, call:\n"
-            "```\n"
-            "engrama_remember(label=\"...\", properties={...}, relations={...})\n"
-            "```\n"
-            "After all entities are stored, report a summary to the user: "
-            "what was extracted, how many entities and relationships were created."
+            "You have just read the above content. Your task is to extract entities "
+            "and relationships that would be useful to remember.\n\n"
+            "For each entity you identify:\n"
+            "1. Call `engrama_remember` with the entity's label, name, and properties.\n"
+            "2. Immediately call `engrama_relate` to connect it to related entities.\n\n"
+            "Focus on:\n"
+            "- People (Person nodes)\n"
+            "- Projects and products (Project nodes)\n"
+            "- Technologies mentioned (Technology nodes)\n"
+            "- Concepts and ideas (Concept nodes)\n"
+            "- Decisions made (Decision nodes — use title)\n"
+            "- Problems or challenges (Problem nodes — use title)\n"
+            "- Lessons learned\n"
+            "- Cross-references between entities\n\n"
+            f"Context hint: {params.context_hint if params.context_hint else '(none provided)'}\n"
         )
 
         return json.dumps({
@@ -1414,7 +1131,7 @@ def create_engrama_mcp(
             "extraction_prompt": extraction_prompt,
         }, default=str, indent=2)
 
-    # -- Tool: engrama_reflect --------------------------------------------
+    # -- Tool: engrama_reflect ---
 
     from engrama.skills.reflect import (
         _QUERY_CROSS_PROJECT_SOLUTION,
@@ -1451,7 +1168,7 @@ def create_engrama_mcp(
         Detected patterns are stored as Insight nodes with status "pending" —
         present them to the user via engrama_surface_insights for review.
         """
-        driver, db = _driver_and_db(ctx)
+        store = _store(ctx)
         insights: list[dict[str, Any]] = []
         queries_run: list[str] = []
         queries_skipped: list[str] = []
@@ -1459,22 +1176,15 @@ def create_engrama_mcp(
         # --- Step 1: Profile the graph ---
         profile: dict[str, int] = {}
         try:
-            records, _, _ = await driver.execute_query(
-                _QUERY_GRAPH_PROFILE, database_=db,
-            )
-            profile = {r["label"]: r["cnt"] for r in records}
+            profile_results = await store.run_pattern(_QUERY_GRAPH_PROFILE)
+            profile = {r["label"]: r["cnt"] for r in profile_results}
         except Exception as e:
             logger.warning("Could not profile graph: %s", e)
 
         # --- Step 2: Get dismissed titles ---
         dismissed: set[str] = set()
         try:
-            records, _, _ = await driver.execute_query(
-                "MATCH (i:Insight {status: 'dismissed'}) "
-                "RETURN i.title AS title",
-                database_=db,
-            )
-            dismissed = {r["title"] for r in records}
+            dismissed = await store.get_dismissed_titles()
         except Exception:
             pass
 
@@ -1506,9 +1216,7 @@ def create_engrama_mcp(
 
             queries_run.append(query_name)
             try:
-                records, _, _ = await driver.execute_query(
-                    query, parameters_=params, database_=db,
-                )
+                records = await store.run_pattern(query, params)
             except Exception as e:
                 logger.warning("Reflect query %s failed: %s", query_name, e)
                 return
@@ -1533,8 +1241,8 @@ def create_engrama_mcp(
                     f"\"{r['source_project']}\". The decision "
                     f"\"{r['decision']}\" may apply here."
                 )
-                await _async_merge_node(driver, db, "Insight", {
-                    "title": title, "body": body, "confidence": 0.85,
+                await store.merge_node("Insight", "title", title, {
+                    "body": body, "confidence": 0.85,
                     "status": "pending", "source_query": "cross_project_solution",
                 })
                 insights.append({"query": "cross_project_solution",
@@ -1555,8 +1263,8 @@ def create_engrama_mcp(
                     f"{a_desc} and {b_desc} both use {r['technology']}. "
                     f"Consider sharing knowledge or materials between them."
                 )
-                await _async_merge_node(driver, db, "Insight", {
-                    "title": title, "body": body, "confidence": confidence,
+                await store.merge_node("Insight", "title", title, {
+                    "body": body, "confidence": confidence,
                     "status": "pending", "source_query": "shared_technology",
                 })
                 insights.append({"query": "shared_technology",
@@ -1576,8 +1284,8 @@ def create_engrama_mcp(
                     f"the concept \"{r['concept']}\", which is covered by the "
                     f"course \"{r['course']}\". Reviewing this material may help."
                 )
-                await _async_merge_node(driver, db, "Insight", {
-                    "title": title, "body": body, "confidence": 0.65,
+                await store.merge_node("Insight", "title", title, {
+                    "body": body, "confidence": 0.65,
                     "status": "pending", "source_query": "training_opportunity",
                 })
                 insights.append({"query": "training_opportunity",
@@ -1600,8 +1308,8 @@ def create_engrama_mcp(
                     f"entities in {r['target_domain']} sharing concepts "
                     f"with this technique."
                 )
-                await _async_merge_node(driver, db, "Insight", {
-                    "title": title, "body": body, "confidence": confidence,
+                await store.merge_node("Insight", "title", title, {
+                    "body": body, "confidence": confidence,
                     "status": "pending", "source_query": "technique_transfer",
                 })
                 insights.append({"query": "technique_transfer",
@@ -1623,8 +1331,8 @@ def create_engrama_mcp(
                     f"The concept \"{concept}\" connects {count} entities: "
                     f"{sample_desc}. This cluster may reveal a pattern."
                 )
-                await _async_merge_node(driver, db, "Insight", {
-                    "title": title, "body": body, "confidence": confidence,
+                await store.merge_node("Insight", "title", title, {
+                    "body": body, "confidence": confidence,
                     "status": "pending", "source_query": "concept_clustering",
                 })
                 insights.append({"query": "concept_clustering",
@@ -1647,8 +1355,8 @@ def create_engrama_mcp(
                     f"project \"{r['project']}\" via {r['rel']}, but hasn't been "
                     f"updated since {last_updated}. Consider reviewing or archiving."
                 )
-                await _async_merge_node(driver, db, "Insight", {
-                    "title": title, "body": body, "confidence": 0.5,
+                await store.merge_node("Insight", "title", title, {
+                    "body": body, "confidence": 0.5,
                     "status": "pending", "source_query": "stale_knowledge",
                 })
                 insights.append({"query": "stale_knowledge",
@@ -1657,17 +1365,31 @@ def create_engrama_mcp(
         async def _build_under_connected(records):
             if not records:
                 return
-            names = [f"{r['label']}:{r['name']}" for r in records[:10]]
-            total = len(records)
-            title = f"Under-connected nodes: {total} nodes with <2 relationships"
+            # BUG-007: use a stable title (no count) to avoid uniqueness
+            # constraint collisions when the node count changes between runs.
+            title = "Under-connected nodes need more relationships"
+
+            # Skip if already dismissed
             if title in dismissed:
                 return
+            try:
+                dismissed_sq = await store.find_insight_by_source_query(
+                    "under_connected", statuses=["dismissed"],
+                )
+                if dismissed_sq:
+                    return
+            except Exception:
+                pass
+
+            names = [f"{r['label']}:{r['name']}" for r in records[:10]]
+            total = len(records)
             body = (
                 f"Found {total} nodes with fewer than 2 relationships. "
                 f"Candidates for enrichment: {', '.join(names)}."
             )
-            await _async_merge_node(driver, db, "Insight", {
-                "title": title, "body": body, "confidence": 0.4,
+            # MERGE on stable title — idempotent, updates body on repeat runs
+            await store.merge_node("Insight", "title", title, {
+                "body": body, "confidence": 0.4,
                 "status": "pending", "source_query": "under_connected",
             })
             insights.append({"query": "under_connected",
@@ -1715,9 +1437,7 @@ def create_engrama_mcp(
         if total_nodes >= 5:
             queries_run.append("under_connected")
             try:
-                uc_records, _, _ = await driver.execute_query(
-                    _QUERY_UNDER_CONNECTED, database_=db,
-                )
+                uc_records = await store.run_pattern(_QUERY_UNDER_CONNECTED)
                 await _build_under_connected(uc_records)
             except Exception as e:
                 logger.warning("Under-connected query failed: %s", e)
@@ -1737,7 +1457,7 @@ def create_engrama_mcp(
             "insights": insights,
         }, default=str, indent=2)
 
-    # -- Tool: engrama_surface_insights ------------------------------------
+    # -- Tool: engrama_surface_insights ---
 
     @mcp.tool(
         name="engrama_surface_insights",
@@ -1756,38 +1476,37 @@ def create_engrama_mcp(
         approve or dismiss it — never act on an Insight without explicit
         approval.
         """
-        driver, db = _driver_and_db(ctx)
+        store = _store(ctx)
+        try:
+            results = await store.get_pending_insights(limit=params.limit)
+            insights = [
+                {
+                    "title": r["title"],
+                    "body": r["body"],
+                    "confidence": r["confidence"],
+                    "source_query": r["source_query"],
+                }
+                for r in results
+            ]
+        except Exception as e:
+            logger.warning("Could not fetch pending insights: %s", e)
+            insights = []
 
-        records, _, _ = await driver.execute_query(
-            "MATCH (i:Insight {status: $status}) "
-            "RETURN i.title AS title, i.body AS body, "
-            "       i.confidence AS confidence, "
-            "       i.source_query AS source_query, "
-            "       i.created_at AS created_at "
-            "ORDER BY i.created_at DESC "
-            "LIMIT $limit",
-            parameters_={"status": "pending", "limit": params.limit},
-            database_=db,
-        )
-
-        insights = []
-        for r in records:
-            created = r["created_at"]
-            insights.append({
-                "title": r["title"],
-                "body": r["body"],
-                "confidence": r["confidence"],
-                "source_query": r["source_query"],
-                "created_at": str(created) if created else None,
-            })
+        if not insights:
+            return json.dumps({
+                "status": "ok",
+                "message": "No pending Insights.",
+                "count": 0,
+                "insights": [],
+            }, indent=2)
 
         return json.dumps({
             "status": "ok",
-            "pending_count": len(insights),
+            "count": len(insights),
             "insights": insights,
         }, default=str, indent=2)
 
-    # -- Tool: engrama_approve_insight -------------------------------------
+    # -- Tool: engrama_approve_insight ---
 
     @mcp.tool(
         name="engrama_approve_insight",
@@ -1806,7 +1525,7 @@ def create_engrama_mcp(
         and records a timestamp.  Only approved Insights can later be
         written to Obsidian.
         """
-        driver, db = _driver_and_db(ctx)
+        store = _store(ctx)
 
         if params.action not in ("approve", "dismiss"):
             return json.dumps({
@@ -1815,26 +1534,20 @@ def create_engrama_mcp(
             })
 
         new_status = "approved" if params.action == "approve" else "dismissed"
-        ts_field = "approved_at" if params.action == "approve" else "dismissed_at"
 
-        query = (
-            "MATCH (i:Insight {title: $title}) "
-            f"SET i.status = $new_status, "
-            f"    i.{ts_field} = datetime(), "
-            "    i.updated_at = datetime() "
-            "RETURN i.title AS title, i.status AS status"
-        )
-        records, _, _ = await driver.execute_query(
-            query,
-            parameters_={"title": params.title, "new_status": new_status},
-            database_=db,
-        )
-
-        if not records:
+        try:
+            updated = await store.update_insight_status(params.title, new_status)
+            if not updated:
+                return json.dumps({
+                    "status": "error",
+                    "error": f"Insight not found: {params.title}",
+                })
+        except Exception as e:
+            logger.warning("Could not update Insight status: %s", e)
             return json.dumps({
                 "status": "error",
-                "error": f"Insight not found: {params.title}",
-            })
+                "message": f"Could not update Insight: {str(e)}",
+            }, indent=2)
 
         return json.dumps({
             "status": "ok",
@@ -1843,105 +1556,96 @@ def create_engrama_mcp(
             "new_status": new_status,
         }, indent=2)
 
-    # -- Tool: engrama_write_insight_to_vault ------------------------------
+    # -- Tool: engrama_write_insight_to_vault ---
 
     @mcp.tool(
         name="engrama_write_insight_to_vault",
         annotations=ToolAnnotations(
-            title="Write Approved Insight to Obsidian",
+            title="Write Approved Insight to Note",
             readOnlyHint=False,
             destructiveHint=False,
-            idempotentHint=True,
+            idempotentHint=False,
             openWorldHint=False,
         ),
     )
     async def engrama_write_insight_to_vault(
-        params: WriteInsightInput, ctx: Context
+        params: WriteInsightInput, ctx: Context,
     ) -> str:
         """Append an approved Insight as a section in an Obsidian note.
 
-        Only Insights with ``status: "approved"`` are written.  The agent
-        **must not** call this on unapproved Insights.
-
-        The Insight is appended as a Markdown section with a horizontal
-        rule separator, including confidence, source query, and approval
-        timestamp.
+        Only Insights with ``status: "approved"`` are written.  The Insight
+        is appended as a Markdown section with a horizontal rule separator,
+        including confidence, source query, and approval timestamp.
         """
-        import datetime as dt
-
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
-        driver: AsyncDriver = state["driver"]
-        db: str = state["database"]
 
         if obsidian is None:
             return json.dumps({
                 "status": "error",
-                "error": "VAULT_PATH not configured — Obsidian sync disabled.",
-            })
+                "message": "Obsidian adapter not initialised.",
+            }, indent=2)
 
-        # 1. Read the Insight from Neo4j
-        records, _, _ = await driver.execute_query(
-            "MATCH (i:Insight {title: $title}) "
-            "RETURN i.status AS status, i.body AS body, "
-            "       i.confidence AS confidence, "
-            "       i.source_query AS source_query",
-            parameters_={"title": params.title},
-            database_=db,
-        )
+        store = _store(ctx)
 
-        if not records:
+        # Fetch the Insight
+        try:
+            insight = await store.get_insight_by_title(params.title)
+            if not insight:
+                return json.dumps({
+                    "status": "error",
+                    "message": f"Insight not found: {params.title}",
+                }, indent=2)
+        except Exception as e:
+            logger.warning("Could not fetch Insight: %s", e)
             return json.dumps({
                 "status": "error",
-                "error": f"Insight not found: {params.title}",
-            })
+                "message": f"Could not fetch Insight: {str(e)}",
+            }, indent=2)
 
-        insight = records[0]
-
-        if insight["status"] != "approved":
+        if insight.get("status") != "approved":
             return json.dumps({
                 "status": "error",
-                "error": (
-                    f"Insight status is '{insight['status']}', not 'approved'. "
-                    "Only approved Insights can be written to the vault."
-                ),
-            })
+                "message": f"Insight is not approved: {params.title}",
+            }, indent=2)
 
-        # 2. Verify target note exists
-        note = obsidian.read_note(params.target_note)
-        if not note["success"]:
+        # Read the target note
+        note_data = obsidian.read_note(params.target_note)
+        if not note_data["success"]:
             return json.dumps({
                 "status": "error",
-                "error": f"Target note not found: {params.target_note}",
-            })
+                "message": f"Could not read target note: {params.target_note}",
+            }, indent=2)
 
-        # 3. Build markdown section and append
-        now = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-        confidence_pct = int(insight["confidence"] * 100)
-        section = (
-            f"\n## Insight: {params.title}\n\n"
-            f"> **Confidence:** {confidence_pct}% · "
-            f"**Source:** {insight['source_query']} · "
-            f"**Approved:** {now}\n\n"
-            f"{insight['body']}\n"
+        # Append the Insight
+        content = note_data["content"]
+        body = insight.get("body", "")
+        confidence = insight.get("confidence", "")
+        source_query = insight.get("source_query", "")
+
+        insight_section = (
+            f"\n\n---\n\n## Insight: {params.title}\n\n"
+            f"{body}\n\n"
+            f"_Confidence: {confidence} | Source: {source_query}_"
         )
 
-        target_path = obsidian._resolve(params.target_note)
-        current = target_path.read_text(encoding="utf-8")
-        target_path.write_text(
-            current.rstrip("\n") + "\n\n---\n" + section,
-            encoding="utf-8",
-        )
+        try:
+            target = obsidian._resolve(params.target_note)
+            new_content = content + insight_section
+            target.write_text(new_content, encoding="utf-8")
+            logger.info("Insight written to vault: %s", params.target_note)
+        except Exception as e:
+            logger.warning("Could not write insight to vault: %s", e)
+            return json.dumps({
+                "status": "error",
+                "message": f"Could not write to vault: {str(e)}",
+            }, indent=2)
 
-        # 4. Mark as synced in Neo4j
-        await driver.execute_query(
-            "MATCH (i:Insight {title: $title}) "
-            "SET i.obsidian_path = $path, "
-            "    i.synced_at = datetime(), "
-            "    i.updated_at = datetime()",
-            parameters_={"title": params.title, "path": params.target_note},
-            database_=db,
-        )
+        # Mark as synced in Neo4j
+        try:
+            await store.mark_insight_synced(params.title, params.target_note)
+        except Exception as e:
+            logger.warning("Could not mark insight as synced: %s", e)
 
         return json.dumps({
             "status": "ok",
@@ -1950,7 +1654,7 @@ def create_engrama_mcp(
             "written": True,
         }, indent=2)
 
-    # -- Prompt: engrama_session_guide --------------------------------------
+    # -- Prompt: engrama_session_guide ---
 
     @mcp.prompt("engrama_session_guide")
     def engrama_session_guide() -> str:

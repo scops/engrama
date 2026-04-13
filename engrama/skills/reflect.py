@@ -99,11 +99,15 @@ _QUERY_STALE_KNOWLEDGE = (
     "MATCH (n)-[r]-(active) "
     "WHERE (active:Project OR active:Course) "
     "AND (active.status IS NULL OR active.status IN [$active_status, 'active']) "
-    "AND n.updated_at < datetime() - duration({days: 90}) "
+    "AND ("
+    "  n.updated_at < datetime() - duration({days: 90}) "
+    "  OR (n.confidence IS NOT NULL AND n.confidence < 0.3)"
+    ") "
     "AND NOT n:Project AND NOT n:Course AND NOT n:Domain "
     "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-    "n.updated_at AS last_updated, active.name AS project, type(r) AS rel "
-    "ORDER BY n.updated_at ASC LIMIT 15"
+    "n.updated_at AS last_updated, n.confidence AS confidence, "
+    "active.name AS project, type(r) AS rel "
+    "ORDER BY coalesce(n.confidence, 1.0) ASC, n.updated_at ASC LIMIT 15"
 )
 
 _QUERY_UNDER_CONNECTED = (
@@ -361,7 +365,12 @@ class ReflectSkill:
     def _detect_stale_knowledge(
         self, engine: "EngramaEngine", dismissed: set[str],
     ) -> list[Insight]:
-        """Nodes connected to active Projects but not updated in 90+ days."""
+        """Nodes connected to active Projects that are stale.
+
+        Staleness criteria (DDR-003 Phase D):
+        - Not updated in 90+ days, OR
+        - Confidence below 0.3 (regardless of age).
+        """
         records = engine._client.run(
             _QUERY_STALE_KNOWLEDGE, {"active_status": "active"},
         )
@@ -377,11 +386,17 @@ class ReflectSkill:
             last_updated = r["last_updated"]
             if hasattr(last_updated, "isoformat"):
                 last_updated = last_updated.isoformat()[:10]
+            confidence = r.get("confidence")
+            conf_str = f" (confidence: {confidence:.2f})" if confidence is not None else ""
+            # Determine staleness reason
+            if confidence is not None and confidence < 0.3:
+                reason = f"has low confidence ({confidence:.2f})"
+            else:
+                reason = f"hasn't been updated since {last_updated}"
             body = (
                 f"The {r['label']} \"{name}\" is connected to the active "
-                f"project \"{r['project']}\" via {r['rel']}, but hasn't been "
-                f"updated since {last_updated}. It may be outdated — consider "
-                f"reviewing or archiving it."
+                f"project \"{r['project']}\" via {r['rel']}, but {reason}{conf_str}. "
+                f"Consider updating or archiving this node."
             )
             insight = self._write_insight(
                 engine, title=title, body=body,
@@ -390,27 +405,42 @@ class ReflectSkill:
             results.append(insight)
         return results
 
+    # Stable title avoids uniqueness-constraint collisions when the node
+    # count changes between runs (BUG-007).
+    _UNDER_CONNECTED_TITLE = "Under-connected nodes need more relationships"
+
     def _detect_under_connected(
         self, engine: "EngramaEngine", dismissed: set[str],
     ) -> list[Insight]:
         """Nodes with fewer than 2 relationships — likely under-classified."""
+        title = self._UNDER_CONNECTED_TITLE
+
+        # BUG-007: skip if already dismissed (by stable title or source_query)
+        if title in dismissed:
+            return []
+        dismissed_sq = engine._client.run(
+            "MATCH (i:Insight {source_query: 'under_connected', status: 'dismissed'}) "
+            "RETURN i.title AS title LIMIT 1",
+            {},
+        )
+        if dismissed_sq:
+            return []
+
         records = engine._client.run(_QUERY_UNDER_CONNECTED, {})
         if not records:
             return []
 
-        # Group into a single insight rather than one per node
+        # Build body with current counts (title stays stable)
         names = [f"{r['label']}:{r['name']}" for r in records[:10]]
         total = len(records)
-        title = f"Under-connected nodes: {total} nodes with <2 relationships"
-        if title in dismissed:
-            return []
-
         body = (
             f"Found {total} nodes with fewer than 2 relationships. "
             f"These are likely under-classified and would benefit from "
             f"adding INSTANCE_OF, BELONGS_TO, or IN_DOMAIN connections. "
             f"Top candidates: {', '.join(names)}."
         )
+
+        # MERGE on stable title — idempotent, updates body on repeat runs
         insight = self._write_insight(
             engine, title=title, body=body,
             source_query="under_connected", confidence=0.4,

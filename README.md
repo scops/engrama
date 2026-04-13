@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Neo4j](https://img.shields.io/badge/neo4j-5.26_LTS-green.svg)](https://neo4j.com)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 [![PyPI](https://img.shields.io/badge/pypi-engrama-orange.svg)](https://pypi.org/project/engrama)
 
 Engrama gives any AI agent persistent, structured memory backed by a Neo4j knowledge graph. Instead of flat key-value stores or opaque vector databases, Engrama stores **entities**, **observations**, and **relationships** — and lets agents traverse that graph to reason about their accumulated knowledge.
@@ -241,7 +241,7 @@ You should now see the Engrama tools available. There are eleven:
 
 | Tool | Description |
 |------|-------------|
-| `engrama_search` | Fulltext search across the memory graph |
+| `engrama_search` | Hybrid search (vector + fulltext + graph boost) |
 | `engrama_remember` | Create or update a node (always MERGE) |
 | `engrama_relate` | Create a relationship between two nodes |
 | `engrama_context` | Retrieve the neighbourhood of a node |
@@ -300,7 +300,28 @@ uv run engrama init --profile developer --dry-run              # Preview without
 uv run engrama verify                                          # Check Neo4j connectivity
 uv run engrama search "microservices"                          # Fulltext search
 uv run engrama reflect                                         # Run pattern detection
+uv run engrama reindex                                         # Batch re-embed all nodes
+uv run engrama decay --dry-run                                 # Preview confidence decay
+uv run engrama decay --rate 0.01                               # Apply gentle decay
+uv run engrama decay --rate 0.1 --min-confidence 0.05          # Aggressive + archive
 ```
+
+---
+
+## Search modes
+
+Engrama supports three search modes depending on your configuration:
+
+**Fulltext only** (`EMBEDDING_PROVIDER=none`, default) — keyword matching via Neo4j's built-in fulltext index. Works out of the box, no extra dependencies.
+
+**Hybrid** (`EMBEDDING_PROVIDER=ollama`) — combines semantic similarity (vector search) with keyword matching plus graph topology boost and temporal scoring. Finds conceptually related nodes even without exact keyword matches. Requires Ollama running locally with `nomic-embed-text` model.
+
+**How to activate hybrid search:**
+1. Set `EMBEDDING_PROVIDER=ollama` in `.env` (see [Embedding setup](#embedding-setup-optional))
+2. Run `uv run engrama reindex` to embed existing nodes
+3. New nodes are embedded automatically on creation
+
+The scoring formula is: `final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal`, where α=0.6, β=0.15, γ=0.1 by default. These are configurable via `.env` variables `HYBRID_ALPHA` and `HYBRID_GRAPH_BETA`.
 
 ---
 

@@ -264,6 +264,44 @@ class Neo4jGraphStore:
 
         return {"decayed": decayed, "archived": archived}
 
+    def query_at_date(
+        self,
+        date: str,
+        label: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Query what was true at a specific date.
+
+        Returns nodes where ``valid_from <= date`` and
+        ``valid_to IS NULL OR valid_to >= date``.
+
+        Args:
+            date: ISO-format date string (e.g. ``"2026-01-15"``).
+            label: Optional label filter.
+            limit: Maximum results.
+
+        Returns:
+            List of dicts with label, name, confidence, valid_from,
+            valid_to, and status.
+        """
+        label_clause = f":{label}" if label else ""
+        query = (
+            f"MATCH (n{label_clause}) "
+            "WHERE n.valid_from IS NOT NULL "
+            "  AND n.valid_from <= datetime($date) "
+            "  AND (n.valid_to IS NULL OR n.valid_to >= datetime($date)) "
+            "  AND NOT n:Insight AND NOT n:Domain "
+            "RETURN labels(n)[0] AS label, "
+            "  COALESCE(n.name, n.title) AS name, "
+            "  n.confidence AS confidence, "
+            "  n.valid_from AS valid_from, "
+            "  n.valid_to AS valid_to, "
+            "  n.status AS status "
+            "ORDER BY n.confidence DESC "
+            "LIMIT $limit"
+        )
+        return self._client.run(query, {"date": date, "limit": limit})
+
     # ------------------------------------------------------------------
     # Relationship operations
     # ------------------------------------------------------------------
@@ -345,6 +383,15 @@ class Neo4jGraphStore:
         """
         return self._client.run(query, params)
 
+    def count_labels(self) -> dict[str, int]:
+        """Count nodes per label.  Used by reflect to profile the graph."""
+        records = self._client.run(
+            "MATCH (n) WHERE NOT n:Insight "
+            "RETURN labels(n)[0] AS label, count(n) AS cnt "
+            "ORDER BY cnt DESC",
+        )
+        return {r["label"]: r["cnt"] for r in records}
+
     # ------------------------------------------------------------------
     # Schema operations
     # ------------------------------------------------------------------
@@ -365,3 +412,7 @@ class Neo4jGraphStore:
             "backend": "neo4j",
             "uri": self._client._uri,
         }
+
+    def close(self) -> None:
+        """Close the underlying client connection."""
+        self._client.close()

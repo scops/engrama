@@ -131,6 +131,29 @@ class TestNullProvider:
         p = NullProvider()
         assert p.health_check() is True
 
+    # --- Async methods ---
+
+    @pytest.mark.asyncio
+    async def test_async_embed_returns_empty(self):
+        p = NullProvider()
+        assert await p.aembed("hello") == []
+
+    @pytest.mark.asyncio
+    async def test_async_embed_batch_returns_empty_lists(self):
+        p = NullProvider()
+        result = await p.aembed_batch(["a", "b"])
+        assert result == [[], []]
+
+    @pytest.mark.asyncio
+    async def test_async_health_check_true(self):
+        p = NullProvider()
+        assert await p.ahealth_check() is True
+
+    @pytest.mark.asyncio
+    async def test_async_close(self):
+        p = NullProvider()
+        await p.aclose()  # should not raise
+
 
 # ---------------------------------------------------------------------------
 # OllamaProvider tests (mocked)
@@ -234,6 +257,93 @@ class TestOllamaProviderMocked:
         r = repr(p)
         assert "nomic-embed-text" in r
         assert "768" in r
+
+
+# ---------------------------------------------------------------------------
+# OllamaProvider async tests (mocked)
+# ---------------------------------------------------------------------------
+
+
+class TestOllamaAsyncMocked:
+    """Async tests for OllamaProvider against the fake HTTP server."""
+
+    @pytest.mark.asyncio
+    async def test_aembed_single(self, fake_ollama: str):
+        p = OllamaProvider(
+            model="nomic-embed-text",
+            dimensions=4,
+            base_url=fake_ollama,
+        )
+        vec = await p.aembed("Hello world")
+        assert isinstance(vec, list)
+        assert len(vec) == 4
+        assert all(isinstance(x, float) for x in vec)
+        await p.aclose()
+
+    @pytest.mark.asyncio
+    async def test_aembed_batch(self, fake_ollama: str):
+        p = OllamaProvider(
+            model="nomic-embed-text",
+            dimensions=4,
+            base_url=fake_ollama,
+        )
+        texts = ["Hello", "World", "Test"]
+        result = await p.aembed_batch(texts)
+        assert len(result) == 3
+        for vec in result:
+            assert len(vec) == 4
+        await p.aclose()
+
+    @pytest.mark.asyncio
+    async def test_aembed_batch_empty(self, fake_ollama: str):
+        p = OllamaProvider(
+            model="nomic-embed-text",
+            dimensions=4,
+            base_url=fake_ollama,
+        )
+        assert await p.aembed_batch([]) == []
+        await p.aclose()
+
+    @pytest.mark.asyncio
+    async def test_ahealth_check_succeeds(self, fake_ollama: str):
+        p = OllamaProvider(
+            model="nomic-embed-text",
+            dimensions=4,
+            base_url=fake_ollama,
+        )
+        assert await p.ahealth_check() is True
+        await p.aclose()
+
+    @pytest.mark.asyncio
+    async def test_ahealth_check_wrong_model(self, fake_ollama: str):
+        p = OllamaProvider(
+            model="nonexistent-model",
+            dimensions=4,
+            base_url=fake_ollama,
+        )
+        assert await p.ahealth_check() is False
+        await p.aclose()
+
+    @pytest.mark.asyncio
+    async def test_ahealth_check_unreachable(self):
+        p = OllamaProvider(
+            model="nomic-embed-text",
+            dimensions=4,
+            base_url="http://127.0.0.1:1",
+        )
+        assert await p.ahealth_check() is False
+        await p.aclose()
+
+    @pytest.mark.asyncio
+    async def test_aclose_idempotent(self, fake_ollama: str):
+        p = OllamaProvider(
+            model="nomic-embed-text",
+            dimensions=4,
+            base_url=fake_ollama,
+        )
+        await p.aembed("warmup")
+        await p.aclose()
+        await p.aclose()  # second close should not raise
 
 
 # ---------------------------------------------------------------------------
