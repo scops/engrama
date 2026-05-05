@@ -71,16 +71,16 @@ class SearchResult:
     """Node identity (name or title)."""
 
     vector_score: float = 0.0
-    """Normalised vector similarity score (0–1)."""
+    """Normalised vector similarity score (0-1)."""
 
     fulltext_score: float = 0.0
-    """Normalised fulltext score (0–1)."""
+    """Normalised fulltext score (0-1)."""
 
     graph_boost: float = 0.0
     """Graph-based boost (e.g. relationship count)."""
 
     temporal_score: float = 1.0
-    """Temporal relevance (confidence × recency), 0–1."""
+    """Temporal relevance (confidence × recency), 0-1."""
 
     final_score: float = 0.0
     """Weighted combination of all signals."""
@@ -247,25 +247,27 @@ class HybridSearchEngine:
                 if not name:
                     continue
                 norm = 1.0 if f_all_equal else (d.get("score", 0.0) - f_min) / f_range
-                # Build temporal properties for Phase D scoring
-                temporal_props = {}
-                if "confidence" in d:
-                    temporal_props["confidence"] = d["confidence"]
-                if "updated_at" in d:
-                    temporal_props["updated_at"] = d["updated_at"]
+                # Build properties dict: temporal signals (Phase D) plus the
+                # enrichment fields (summary, tags) exposed via fulltext search.
+                # ``details`` is intentionally omitted — use engrama_context
+                # when full context is needed.
+                props: dict[str, Any] = {}
+                for k in ("confidence", "updated_at", "summary", "tags"):
+                    if k in d:
+                        props[k] = d[k]
 
                 if name in by_name:
                     by_name[name].fulltext_score = norm
                     if not by_name[name].label:
                         by_name[name].label = d.get("type", "")
-                    # Merge temporal props
-                    by_name[name].properties.update(temporal_props)
+                    # Merge props (temporal + enrichment)
+                    by_name[name].properties.update(props)
                 else:
                     by_name[name] = SearchResult(
                         label=d.get("type", ""),
                         name=name,
                         fulltext_score=norm,
-                        properties=temporal_props,
+                        properties=props,
                     )
 
         # --- Temporal scoring (Phase D) ---

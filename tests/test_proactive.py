@@ -89,11 +89,17 @@ class TestSurface:
     def test_surface_returns_pending_insights(
         self, engine: EngramaEngine, neo4j_session, seed_pending_insights
     ) -> None:
-        """Surface returns pending Insights ordered by created_at DESC."""
-        skill = ProactiveSkill()
-        results = skill.surface(engine, limit=10)
+        """Surface returns pending Insights ordered by created_at DESC.
 
-        titles = [r.title for r in results]
+        Note: filter to ``P6_`` prefix so the assertion survives when the
+        graph already contains unrelated pending insights from prior
+        reflect runs that would otherwise displace the backdated fixture
+        from the default limit.
+        """
+        skill = ProactiveSkill()
+        results = skill.surface(engine, limit=50)
+
+        titles = [r.title for r in results if r.title.startswith("P6_")]
         # Our two test insights should be in the list
         assert "P6_TestInsight_CrossProject" in titles
         assert "P6_TestInsight_SharedTech" in titles

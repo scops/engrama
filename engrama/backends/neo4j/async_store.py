@@ -274,6 +274,11 @@ class Neo4jAsyncStore:
         Each neighbour dict contains:
         ``{label, name, via: [rel_types], properties}``.
         The ``via`` array is deduplicated (BUG-008 fix).
+
+        Node-enrichment: ``details`` and ``embedding`` are stripped from
+        neighbour properties to keep the response compact — ``summary``
+        and ``tags`` are kept so callers can decide whether to fetch a
+        neighbour's full context.  Timestamps are also stripped.
         """
         cypher = (
             f"MATCH (start:{label} {{{key_field}: $key_value}}) "
@@ -309,7 +314,7 @@ class Neo4jAsyncStore:
                     "via": list(dict.fromkeys(r["rel_types"])),
                     "properties": {
                         k: v for k, v in (r["neighbour_props"] or {}).items()
-                        if k not in {"created_at", "updated_at"}
+                        if k not in {"created_at", "updated_at", "details", "embedding"}
                     },
                 })
 
@@ -326,6 +331,14 @@ class Neo4jAsyncStore:
 
         Returns ``{node: {...}, neighbours: [...]}`` or ``None`` if the
         start node doesn't exist.
+
+        Node-enrichment: the root ``node`` dict retains every property —
+        including ``summary``, ``details``, ``tags``, ``source`` — so a
+        single ``engrama_context`` call fully describes the requested node.
+        Neighbour dicts strip ``details`` and ``embedding`` (along with
+        timestamps) to keep the response compact; they still carry
+        ``summary`` and ``tags`` so the model can decide whether to fetch
+        a neighbour's full context.
         """
         cypher = (
             f"MATCH (start:{label} {{{key_field}: $key_value}}) "
@@ -344,6 +357,9 @@ class Neo4jAsyncStore:
             return None
 
         start_node = dict(records[0]["start"]) if records[0]["start"] else {}
+        # Never leak embedding vectors in the response (they're huge and
+        # bloat the context window).
+        start_node.pop("embedding", None)
         root_name = start_node.get("name") or start_node.get("title")
         root_key = (label, root_name)
 
@@ -360,7 +376,7 @@ class Neo4jAsyncStore:
                     "via": list(dict.fromkeys(r["rel_types"])),
                     "properties": {
                         k: v for k, v in (r["neighbour_props"] or {}).items()
-                        if k not in {"created_at", "updated_at"}
+                        if k not in {"created_at", "updated_at", "details", "embedding"}
                     },
                 })
 
@@ -373,9 +389,17 @@ class Neo4jAsyncStore:
     ) -> list[dict[str, Any]]:
         """Keyword search across all text properties.
 
-        Returns ``[{type, name, score}]``.
+        Returns ``[{type, name, score, summary, tags, confidence, updated_at}]``.
+
         BUG-006 fix: uses ``COALESCE(node.name, node.title)`` so that
         Decision/Problem nodes return their title as ``name``.
+
+        Node-enrichment: also returns ``summary`` (falling back to
+        ``description`` for backward compatibility with older nodes that were
+        written before the enrichment fields existed) and ``tags`` so callers
+        can act on search results without a second ``engrama_context`` call.
+        ``details`` is intentionally excluded to keep the response compact —
+        use ``engrama_context`` when full context is needed.
         """
         cypher = (
             'CALL db.index.fulltext.queryNodes("memory_search", $query) '
@@ -383,8 +407,10 @@ class Neo4jAsyncStore:
             "RETURN labels(node)[0] AS type, "
             "COALESCE(node.name, node.title) AS name, "
             "score, "
+            "COALESCE(node.summary, node.description, '') AS summary, "
+            "node.tags AS tags, "
             "node.confidence AS confidence, "
-            "node.updated_at AS updated_at "
+            "toString(node.updated_at) AS updated_at "
             "ORDER BY score DESC LIMIT $limit"
         )
         records, _, _ = await self._driver.execute_query(

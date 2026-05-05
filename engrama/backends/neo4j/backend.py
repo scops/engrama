@@ -357,8 +357,15 @@ class Neo4jGraphStore:
     ) -> list[Record]:
         """Keyword search against the ``memory_search`` fulltext index.
 
-        Returns records with ``type``, ``name``, ``score``, and temporal
-        fields (``confidence``, ``updated_at``) for Phase D scoring.
+        Returns records with ``type``, ``name``, ``score``, enrichment
+        fields (``summary``, ``tags``) and temporal fields (``confidence``,
+        ``updated_at``) for Phase D scoring.
+
+        ``summary`` falls back to ``description`` when absent so nodes
+        stored before the enrichment fields existed keep returning useful
+        context.  ``details`` is intentionally excluded from search results
+        to keep responses compact — callers can use ``engrama_context`` for
+        the full content.
         """
         cypher = (
             'CALL db.index.fulltext.queryNodes("memory_search", $query) '
@@ -366,8 +373,10 @@ class Neo4jGraphStore:
             "RETURN labels(node)[0] AS type, "
             "COALESCE(node.name, node.title) AS name, "
             "score, "
+            "COALESCE(node.summary, node.description, '') AS summary, "
+            "node.tags AS tags, "
             "node.confidence AS confidence, "
-            "node.updated_at AS updated_at "
+            "toString(node.updated_at) AS updated_at "
             "ORDER BY score DESC LIMIT $limit"
         )
         return self._client.run(cypher, {"query": query, "limit": limit})

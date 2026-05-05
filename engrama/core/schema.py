@@ -112,6 +112,10 @@ class Project:
     repo: Optional[str] = None
     stack: list[str] = field(default_factory=list)
     description: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -123,6 +127,10 @@ class Concept:
     name: str
     domain: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -136,6 +144,10 @@ class Decision:
     date: Optional[datetime.date] = None
     status: Optional[str] = None
     alternatives: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -149,6 +161,10 @@ class Problem:
     status: Optional[str] = None
     context: Optional[str] = None
     severity: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -161,6 +177,10 @@ class Technology:
     version: Optional[str] = None
     type: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -174,6 +194,10 @@ class Person:
     organisation: Optional[str] = None
     contact: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -184,6 +208,10 @@ class Domain:
 
     name: str
     description: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -196,6 +224,10 @@ class Client:
     sector: Optional[str] = None
     contact: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -210,6 +242,10 @@ class Target:
     status: Optional[str] = None
     scope: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -223,6 +259,10 @@ class Vulnerability:
     severity: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -235,6 +275,10 @@ class Technique:
     mitre_id: Optional[str] = None
     tactic: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -247,6 +291,10 @@ class Tool:
     version: Optional[str] = None
     type: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -260,6 +308,10 @@ class CTF:
     difficulty: Optional[str] = None
     status: Optional[str] = None
     writeup_path: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -274,6 +326,10 @@ class Course:
     level: Optional[str] = None
     status: Optional[str] = None
     description: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -287,6 +343,10 @@ class Exercise:
     duration: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -300,6 +360,10 @@ class Material:
     format: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -316,6 +380,10 @@ class Photo:
     lens: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -329,6 +397,10 @@ class Location:
     coordinates: Optional[str] = None
     habitat: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -341,6 +413,10 @@ class Species:
     family: Optional[str] = None
     conservation_status: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -353,6 +429,10 @@ class Gear:
     type: Optional[str] = None
     brand: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -366,6 +446,10 @@ class Model:
     provider: Optional[str] = None
     version: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -379,6 +463,9 @@ class Dataset:
     size: Optional[str] = None
     format: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -393,6 +480,10 @@ class Experiment:
     result: Optional[str] = None
     date: Optional[datetime.date] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -405,6 +496,10 @@ class Pipeline:
     status: Optional[str] = None
     steps: Optional[str] = None
     notes: Optional[str] = None
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 
@@ -418,6 +513,10 @@ class Insight:
     confidence: float = 0.8
     status: str = "pending"
     source_query: str = ""
+    summary: Optional[str] = None
+    details: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    source: Optional[str] = None
     created_at: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
 

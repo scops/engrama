@@ -358,6 +358,19 @@ def generate_schema(profile: dict[str, Any]) -> str:
                 default = _default_value(prop, False)
                 lines.append(f"    {prop}: {ptype}{default}")
 
+        # Enrichment fields — rich context for every node (see node-enrichment
+        # initiative). Skip any that are already defined on this node to
+        # avoid dataclass duplicates (e.g. Dataset already has 'source').
+        existing = set(props)
+        if "summary" not in existing:
+            lines.append("    summary: Optional[str] = None")
+        if "details" not in existing:
+            lines.append("    details: Optional[str] = None")
+        if "tags" not in existing:
+            lines.append("    tags: list[str] = field(default_factory=list)")
+        if "source" not in existing:
+            lines.append("    source: Optional[str] = None")
+
         # Always add timestamps
         lines.append("    created_at: Optional[datetime.datetime] = None")
         lines.append("    updated_at: Optional[datetime.datetime] = None")
@@ -375,6 +388,11 @@ def generate_schema(profile: dict[str, Any]) -> str:
         lines.append("    confidence: float = 0.8")
         lines.append('    status: str = "pending"')
         lines.append('    source_query: str = ""')
+        # Enrichment fields also on Insight
+        lines.append("    summary: Optional[str] = None")
+        lines.append("    details: Optional[str] = None")
+        lines.append("    tags: list[str] = field(default_factory=list)")
+        lines.append("    source: Optional[str] = None")
         lines.append("    created_at: Optional[datetime.datetime] = None")
         lines.append("    updated_at: Optional[datetime.datetime] = None")
 
@@ -453,19 +471,30 @@ def generate_cypher(profile: dict[str, Any]) -> str:
 
     label_list = "|".join(node_labels)
 
-    # Collect all text properties across all nodes
+    # Collect all text properties across all nodes.
+    # NOTE: 'tags' IS indexable (Neo4j fulltext supports string arrays) — it is
+    # a first-class enrichment field and we want it searchable.
     text_props: list[str] = []
     for node_def in all_nodes:
         for prop in node_def["properties"]:
-            if prop not in text_props and prop not in ("date", "confidence", "stack", "tags"):
+            if prop not in text_props and prop not in ("date", "confidence", "stack"):
                 text_props.append(prop)
     # Always include body for Insight
     if "body" not in text_props:
         text_props.append("body")
+    # Always include enrichment fields (summary, details, tags) so every node
+    # can be retrieved by rich context regardless of profile-specific props.
+    for enrich_prop in ("summary", "details", "tags"):
+        if enrich_prop not in text_props:
+            text_props.append(enrich_prop)
 
     prop_list = ", ".join(f"n.{p}" for p in text_props)
 
-    lines.append("CREATE FULLTEXT INDEX memory_search IF NOT EXISTS")
+    # DROP + CREATE so changes to the index definition take effect when
+    # `engrama init` re-applies the schema. DROP IF EXISTS is idempotent.
+    lines.append("DROP INDEX memory_search IF EXISTS;")
+    lines.append("")
+    lines.append("CREATE FULLTEXT INDEX memory_search")
     lines.append(f"FOR (n:{label_list})")
     lines.append(f"ON EACH [{prop_list}];")
     lines.append("")

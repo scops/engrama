@@ -36,3 +36,4 @@ neo4j_logs/
 
 # ── Development references (not part of codebase) ─────
 _obsidian_mcp_ref/
+docs/

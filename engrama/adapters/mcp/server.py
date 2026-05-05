@@ -104,7 +104,26 @@ class RememberInput(BaseModel):
         ...,
         description=(
             "Node properties. Must include 'name' (or 'title' for Decision/Problem). "
-            "Example: {\"name\": \"engrama\", \"status\": \"active\", \"repo\": \"scops/engrama\"}."
+            "For rich retrieval, include enrichment fields:\n"
+            "  - 'summary': 2–3 sentence overview — what this is, why it matters\n"
+            "  - 'details': comprehensive context — techniques, decisions, approaches, "
+            "alternatives, key examples. The richer this field, the more useful the memory becomes.\n"
+            "  - 'tags': freeform list for filtering, e.g. "
+            "[\"active-directory\", \"credential-access\", \"windows\"]\n"
+            "  - 'source': how this knowledge was captured "
+            "(\"conversation\", \"ingest\", \"manual\", \"sync\")\n"
+            "  - 'status': current state (\"active\", \"resolved\", \"superseded\")\n"
+            "Example of a GOOD node:\n"
+            "{\"name\": \"kerberoasting-lab\", "
+            "\"summary\": \"Hands-on lab demonstrating Kerberoasting against AD service "
+            "accounts using Rubeus and Hashcat, with detection via Event 4769.\", "
+            "\"details\": \"Students request TGS tickets for SPNs with Rubeus kerberoast, "
+            "crack offline with Hashcat. Covers RC4 vs AES crackability, detection via "
+            "Event 4769 anomalies. Defense: gMSA, AES-only policy, honey tokens.\", "
+            "\"tags\": [\"active-directory\", \"credential-access\", \"lab\"], "
+            "\"source\": \"conversation\"}\n"
+            "Example of a BAD (too thin) node: "
+            "{\"name\": \"kerberoasting-lab\", \"description\": \"Lab about kerberoasting\"}"
         ),
     )
     relations: dict[str, list[str]] = Field(
@@ -358,7 +377,13 @@ def create_engrama_mcp(
         Uses hybrid search (fulltext + vector similarity) when embeddings
         are configured, otherwise falls back to fulltext only.
 
-        Returns a JSON array of matches with ``type``, ``name``, and ``score``.
+        Returns a JSON array of matches with ``type``, ``name``, ``score``
+        and — for every node that has been enriched — ``summary`` (2–3
+        sentence overview, falling back to ``description`` for older nodes)
+        and ``tags`` (freeform list).  This lets you act on search results
+        without a second ``engrama_context`` call.  ``details`` is *not*
+        returned here; call ``engrama_context`` when you need the full
+        content of a node.
         """
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
@@ -385,6 +410,12 @@ def create_engrama_mcp(
                         "vector_score": round(r.vector_score, 4),
                         "fulltext_score": round(r.fulltext_score, 4),
                         "temporal_score": round(r.temporal_score, 4),
+                        # Node-enrichment: surface summary + tags so callers
+                        # can act on search results without a second
+                        # engrama_context round-trip. ``details`` is
+                        # intentionally excluded to keep responses compact.
+                        "summary": r.properties.get("summary", "") or "",
+                        "tags": r.properties.get("tags") or [],
                     }
                     for r in hybrid_results
                 ]
@@ -451,15 +482,32 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_remember(params: RememberInput, ctx: Context) -> str:
-        """Store a piece of knowledge as a node in the memory graph.  Use this
-        whenever you learn something new, solve a problem, or encounter an
-        important entity (person, technology, project, etc.) that is not yet
-        in the graph.  **Immediately after calling this, call engrama_relate**
-        to connect the new node to its context — isolated nodes are much less
-        useful.
+        """Store a piece of knowledge as a node in the memory graph.
+
+        Use this whenever you learn something new, solve a problem, or
+        encounter an important entity (person, technology, project, etc.)
+        that is not yet in the graph.  **Immediately after calling this,
+        call engrama_relate** to connect the new node to its context —
+        isolated nodes are much less useful.
+
+        Properties should include rich context for future retrieval:
+
+        * ``name`` (required): unique identifier for the node.
+        * ``summary``: 2–3 sentence overview — what this is, why it matters.
+        * ``details``: comprehensive context — techniques used, decisions
+          made, approaches taken, alternatives considered, key examples.
+          The richer this field, the more useful the memory becomes.
+        * ``tags``: freeform list for filtering, e.g.
+          ``["active-directory", "credential-access", "windows"]``.
+        * ``source``: how this knowledge was captured
+          (``"conversation"``, ``"ingest"``, ``"manual"``, ``"sync"``).
+        * ``status``: current state
+          (``"active"``, ``"resolved"``, ``"superseded"``).
 
         If a node with the same ``name`` (or ``title``) already exists, its
-        properties are updated (MERGE semantics).
+        properties are updated (MERGE semantics).  ``description`` is still
+        accepted for backward compatibility and is used as a fallback when
+        ``summary`` is absent.
 
         When a vault is configured, a corresponding .md note is created (or
         updated) with full YAML frontmatter including engrama_id and an empty
@@ -789,6 +837,13 @@ def create_engrama_mcp(
         user's Person node to see their projects, or a Technology node to
         see what it connects to.  Works even for isolated nodes (returns the
         node with an empty neighbours list).
+
+        The root node returns **all** enrichment fields (``summary``,
+        ``details``, ``tags``, ``source``), giving you the full content of
+        the requested node in one call.  Neighbour dicts strip ``details``
+        (it can be long) but keep ``summary`` and ``tags`` so you can
+        decide whether a neighbour is worth exploring — call
+        ``engrama_context`` on that neighbour if you need its full details.
         """
         if params.label not in _VALID_LABELS:
             return f"Error: Invalid label '{params.label}'."
@@ -1108,8 +1163,18 @@ def create_engrama_mcp(
             "You have just read the above content. Your task is to extract entities "
             "and relationships that would be useful to remember.\n\n"
             "For each entity you identify:\n"
-            "1. Call `engrama_remember` with the entity's label, name, and properties.\n"
+            "1. Call `engrama_remember` with the entity's label, name, and rich "
+            "properties — thin nodes are nearly useless to future-you.\n"
             "2. Immediately call `engrama_relate` to connect it to related entities.\n\n"
+            "When extracting entities from this content, include for each:\n"
+            "- 'summary': 2–3 sentence overview of what this entity is and why it matters\n"
+            "- 'details': comprehensive context — techniques used, decisions made, "
+            "approaches taken, alternatives considered, key examples\n"
+            "- 'tags': relevant freeform tags for filtering (e.g. domain, tactic, status)\n"
+            "- 'source': set to 'ingest' so later callers know the provenance\n\n"
+            "Prefer specific relation types (EXPLOITS, EXECUTED_WITH, PREREQUISITE_OF, "
+            "TEACHES, COVERS, TARGETS, USES, COMPOSED_OF, …) over the generic RELATED_TO; "
+            "specific edges make pattern detection (engrama_reflect) much more useful.\n\n"
             "Focus on:\n"
             "- People (Person nodes)\n"
             "- Projects and products (Project nodes)\n"

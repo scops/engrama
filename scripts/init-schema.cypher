@@ -83,10 +83,15 @@ CREATE CONSTRAINT insight_title IF NOT EXISTS
   FOR (n:Insight) REQUIRE n.title IS UNIQUE;
 
 // === FULLTEXT INDEX ===
+// DROP + CREATE so that changes to the index definition (e.g. new enrichment
+// properties) take effect when `engrama init` re-applies the schema.
+// Neo4j fulltext supports string arrays, so `n.tags` is indexable.
 
-CREATE FULLTEXT INDEX memory_search IF NOT EXISTS
+DROP INDEX memory_search IF EXISTS;
+
+CREATE FULLTEXT INDEX memory_search
 FOR (n:Project|Concept|Decision|Problem|Technology|Person|Domain|Client|Target|Vulnerability|Technique|Tool|CTF|Course|Exercise|Material|Photo|Location|Species|Gear|Model|Dataset|Experiment|Pipeline|Insight)
-ON EACH [n.name, n.status, n.repo, n.description, n.domain, n.notes, n.title, n.rationale, n.alternatives, n.solution, n.context, n.severity, n.version, n.type, n.role, n.organisation, n.contact, n.sector, n.ip, n.os, n.scope, n.cve, n.mitre_id, n.tactic, n.platform, n.difficulty, n.writeup_path, n.cohort, n.level, n.duration, n.format, n.location, n.species, n.camera, n.lens, n.region, n.coordinates, n.habitat, n.family, n.conservation_status, n.brand, n.provider, n.source, n.size, n.metric, n.result, n.steps, n.body];
+ON EACH [n.name, n.status, n.repo, n.description, n.domain, n.notes, n.title, n.rationale, n.alternatives, n.solution, n.context, n.severity, n.version, n.type, n.role, n.organisation, n.contact, n.sector, n.ip, n.os, n.scope, n.cve, n.mitre_id, n.tactic, n.platform, n.difficulty, n.writeup_path, n.cohort, n.level, n.duration, n.format, n.location, n.species, n.camera, n.lens, n.region, n.coordinates, n.habitat, n.family, n.conservation_status, n.brand, n.provider, n.source, n.size, n.metric, n.result, n.steps, n.body, n.summary, n.details, n.tags];
 
 // === VECTOR INDEX (DDR-003) ===
 
