@@ -561,6 +561,139 @@ class Neo4jAsyncStore:
             return dict(records[0])
         return None
 
+    # ------------------------------------------------------------------
+    # Reflect — pattern detection (hexagonal symmetry with sync store)
+    # ------------------------------------------------------------------
+    #
+    # These are not called by the MCP server today.  They live here so a
+    # future async reflect path has a complete backend surface to call
+    # against, mirroring :class:`Neo4jGraphStore`.
+
+    async def detect_cross_project_solutions(self) -> list[dict[str, Any]]:
+        """Open Problem shares a Concept with a resolved Problem in a
+        different Project that has a Decision.
+        """
+        cypher = (
+            "MATCH (pB:Project)-[:HAS]->(open:Problem {status: $open_status}) "
+            "MATCH (open)-[:INSTANCE_OF|APPLIES]->(c:Concept)"
+            "<-[:INSTANCE_OF|APPLIES]-(resolved:Problem {status: $resolved_status}) "
+            "MATCH (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project) "
+            "WHERE pA <> pB "
+            "RETURN pB.name AS target_project, open.title AS open_problem, "
+            "d.title AS decision, pA.name AS source_project, c.name AS concept"
+        )
+        records, _, _ = await self._driver.execute_query(
+            cypher,
+            parameters_={"open_status": "open", "resolved_status": "resolved"},
+            database_=self._database,
+        )
+        return [dict(r) for r in records]
+
+    async def detect_shared_technology(self) -> list[dict[str, Any]]:
+        """Two distinct entities use the same Technology."""
+        cypher = (
+            "MATCH (a)-[:USES|TEACHES|COMPOSED_OF]->(t:Technology)"
+            "<-[:USES|TEACHES|COMPOSED_OF]-(b) "
+            "WHERE id(a) < id(b) "
+            "AND NOT a:Insight AND NOT b:Insight "
+            "RETURN coalesce(a.name, a.title) AS entity_a, labels(a)[0] AS type_a, "
+            "coalesce(b.name, b.title) AS entity_b, labels(b)[0] AS type_b, "
+            "t.name AS technology"
+        )
+        records, _, _ = await self._driver.execute_query(
+            cypher, database_=self._database,
+        )
+        return [dict(r) for r in records]
+
+    async def detect_training_opportunities(self) -> list[dict[str, Any]]:
+        """A Vulnerability or open Problem shares a Concept with a Course."""
+        cypher = (
+            "MATCH (issue)-[:INSTANCE_OF|APPLIES]->(c:Concept)<-[:COVERS]-(course:Course) "
+            "WHERE (issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status) "
+            "RETURN coalesce(issue.title, issue.name) AS issue, "
+            "labels(issue)[0] AS issue_type, c.name AS concept, course.name AS course"
+        )
+        records, _, _ = await self._driver.execute_query(
+            cypher,
+            parameters_={"open_status": "open"},
+            database_=self._database,
+        )
+        return [dict(r) for r in records]
+
+    async def detect_technique_transfer(self) -> list[dict[str, Any]]:
+        """Technique used in domain A could apply in domain B."""
+        cypher = (
+            "MATCH (t:Technique)-[:IN_DOMAIN]->(d1:Domain) "
+            "MATCH (d2:Domain) WHERE d1 <> d2 "
+            "AND NOT EXISTS { MATCH (t)-[:IN_DOMAIN]->(d2) } "
+            "MATCH (other)-[:IN_DOMAIN]->(d2) "
+            "WHERE (other)-[:INSTANCE_OF|APPLIES]->(:Concept)<-[:INSTANCE_OF|APPLIES]-(t) "
+            "RETURN t.name AS technique, d1.name AS source_domain, "
+            "d2.name AS target_domain, count(other) AS related_entities "
+            "ORDER BY related_entities DESC LIMIT 10"
+        )
+        records, _, _ = await self._driver.execute_query(
+            cypher, database_=self._database,
+        )
+        return [dict(r) for r in records]
+
+    async def detect_concept_clusters(self) -> list[dict[str, Any]]:
+        """Concept connected to >= 3 entities."""
+        cypher = (
+            "MATCH (c:Concept)<-[:INSTANCE_OF|APPLIES]-(n) "
+            "WITH c, collect(DISTINCT {name: coalesce(n.name, n.title), "
+            "label: labels(n)[0]}) AS connected, count(n) AS cnt "
+            "WHERE cnt >= 3 "
+            "RETURN c.name AS concept, cnt AS entity_count, connected[..5] AS sample "
+            "ORDER BY cnt DESC LIMIT 10"
+        )
+        records, _, _ = await self._driver.execute_query(
+            cypher, database_=self._database,
+        )
+        return [dict(r) for r in records]
+
+    async def detect_stale_knowledge(self) -> list[dict[str, Any]]:
+        """Nodes 90d+ stale or low-confidence connected to active
+        Project/Course.
+        """
+        cypher = (
+            "MATCH (n)-[r]-(active) "
+            "WHERE (active:Project OR active:Course) "
+            "AND (active.status IS NULL OR active.status IN [$active_status, 'active']) "
+            "AND ("
+            "  n.updated_at < datetime() - duration({days: 90}) "
+            "  OR (n.confidence IS NOT NULL AND n.confidence < 0.3)"
+            ") "
+            "AND NOT n:Project AND NOT n:Course AND NOT n:Domain "
+            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
+            "n.updated_at AS last_updated, n.confidence AS confidence, "
+            "active.name AS project, type(r) AS rel "
+            "ORDER BY coalesce(n.confidence, 1.0) ASC, n.updated_at ASC LIMIT 15"
+        )
+        records, _, _ = await self._driver.execute_query(
+            cypher,
+            parameters_={"active_status": "active"},
+            database_=self._database,
+        )
+        return [dict(r) for r in records]
+
+    async def detect_under_connected_nodes(self) -> list[dict[str, Any]]:
+        """Nodes with fewer than 2 relationships."""
+        cypher = (
+            "MATCH (n) WHERE NOT n:Domain AND NOT n:Insight "
+            "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
+            "AND n.status <> 'archived' "
+            "WITH n, size([(n)-[]-() | 1]) AS rel_count "
+            "WHERE rel_count < 2 "
+            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
+            "rel_count, n.created_at AS created "
+            "ORDER BY n.created_at DESC LIMIT 15"
+        )
+        records, _, _ = await self._driver.execute_query(
+            cypher, database_=self._database,
+        )
+        return [dict(r) for r in records]
+
     async def list_existing_nodes(self, limit: int = 200) -> list[dict[str, str]]:
         """List existing nodes for deduplication during ingest."""
         records, _, _ = await self._driver.execute_query(
