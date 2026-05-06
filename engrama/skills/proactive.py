@@ -20,10 +20,8 @@ The agent **never** acts on unapproved Insights — it only presents them.
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
-
-from engrama.core.schema import TITLE_KEYED_LABELS
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from engrama.core.engine import EngramaEngine
@@ -63,16 +61,7 @@ class ProactiveSkill:
         Returns:
             A list of :class:`SurfacedInsight` ready for agent presentation.
         """
-        query = (
-            "MATCH (i:Insight {status: $status}) "
-            "RETURN i.title AS title, i.body AS body, "
-            "       i.confidence AS confidence, "
-            "       i.source_query AS source_query, "
-            "       i.created_at AS created_at "
-            "ORDER BY i.created_at DESC "
-            "LIMIT $limit"
-        )
-        records = engine._client.run(query, {"status": "pending", "limit": limit})
+        records = engine._store.get_pending_insights(limit=limit)
 
         results: list[SurfacedInsight] = []
         for r in records:
@@ -102,18 +91,11 @@ class ProactiveSkill:
         Returns:
             A dict with ``title``, ``action``, ``matched`` (bool).
         """
-        query = (
-            "MATCH (i:Insight {title: $title}) "
-            "SET i.status = 'approved', "
-            "    i.approved_at = datetime(), "
-            "    i.updated_at = datetime() "
-            "RETURN i.title AS title"
-        )
-        records = engine._client.run(query, {"title": title})
+        matched = engine._store.update_insight_status(title, "approved")
         return {
             "title": title,
             "action": "approved",
-            "matched": len(records) > 0,
+            "matched": matched,
         }
 
     def dismiss(self, engine: "EngramaEngine", *, title: str) -> dict:
@@ -126,18 +108,11 @@ class ProactiveSkill:
         Returns:
             A dict with ``title``, ``action``, ``matched`` (bool).
         """
-        query = (
-            "MATCH (i:Insight {title: $title}) "
-            "SET i.status = 'dismissed', "
-            "    i.dismissed_at = datetime(), "
-            "    i.updated_at = datetime() "
-            "RETURN i.title AS title"
-        )
-        records = engine._client.run(query, {"title": title})
+        matched = engine._store.update_insight_status(title, "dismissed")
         return {
             "title": title,
             "action": "dismissed",
-            "matched": len(records) > 0,
+            "matched": matched,
         }
 
     # ------------------------------------------------------------------
@@ -168,15 +143,9 @@ class ProactiveSkill:
             and ``reason`` if not written.
         """
         # Verify the Insight is approved
-        query = (
-            "MATCH (i:Insight {title: $title}) "
-            "RETURN i.status AS status, i.body AS body, "
-            "       i.confidence AS confidence, "
-            "       i.source_query AS source_query"
-        )
-        records = engine._client.run(query, {"title": title})
+        insight = engine._store.get_insight_by_title(title)
 
-        if not records:
+        if insight is None:
             return {
                 "title": title,
                 "target_note": target_note,
@@ -184,7 +153,6 @@ class ProactiveSkill:
                 "reason": "Insight not found in graph.",
             }
 
-        insight = records[0]
         if insight["status"] != "approved":
             return {
                 "title": title,
@@ -223,13 +191,7 @@ class ProactiveSkill:
         )
 
         # Mark as synced in Neo4j
-        engine._client.run(
-            "MATCH (i:Insight {title: $title}) "
-            "SET i.obsidian_path = $path, "
-            "    i.synced_at = datetime(), "
-            "    i.updated_at = datetime()",
-            {"title": title, "path": target_note},
-        )
+        engine._store.mark_insight_synced(title, target_note)
 
         return {
             "title": title,
