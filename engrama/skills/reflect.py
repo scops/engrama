@@ -30,112 +30,12 @@ Detection patterns:
 
 from __future__ import annotations
 
-import datetime
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from engrama.core.schema import Insight
 
 if TYPE_CHECKING:
     from engrama.core.engine import EngramaEngine
-
-
-# ---------------------------------------------------------------------------
-# Detection query definitions
-# ---------------------------------------------------------------------------
-
-# Original three (improved with INSTANCE_OF alongside APPLIES for robustness)
-
-_QUERY_CROSS_PROJECT_SOLUTION = (
-    "MATCH (pB:Project)-[:HAS]->(open:Problem {status: $open_status}) "
-    "MATCH (open)-[:INSTANCE_OF|APPLIES]->(c:Concept)"
-    "<-[:INSTANCE_OF|APPLIES]-(resolved:Problem {status: $resolved_status}) "
-    "MATCH (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project) "
-    "WHERE pA <> pB "
-    "RETURN pB.name AS target_project, open.title AS open_problem, "
-    "d.title AS decision, pA.name AS source_project, c.name AS concept"
-)
-
-_QUERY_SHARED_TECHNOLOGY = (
-    "MATCH (a)-[:USES|TEACHES|COMPOSED_OF]->(t:Technology)"
-    "<-[:USES|TEACHES|COMPOSED_OF]-(b) "
-    "WHERE id(a) < id(b) "
-    "AND NOT a:Insight AND NOT b:Insight "
-    "RETURN coalesce(a.name, a.title) AS entity_a, labels(a)[0] AS type_a, "
-    "coalesce(b.name, b.title) AS entity_b, labels(b)[0] AS type_b, "
-    "t.name AS technology"
-)
-
-_QUERY_TRAINING_OPPORTUNITY = (
-    "MATCH (issue)-[:INSTANCE_OF|APPLIES]->(c:Concept)<-[:COVERS]-(course:Course) "
-    "WHERE (issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status) "
-    "RETURN coalesce(issue.title, issue.name) AS issue, "
-    "labels(issue)[0] AS issue_type, c.name AS concept, course.name AS course"
-)
-
-# New patterns (Phase 2)
-
-_QUERY_TECHNIQUE_TRANSFER = (
-    "MATCH (t:Technique)-[:IN_DOMAIN]->(d1:Domain) "
-    "MATCH (d2:Domain) WHERE d1 <> d2 "
-    "AND NOT EXISTS { MATCH (t)-[:IN_DOMAIN]->(d2) } "
-    "MATCH (other)-[:IN_DOMAIN]->(d2) "
-    "WHERE (other)-[:INSTANCE_OF|APPLIES]->(:Concept)<-[:INSTANCE_OF|APPLIES]-(t) "
-    "RETURN t.name AS technique, d1.name AS source_domain, "
-    "d2.name AS target_domain, count(other) AS related_entities "
-    "ORDER BY related_entities DESC LIMIT 10"
-)
-
-_QUERY_CONCEPT_CLUSTERING = (
-    "MATCH (c:Concept)<-[:INSTANCE_OF|APPLIES]-(n) "
-    "WITH c, collect(DISTINCT {name: coalesce(n.name, n.title), "
-    "label: labels(n)[0]}) AS connected, count(n) AS cnt "
-    "WHERE cnt >= 3 "
-    "RETURN c.name AS concept, cnt AS entity_count, connected[..5] AS sample "
-    "ORDER BY cnt DESC LIMIT 10"
-)
-
-_QUERY_STALE_KNOWLEDGE = (
-    "MATCH (n)-[r]-(active) "
-    "WHERE (active:Project OR active:Course) "
-    "AND (active.status IS NULL OR active.status IN [$active_status, 'active']) "
-    "AND ("
-    "  n.updated_at < datetime() - duration({days: 90}) "
-    "  OR (n.confidence IS NOT NULL AND n.confidence < 0.3)"
-    ") "
-    "AND NOT n:Project AND NOT n:Course AND NOT n:Domain "
-    "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-    "n.updated_at AS last_updated, n.confidence AS confidence, "
-    "active.name AS project, type(r) AS rel "
-    "ORDER BY coalesce(n.confidence, 1.0) ASC, n.updated_at ASC LIMIT 15"
-)
-
-_QUERY_UNDER_CONNECTED = (
-    "MATCH (n) WHERE NOT n:Domain AND NOT n:Insight "
-    "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
-    "AND n.status <> 'archived' "
-    "WITH n, size([(n)-[]-() | 1]) AS rel_count "
-    "WHERE rel_count < 2 "
-    "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-    "rel_count, n.created_at AS created "
-    "ORDER BY n.created_at DESC LIMIT 15"
-)
-
-
-# ---------------------------------------------------------------------------
-# Graph introspection query
-# ---------------------------------------------------------------------------
-
-_QUERY_GRAPH_PROFILE = (
-    "MATCH (n) WHERE NOT n:Insight "
-    "RETURN labels(n)[0] AS label, count(n) AS cnt "
-    "ORDER BY cnt DESC"
-)
-
-
-# ---------------------------------------------------------------------------
-# ReflectSkill
-# ---------------------------------------------------------------------------
 
 
 class ReflectSkill:
@@ -198,17 +98,12 @@ class ReflectSkill:
     @staticmethod
     def _profile_graph(engine: "EngramaEngine") -> dict[str, int]:
         """Return a dict of {label: count} for all node types in the graph."""
-        records = engine._client.run(_QUERY_GRAPH_PROFILE, {})
-        return {r["label"]: r["cnt"] for r in records}
+        return engine._store.count_labels()
 
     @staticmethod
     def _get_dismissed_titles(engine: "EngramaEngine") -> set[str]:
         """Return titles of all dismissed Insights to avoid re-surfacing."""
-        records = engine._client.run(
-            "MATCH (i:Insight {status: 'dismissed'}) RETURN i.title AS title",
-            {},
-        )
-        return {r["title"] for r in records}
+        return engine._store.get_dismissed_insight_titles()
 
     # ------------------------------------------------------------------
     # Detection methods — original three (improved)
@@ -217,10 +112,7 @@ class ReflectSkill:
     def _detect_cross_project_solutions(
         self, engine: "EngramaEngine", dismissed: set[str],
     ) -> list[Insight]:
-        records = engine._client.run(
-            _QUERY_CROSS_PROJECT_SOLUTION,
-            {"open_status": "open", "resolved_status": "resolved"},
-        )
+        records = engine._store.detect_cross_project_solutions()
         results: list[Insight] = []
         for r in records:
             title = (
@@ -246,9 +138,7 @@ class ReflectSkill:
     def _detect_shared_technology(
         self, engine: "EngramaEngine", dismissed: set[str],
     ) -> list[Insight]:
-        records = engine._client.run(
-            _QUERY_SHARED_TECHNOLOGY, {},
-        )
+        records = engine._store.detect_shared_technology()
         results: list[Insight] = []
         for r in records:
             a_desc = f"{r['type_a']}:{r['entity_a']}"
@@ -275,10 +165,7 @@ class ReflectSkill:
     def _detect_training_opportunities(
         self, engine: "EngramaEngine", dismissed: set[str],
     ) -> list[Insight]:
-        records = engine._client.run(
-            _QUERY_TRAINING_OPPORTUNITY,
-            {"open_status": "open"},
-        )
+        records = engine._store.detect_training_opportunities()
         results: list[Insight] = []
         for r in records:
             issue_desc = f"{r['issue_type']}:{r['issue']}"
@@ -308,7 +195,7 @@ class ReflectSkill:
         self, engine: "EngramaEngine", dismissed: set[str],
     ) -> list[Insight]:
         """A Technique used in domain A could apply in domain B."""
-        records = engine._client.run(_QUERY_TECHNIQUE_TRANSFER, {})
+        records = engine._store.detect_technique_transfer()
         results: list[Insight] = []
         for r in records:
             title = (
@@ -337,7 +224,7 @@ class ReflectSkill:
         self, engine: "EngramaEngine", dismissed: set[str],
     ) -> list[Insight]:
         """Multiple unrelated entities share the same Concept."""
-        records = engine._client.run(_QUERY_CONCEPT_CLUSTERING, {})
+        records = engine._store.detect_concept_clusters()
         results: list[Insight] = []
         for r in records:
             concept = r["concept"]
@@ -371,9 +258,7 @@ class ReflectSkill:
         - Not updated in 90+ days, OR
         - Confidence below 0.3 (regardless of age).
         """
-        records = engine._client.run(
-            _QUERY_STALE_KNOWLEDGE, {"active_status": "active"},
-        )
+        records = engine._store.detect_stale_knowledge()
         results: list[Insight] = []
         for r in records:
             name = r["name"]
@@ -418,15 +303,12 @@ class ReflectSkill:
         # BUG-007: skip if already dismissed (by stable title or source_query)
         if title in dismissed:
             return []
-        dismissed_sq = engine._client.run(
-            "MATCH (i:Insight {source_query: 'under_connected', status: 'dismissed'}) "
-            "RETURN i.title AS title LIMIT 1",
-            {},
-        )
-        if dismissed_sq:
+        if engine._store.find_insight_by_source_query(
+            "under_connected", statuses=["dismissed"],
+        ):
             return []
 
-        records = engine._client.run(_QUERY_UNDER_CONNECTED, {})
+        records = engine._store.detect_under_connected_nodes()
         if not records:
             return []
 
