@@ -115,19 +115,13 @@ class ObsidianSync:
 
         Returns the number of nodes archived.
         """
-        records = self.engine.run(
-            "MATCH (n) WHERE n.obsidian_path IS NOT NULL "
-            "RETURN labels(n)[0] AS label, n.name AS name, n.obsidian_path AS path",
-            {},
-        )
+        records = self.engine._store.list_documented_nodes()
         archived = 0
         for record in records:
             note = self.adapter.read_note(record["path"])
             if not note["success"]:
-                self.engine.run(
-                    "MATCH (n {name: $name}) WHERE $label IN labels(n) "
-                    "SET n.status = 'archived', n.updated_at = datetime()",
-                    {"name": record["name"], "label": record["label"]},
+                self.engine._store.archive_node_for_missing_note(
+                    record["label"], record["name"],
                 )
                 archived += 1
         return archived
@@ -191,18 +185,11 @@ class ObsidianSync:
                     if target_name == pn.name:
                         continue  # skip self-links
                     try:
-                        self.engine.run(
-                            f"MATCH (a {{name: $from_name}}) "
-                            f"WHERE $from_label IN labels(a) "
-                            f"MATCH (b {{name: $to_name}}) "
-                            f"WHERE $to_label IN labels(b) "
-                            f"MERGE (a)-[:LINKS_TO]->(b)",
-                            {
-                                "from_name": pn.name,
-                                "from_label": pn.label,
-                                "to_name": target_name,
-                                "to_label": target_label,
-                            },
+                        self.engine._store.merge_wiki_link(
+                            from_label=pn.label,
+                            from_name=pn.name,
+                            to_label=target_label,
+                            to_name=target_name,
                         )
                         relations_created += 1
                     except Exception as e:
@@ -222,19 +209,11 @@ class ObsidianSync:
             if not target:
                 continue
             try:
-                # Try to find target node by name (case-insensitive)
-                result = self.engine.run(
-                    "MATCH (b) WHERE toLower(b.name) = toLower($target) "
-                    "WITH b LIMIT 1 "
-                    "MATCH (a {name: $from_name}) WHERE $from_label IN labels(a) "
-                    "MERGE (a)-[:LINKS_TO]->(b)",
-                    {
-                        "target": target,
-                        "from_name": parsed.name,
-                        "from_label": parsed.label,
-                    },
+                relations_created += self.engine._store.merge_wiki_link_by_target_name(
+                    from_label=parsed.label,
+                    from_name=parsed.name,
+                    target_name=target,
                 )
-                relations_created += 1
             except Exception as e:
                 logger.debug("Could not link %s -> %s: %s", parsed.name, target, e)
         return relations_created
@@ -366,16 +345,9 @@ class ObsidianSync:
         Returns the first label found, or None if the node does not exist.
         """
         try:
-            records = self.engine.run(
-                "MATCH (n) WHERE toLower(n.name) = toLower($name) "
-                "RETURN labels(n)[0] AS label LIMIT 1",
-                {"name": name},
-            )
-            if records:
-                return records[0]["label"]
+            return self.engine._store.lookup_node_label(name)
         except Exception:
-            pass
-        return None
+            return None
 
     @staticmethod
     def _infer_stub_label(rel_type: str) -> str:
