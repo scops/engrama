@@ -425,3 +425,478 @@ class Neo4jGraphStore:
     def close(self) -> None:
         """Close the underlying client connection."""
         self._client.close()
+
+    # ------------------------------------------------------------------
+    # Forget operations (skills/forget.py)
+    # ------------------------------------------------------------------
+
+    def archive_node_by_name(
+        self,
+        label: str,
+        name: str,
+        *,
+        purge: bool = False,
+    ) -> dict[str, Any]:
+        """Archive (or DETACH DELETE) a node by ``(label, name|title)``.
+
+        The merge-key (``name`` vs ``title``) is selected from
+        :data:`TITLE_KEYED_LABELS`.
+
+        Returns a dict with:
+
+        * ``matched`` (bool) — at least one node existed.
+        * ``deleted`` (int) — DETACH DELETE count when ``purge=True``,
+          ``0`` when archiving.
+        """
+        merge_key = "title" if label in TITLE_KEYED_LABELS else "name"
+
+        if purge:
+            query = (
+                f"MATCH (n:{label} {{{merge_key}: $name}}) "
+                "DETACH DELETE n "
+                "RETURN count(*) AS deleted"
+            )
+            records = self._client.run(query, {"name": name})
+            deleted = records[0]["deleted"] if records else 0
+            return {"matched": deleted > 0, "deleted": deleted}
+
+        query = (
+            f"MATCH (n:{label} {{{merge_key}: $name}}) "
+            "SET n.status = 'archived', n.archived_at = datetime(), "
+            "    n.updated_at = datetime() "
+            "RETURN n"
+        )
+        records = self._client.run(query, {"name": name})
+        return {"matched": len(records) > 0, "deleted": 0}
+
+    def archive_nodes_older_than(
+        self,
+        label: str,
+        days: int,
+        *,
+        purge: bool = False,
+    ) -> dict[str, Any]:
+        """Archive (or DETACH DELETE) nodes whose ``updated_at`` is older
+        than *days* days.
+
+        Returns ``{"affected": int}``.
+        """
+        if purge:
+            query = (
+                f"MATCH (n:{label}) "
+                "WHERE n.updated_at IS NOT NULL "
+                "  AND n.updated_at < datetime() - duration({days: $days}) "
+                "DETACH DELETE n "
+                "RETURN count(*) AS affected"
+            )
+        else:
+            query = (
+                f"MATCH (n:{label}) "
+                "WHERE n.updated_at IS NOT NULL "
+                "  AND n.updated_at < datetime() - duration({days: $days}) "
+                "  AND (n.status IS NULL OR n.status <> 'archived') "
+                "SET n.status = 'archived', n.archived_at = datetime(), "
+                "    n.updated_at = datetime() "
+                "RETURN count(n) AS affected"
+            )
+
+        records = self._client.run(query, {"days": days})
+        affected = records[0]["affected"] if records else 0
+        return {"affected": affected}
+
+    # ------------------------------------------------------------------
+    # Insight operations (skills/proactive.py + skills/reflect.py)
+    # ------------------------------------------------------------------
+
+    def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Return pending Insights ordered by ``created_at`` (newest first).
+
+        Sync-side ordering preserves the byte-for-byte behaviour of
+        ``proactive.surface()``.  The async store orders by confidence —
+        documented divergence (see ``docs/refactor-followups.md``).
+        """
+        records = self._client.run(
+            "MATCH (i:Insight {status: $status}) "
+            "RETURN i.title AS title, i.body AS body, "
+            "       i.confidence AS confidence, "
+            "       i.source_query AS source_query, "
+            "       i.created_at AS created_at "
+            "ORDER BY i.created_at DESC "
+            "LIMIT $limit",
+            {"status": "pending", "limit": limit},
+        )
+        return [dict(r) for r in records]
+
+    def update_insight_status(self, title: str, new_status: str) -> bool:
+        """Set ``status`` and the matching timestamp (``approved_at`` /
+        ``dismissed_at``) on an Insight node.
+        """
+        ts_field = "approved_at" if new_status == "approved" else "dismissed_at"
+        query = (
+            "MATCH (i:Insight {title: $title}) "
+            f"SET i.status = $new_status, "
+            f"    i.{ts_field} = datetime(), "
+            "    i.updated_at = datetime() "
+            "RETURN i.title AS title"
+        )
+        records = self._client.run(
+            query, {"title": title, "new_status": new_status},
+        )
+        return len(records) > 0
+
+    def get_insight_by_title(self, title: str) -> dict[str, Any] | None:
+        """Fetch an Insight by exact title.
+
+        Returns ``{status, body, confidence, source_query}`` or ``None``.
+        """
+        records = self._client.run(
+            "MATCH (i:Insight {title: $title}) "
+            "RETURN i.status AS status, i.body AS body, "
+            "       i.confidence AS confidence, "
+            "       i.source_query AS source_query",
+            {"title": title},
+        )
+        if records:
+            return dict(records[0])
+        return None
+
+    def mark_insight_synced(self, title: str, obsidian_path: str) -> None:
+        """Set ``obsidian_path`` + ``synced_at`` + ``updated_at`` on an
+        Insight node.
+
+        The underlying Cypher has no ``RETURN`` clause; this method
+        therefore returns ``None`` rather than a bool.  Async-side
+        :meth:`Neo4jAsyncStore.mark_insight_synced` returns ``bool`` because
+        its query *does* ``RETURN i.title``.  Documented divergence.
+        """
+        self._client.run(
+            "MATCH (i:Insight {title: $title}) "
+            "SET i.obsidian_path = $path, "
+            "    i.synced_at = datetime(), "
+            "    i.updated_at = datetime()",
+            {"title": title, "path": obsidian_path},
+        )
+
+    def get_dismissed_insight_titles(self) -> set[str]:
+        """Return titles of all dismissed Insights."""
+        records = self._client.run(
+            "MATCH (i:Insight {status: 'dismissed'}) RETURN i.title AS title",
+            {},
+        )
+        return {r["title"] for r in records}
+
+    def find_insight_by_source_query(
+        self,
+        source_query: str,
+        statuses: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Find an Insight by ``source_query`` and optional status filter.
+
+        Async-equivalent: :meth:`Neo4jAsyncStore.find_insight_by_source_query`.
+        Default status set is ``["pending", "approved"]``.
+        """
+        status_list = statuses or ["pending", "approved"]
+        records = self._client.run(
+            "MATCH (i:Insight {source_query: $sq}) "
+            "WHERE i.status IN $statuses "
+            "RETURN i.title AS title, i.status AS status LIMIT 1",
+            {"sq": source_query, "statuses": status_list},
+        )
+        if records:
+            return dict(records[0])
+        return None
+
+    # ------------------------------------------------------------------
+    # Reflect — pattern detection (skills/reflect.py)
+    # ------------------------------------------------------------------
+
+    def detect_cross_project_solutions(self) -> list[dict[str, Any]]:
+        """Open Problem shares a Concept with a resolved Problem in a
+        different Project that has a Decision.
+        """
+        cypher = (
+            "MATCH (pB:Project)-[:HAS]->(open:Problem {status: $open_status}) "
+            "MATCH (open)-[:INSTANCE_OF|APPLIES]->(c:Concept)"
+            "<-[:INSTANCE_OF|APPLIES]-(resolved:Problem {status: $resolved_status}) "
+            "MATCH (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project) "
+            "WHERE pA <> pB "
+            "RETURN pB.name AS target_project, open.title AS open_problem, "
+            "d.title AS decision, pA.name AS source_project, c.name AS concept"
+        )
+        records = self._client.run(
+            cypher, {"open_status": "open", "resolved_status": "resolved"},
+        )
+        return [dict(r) for r in records]
+
+    def detect_shared_technology(self) -> list[dict[str, Any]]:
+        """Two distinct entities use the same Technology."""
+        cypher = (
+            "MATCH (a)-[:USES|TEACHES|COMPOSED_OF]->(t:Technology)"
+            "<-[:USES|TEACHES|COMPOSED_OF]-(b) "
+            "WHERE id(a) < id(b) "
+            "AND NOT a:Insight AND NOT b:Insight "
+            "RETURN coalesce(a.name, a.title) AS entity_a, labels(a)[0] AS type_a, "
+            "coalesce(b.name, b.title) AS entity_b, labels(b)[0] AS type_b, "
+            "t.name AS technology"
+        )
+        records = self._client.run(cypher, {})
+        return [dict(r) for r in records]
+
+    def detect_training_opportunities(self) -> list[dict[str, Any]]:
+        """A Vulnerability or open Problem shares a Concept with a Course."""
+        cypher = (
+            "MATCH (issue)-[:INSTANCE_OF|APPLIES]->(c:Concept)<-[:COVERS]-(course:Course) "
+            "WHERE (issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status) "
+            "RETURN coalesce(issue.title, issue.name) AS issue, "
+            "labels(issue)[0] AS issue_type, c.name AS concept, course.name AS course"
+        )
+        records = self._client.run(cypher, {"open_status": "open"})
+        return [dict(r) for r in records]
+
+    def detect_technique_transfer(self) -> list[dict[str, Any]]:
+        """Technique used in domain A could apply in domain B."""
+        cypher = (
+            "MATCH (t:Technique)-[:IN_DOMAIN]->(d1:Domain) "
+            "MATCH (d2:Domain) WHERE d1 <> d2 "
+            "AND NOT EXISTS { MATCH (t)-[:IN_DOMAIN]->(d2) } "
+            "MATCH (other)-[:IN_DOMAIN]->(d2) "
+            "WHERE (other)-[:INSTANCE_OF|APPLIES]->(:Concept)<-[:INSTANCE_OF|APPLIES]-(t) "
+            "RETURN t.name AS technique, d1.name AS source_domain, "
+            "d2.name AS target_domain, count(other) AS related_entities "
+            "ORDER BY related_entities DESC LIMIT 10"
+        )
+        records = self._client.run(cypher, {})
+        return [dict(r) for r in records]
+
+    def detect_concept_clusters(self) -> list[dict[str, Any]]:
+        """Concept connected to >= 3 entities."""
+        cypher = (
+            "MATCH (c:Concept)<-[:INSTANCE_OF|APPLIES]-(n) "
+            "WITH c, collect(DISTINCT {name: coalesce(n.name, n.title), "
+            "label: labels(n)[0]}) AS connected, count(n) AS cnt "
+            "WHERE cnt >= 3 "
+            "RETURN c.name AS concept, cnt AS entity_count, connected[..5] AS sample "
+            "ORDER BY cnt DESC LIMIT 10"
+        )
+        records = self._client.run(cypher, {})
+        return [dict(r) for r in records]
+
+    def detect_stale_knowledge(self) -> list[dict[str, Any]]:
+        """Nodes 90d+ stale or low-confidence connected to active
+        Project/Course.
+        """
+        cypher = (
+            "MATCH (n)-[r]-(active) "
+            "WHERE (active:Project OR active:Course) "
+            "AND (active.status IS NULL OR active.status IN [$active_status, 'active']) "
+            "AND ("
+            "  n.updated_at < datetime() - duration({days: 90}) "
+            "  OR (n.confidence IS NOT NULL AND n.confidence < 0.3)"
+            ") "
+            "AND NOT n:Project AND NOT n:Course AND NOT n:Domain "
+            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
+            "n.updated_at AS last_updated, n.confidence AS confidence, "
+            "active.name AS project, type(r) AS rel "
+            "ORDER BY coalesce(n.confidence, 1.0) ASC, n.updated_at ASC LIMIT 15"
+        )
+        records = self._client.run(cypher, {"active_status": "active"})
+        return [dict(r) for r in records]
+
+    def detect_under_connected_nodes(self) -> list[dict[str, Any]]:
+        """Nodes with fewer than 2 relationships."""
+        cypher = (
+            "MATCH (n) WHERE NOT n:Domain AND NOT n:Insight "
+            "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
+            "AND n.status <> 'archived' "
+            "WITH n, size([(n)-[]-() | 1]) AS rel_count "
+            "WHERE rel_count < 2 "
+            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
+            "rel_count, n.created_at AS created "
+            "ORDER BY n.created_at DESC LIMIT 15"
+        )
+        records = self._client.run(cypher, {})
+        return [dict(r) for r in records]
+
+    # ------------------------------------------------------------------
+    # Associate (skills/associate.py)
+    # ------------------------------------------------------------------
+
+    def find_obsidian_path(self, label: str, name: str) -> str | None:
+        """Return ``n.obsidian_path`` for the node identified by
+        ``(label, name|title)``, or ``None`` if absent.
+        """
+        merge_key = "title" if label in TITLE_KEYED_LABELS else "name"
+        records = self._client.run(
+            f"MATCH (n:{label} {{{merge_key}: $name}}) "
+            "RETURN n.obsidian_path AS path",
+            {"name": name},
+        )
+        if records and records[0]["path"]:
+            return records[0]["path"]
+        return None
+
+    # ------------------------------------------------------------------
+    # Obsidian sync (adapters/obsidian/sync.py)
+    # ------------------------------------------------------------------
+
+    def list_documented_nodes(self) -> list[dict[str, Any]]:
+        """Return nodes that have an ``obsidian_path`` — used by
+        ``ObsidianSync.archive_missing``.
+
+        Each entry is ``{label, name, path}``.
+        """
+        records = self._client.run(
+            "MATCH (n) WHERE n.obsidian_path IS NOT NULL "
+            "RETURN labels(n)[0] AS label, n.name AS name, n.obsidian_path AS path",
+            {},
+        )
+        return [dict(r) for r in records]
+
+    def archive_node_for_missing_note(self, label: str, name: str) -> None:
+        """Archive a node whose Obsidian note no longer exists.
+
+        Differs from :meth:`archive_node_by_name`: matches via
+        ``$label IN labels(n)`` rather than ``(n:Label {name})`` — the
+        existing sync behaviour is preserved byte-for-byte.
+
+        The underlying Cypher has no ``RETURN`` clause; the caller
+        (``ObsidianSync.archive_missing``) already knows the node existed
+        because it just listed it via :meth:`list_documented_nodes`.
+        """
+        self._client.run(
+            "MATCH (n {name: $name}) WHERE $label IN labels(n) "
+            "SET n.status = 'archived', n.updated_at = datetime()",
+            {"name": name, "label": label},
+        )
+
+    def merge_wiki_link(
+        self,
+        *,
+        from_label: str,
+        from_name: str,
+        to_label: str,
+        to_name: str,
+    ) -> None:
+        """``MERGE (a)-[:LINKS_TO]->(b)`` where both endpoints are matched
+        via ``$label IN labels(n)`` on the ``name`` property.
+        """
+        self._client.run(
+            "MATCH (a {name: $from_name}) "
+            "WHERE $from_label IN labels(a) "
+            "MATCH (b {name: $to_name}) "
+            "WHERE $to_label IN labels(b) "
+            "MERGE (a)-[:LINKS_TO]->(b)",
+            {
+                "from_name": from_name,
+                "from_label": from_label,
+                "to_name": to_name,
+                "to_label": to_label,
+            },
+        )
+
+    def merge_wiki_link_by_target_name(
+        self,
+        *,
+        from_label: str,
+        from_name: str,
+        target_name: str,
+    ) -> int:
+        """Resolve the target node by ``toLower(name)`` and ``MERGE
+        (a)-[:LINKS_TO]->(b)``.
+
+        Returns ``1`` if the query executed (mirrors the previous
+        unconditional counter increment in ``ObsidianSync._resolve_single_note_links``).
+        """
+        self._client.run(
+            "MATCH (b) WHERE toLower(b.name) = toLower($target) "
+            "WITH b LIMIT 1 "
+            "MATCH (a {name: $from_name}) WHERE $from_label IN labels(a) "
+            "MERGE (a)-[:LINKS_TO]->(b)",
+            {
+                "target": target_name,
+                "from_name": from_name,
+                "from_label": from_label,
+            },
+        )
+        return 1
+
+    def lookup_node_label(self, name: str) -> str | None:
+        """Return the primary label of the node whose ``name`` matches
+        case-insensitively.
+
+        Sync-side uses ``toLower(n.name)`` only — divergent from the async
+        store, which uses ``COALESCE(n.name, n.title)``.  Documented in
+        ``docs/refactor-followups.md``.
+        """
+        records = self._client.run(
+            "MATCH (n) WHERE toLower(n.name) = toLower($name) "
+            "RETURN labels(n)[0] AS label LIMIT 1",
+            {"name": name},
+        )
+        if records:
+            return records[0]["label"]
+        return None
+
+    # ------------------------------------------------------------------
+    # CLI helpers (engrama/cli.py)
+    # ------------------------------------------------------------------
+
+    def apply_schema_statements(
+        self, statements: list[str],
+    ) -> list[tuple[str, Exception]]:
+        """Execute schema statements one at a time.
+
+        Returns the list of ``(statement, exception)`` pairs for failed
+        statements (in order).  The CLI decides whether to print warnings
+        or ignore (e.g. unsupported ``SHOW`` statements on certain Neo4j
+        editions).
+        """
+        failures: list[tuple[str, Exception]] = []
+        for stmt in statements:
+            try:
+                self._client.run(stmt)
+            except Exception as e:
+                failures.append((stmt, e))
+        return failures
+
+    def seed_domain(self, name: str, description: str) -> None:
+        """``MERGE (d:Domain {name})`` with description + timestamps."""
+        self._client.run(
+            "MERGE (d:Domain {name: $name}) "
+            "ON CREATE SET d.description = $desc, "
+            "d.created_at = datetime(), d.updated_at = datetime() "
+            "ON MATCH SET d.updated_at = datetime()",
+            {"name": name, "desc": description},
+        )
+
+    def seed_concept_in_domain(
+        self, concept_name: str, domain_name: str,
+    ) -> None:
+        """``MERGE`` a Concept and link it ``IN_DOMAIN`` to a Domain."""
+        self._client.run(
+            "MERGE (c:Concept {name: $name}) "
+            "ON CREATE SET c.created_at = datetime(), c.updated_at = datetime() "
+            "ON MATCH SET c.updated_at = datetime() "
+            "WITH c "
+            "MATCH (d:Domain {name: $domain}) "
+            "MERGE (c)-[:IN_DOMAIN]->(d)",
+            {"name": concept_name, "domain": domain_name},
+        )
+
+    def list_nodes_for_embedding(
+        self, force: bool = False,
+    ) -> list[dict[str, Any]]:
+        """List nodes for re-embedding.
+
+        With ``force=False`` skips nodes already labelled ``:Embedded``;
+        with ``force=True`` returns every node.
+
+        Returns ``[{eid, labels, props}, ...]``.
+        """
+        records = self._client.run(
+            "MATCH (n) WHERE NOT 'Embedded' IN labels(n) OR $force "
+            "RETURN elementId(n) AS eid, labels(n) AS labels, "
+            "properties(n) AS props",
+            {"force": force},
+        )
+        return [dict(r) for r in records]
