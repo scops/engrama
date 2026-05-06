@@ -19,8 +19,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from engrama.core.schema import TITLE_KEYED_LABELS
-
 if TYPE_CHECKING:
     from engrama.core.engine import EngramaEngine
 
@@ -50,36 +48,13 @@ class ForgetSkill:
             A dict with ``label``, ``name``, ``action`` (``"archived"``
             or ``"deleted"``), and ``matched`` (bool).
         """
-        merge_key = "title" if label in TITLE_KEYED_LABELS else "name"
-
-        if purge:
-            query = (
-                f"MATCH (n:{label} {{{merge_key}: $name}}) "
-                "DETACH DELETE n "
-                "RETURN count(*) AS deleted"
-            )
-            records = engine._client.run(query, {"name": name})
-            deleted = records[0]["deleted"] if records else 0
-            return {
-                "label": label,
-                "name": name,
-                "action": "deleted",
-                "matched": deleted > 0,
-            }
-        else:
-            query = (
-                f"MATCH (n:{label} {{{merge_key}: $name}}) "
-                "SET n.status = 'archived', n.archived_at = datetime(), "
-                "    n.updated_at = datetime() "
-                "RETURN n"
-            )
-            records = engine._client.run(query, {"name": name})
-            return {
-                "label": label,
-                "name": name,
-                "action": "archived",
-                "matched": len(records) > 0,
-            }
+        result = engine._store.archive_node_by_name(label, name, purge=purge)
+        return {
+            "label": label,
+            "name": name,
+            "action": "deleted" if purge else "archived",
+            "matched": result["matched"],
+        }
 
     def forget_by_ttl(
         self,
@@ -106,31 +81,11 @@ class ForgetSkill:
         if days < 1:
             raise ValueError("days must be >= 1")
 
-        if purge:
-            query = (
-                f"MATCH (n:{label}) "
-                "WHERE n.updated_at IS NOT NULL "
-                "  AND n.updated_at < datetime() - duration({days: $days}) "
-                "DETACH DELETE n "
-                "RETURN count(*) AS affected"
-            )
-        else:
-            query = (
-                f"MATCH (n:{label}) "
-                "WHERE n.updated_at IS NOT NULL "
-                "  AND n.updated_at < datetime() - duration({days: $days}) "
-                "  AND (n.status IS NULL OR n.status <> 'archived') "
-                "SET n.status = 'archived', n.archived_at = datetime(), "
-                "    n.updated_at = datetime() "
-                "RETURN count(n) AS affected"
-            )
-
-        records = engine._client.run(query, {"days": days})
-        count = records[0]["affected"] if records else 0
+        result = engine._store.archive_nodes_older_than(label, days, purge=purge)
 
         return {
             "label": label,
             "days": days,
             "action": "deleted" if purge else "archived",
-            "count": count,
+            "count": result["affected"],
         }
