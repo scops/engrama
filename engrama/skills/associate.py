@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from engrama.core.schema import NodeType, RelationType, TITLE_KEYED_LABELS
+from engrama.core.schema import NodeType, RelationType
 
 if TYPE_CHECKING:
     from engrama.core.engine import EngramaEngine
@@ -143,16 +143,10 @@ class AssociateSkill:
 
         Returns True if the vault was updated.
         """
-        from_key = "title" if from_label in TITLE_KEYED_LABELS else "name"
         try:
-            records = engine.run(
-                f"MATCH (n:{from_label} {{{from_key}: $name}}) "
-                "RETURN n.obsidian_path AS path",
-                {"name": from_name},
-            )
-            if not records or not records[0]["path"]:
+            vault_path = engine._store.find_obsidian_path(from_label, from_name)
+            if not vault_path:
                 return False
-            vault_path = records[0]["path"]
             return obsidian.add_relation(vault_path, rel_type, to_name)
         except Exception as e:
             logger.warning(
