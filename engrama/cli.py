@@ -106,9 +106,11 @@ def cmd_init(args: argparse.Namespace) -> int:
         if cypher_path.exists():
             print("Applying schema to Neo4j...")
             try:
+                from engrama.backends.neo4j.backend import Neo4jGraphStore
                 from engrama.core.client import EngramaClient
                 client = EngramaClient()
                 client.verify()
+                store = Neo4jGraphStore(client)
 
                 # Read and execute the cypher script statement by statement.
                 # Each chunk between semicolons may contain leading comment
@@ -126,17 +128,15 @@ def cmd_init(args: argparse.Namespace) -> int:
                     if cleaned:
                         statements.append(cleaned)
 
-                for stmt in statements:
-                    try:
-                        client.run(stmt)
-                    except Exception as e:
-                        # SHOW statements may fail on certain Neo4j editions
-                        # — skip non-critical errors.
-                        if "SHOW" not in stmt.upper():
-                            print(f"  Warning: {e}", file=sys.stderr)
+                failures = store.apply_schema_statements(statements)
+                for stmt, exc in failures:
+                    # SHOW statements may fail on certain Neo4j editions
+                    # — skip non-critical errors.
+                    if "SHOW" not in stmt.upper():
+                        print(f"  Warning: {exc}", file=sys.stderr)
                 # Step 3: Seed Domain nodes per module (BUG-004)
                 if modules:
-                    _seed_domain_nodes(client, modules)
+                    _seed_domain_nodes(store, modules)
 
                 client.close()
                 print("Schema applied successfully.")
@@ -195,13 +195,11 @@ _MODULE_SEEDS: dict[str, dict] = {
 }
 
 
-def _seed_domain_nodes(client: "EngramaClient", modules: list[str]) -> None:
+def _seed_domain_nodes(store: "Neo4jGraphStore", modules: list[str]) -> None:
     """Seed Domain (and optionally Concept) nodes for each module.
 
     Uses MERGE so it's safe to run repeatedly.
     """
-    from engrama.core.client import EngramaClient  # noqa: F811
-
     for module_name in modules:
         seed = _MODULE_SEEDS.get(module_name)
         if not seed:
@@ -209,13 +207,7 @@ def _seed_domain_nodes(client: "EngramaClient", modules: list[str]) -> None:
 
         # Create Domain node
         try:
-            client.run(
-                "MERGE (d:Domain {name: $name}) "
-                "ON CREATE SET d.description = $desc, "
-                "d.created_at = datetime(), d.updated_at = datetime() "
-                "ON MATCH SET d.updated_at = datetime()",
-                {"name": seed["domain"], "desc": seed["domain_description"]},
-            )
+            store.seed_domain(seed["domain"], seed["domain_description"])
             print(f"  Seeded Domain: {seed['domain']}")
         except Exception as e:
             print(f"  Warning: could not seed domain {seed['domain']}: {e}", file=sys.stderr)
@@ -223,15 +215,7 @@ def _seed_domain_nodes(client: "EngramaClient", modules: list[str]) -> None:
         # Create Concept nodes and link to Domain
         for concept_name in seed.get("concepts", []):
             try:
-                client.run(
-                    "MERGE (c:Concept {name: $name}) "
-                    "ON CREATE SET c.created_at = datetime(), c.updated_at = datetime() "
-                    "ON MATCH SET c.updated_at = datetime() "
-                    "WITH c "
-                    "MATCH (d:Domain {name: $domain}) "
-                    "MERGE (c)-[:IN_DOMAIN]->(d)",
-                    {"name": concept_name, "domain": seed["domain"]},
-                )
+                store.seed_concept_in_domain(concept_name, seed["domain"])
             except Exception as e:
                 print(f"  Warning: could not seed concept {concept_name}: {e}", file=sys.stderr)
 
@@ -278,9 +262,10 @@ def cmd_reindex(args: argparse.Namespace) -> int:
     embeddings are overwritten.
     """
     try:
-        from engrama.core.client import EngramaClient
         from engrama.backends import create_embedding_provider
+        from engrama.backends.neo4j.backend import Neo4jGraphStore
         from engrama.backends.neo4j.vector import Neo4jVectorStore
+        from engrama.core.client import EngramaClient
         from engrama.embeddings.text import node_to_text
 
         embedder = create_embedding_provider()
@@ -303,6 +288,7 @@ def cmd_reindex(args: argparse.Namespace) -> int:
 
         client = EngramaClient()
         client.verify()
+        store = Neo4jGraphStore(client)
         vector_store = Neo4jVectorStore(
             client,
             dimensions=embedder.dimensions,
@@ -311,12 +297,7 @@ def cmd_reindex(args: argparse.Namespace) -> int:
 
         # Fetch all nodes
         print("Fetching all nodes from graph...")
-        records = client.run(
-            "MATCH (n) WHERE NOT 'Embedded' IN labels(n) OR $force "
-            "RETURN elementId(n) AS eid, labels(n) AS labels, "
-            "properties(n) AS props",
-            {"force": args.force},
-        )
+        records = store.list_nodes_for_embedding(force=args.force)
 
         if not records:
             print("No nodes to embed.")
