@@ -852,27 +852,29 @@ class Neo4jGraphStore:
         return failures
 
     def seed_domain(self, name: str, description: str) -> None:
-        """``MERGE (d:Domain {name})`` with description + timestamps."""
-        self._client.run(
-            "MERGE (d:Domain {name: $name}) "
-            "ON CREATE SET d.description = $desc, "
-            "d.created_at = datetime(), d.updated_at = datetime() "
-            "ON MATCH SET d.updated_at = datetime()",
-            {"name": name, "desc": description},
-        )
+        """``MERGE (d:Domain {name})`` with description + timestamps.
+
+        Delegates to :meth:`merge_node` so seed nodes get the same
+        DDR-003 temporal fields (``valid_from``, ``confidence``) as the
+        rest of the graph.  ``description`` is refreshed on MATCH (the
+        canonical seed in :data:`_MODULE_SEEDS` wins on every run).
+        """
+        self.merge_node("Domain", "name", name, {"description": description})
 
     def seed_concept_in_domain(
         self, concept_name: str, domain_name: str,
     ) -> None:
-        """``MERGE`` a Concept and link it ``IN_DOMAIN`` to a Domain."""
-        self._client.run(
-            "MERGE (c:Concept {name: $name}) "
-            "ON CREATE SET c.created_at = datetime(), c.updated_at = datetime() "
-            "ON MATCH SET c.updated_at = datetime() "
-            "WITH c "
-            "MATCH (d:Domain {name: $domain}) "
-            "MERGE (c)-[:IN_DOMAIN]->(d)",
-            {"name": concept_name, "domain": domain_name},
+        """``MERGE`` a Concept and link it ``IN_DOMAIN`` to a Domain.
+
+        Implemented via :meth:`merge_node` + :meth:`merge_relation`.  If
+        the Domain does not exist (``seed_domain`` failed earlier) the
+        relation is silently skipped, matching the previous semantics.
+        """
+        self.merge_node("Concept", "name", concept_name, {})
+        self.merge_relation(
+            "Concept", "name", concept_name,
+            "IN_DOMAIN",
+            "Domain", "name", domain_name,
         )
 
     def list_nodes_for_embedding(
