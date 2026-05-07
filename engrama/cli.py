@@ -345,7 +345,7 @@ def cmd_reindex(args: argparse.Namespace) -> int:
 
             done = min(i + batch_size, total)
             pct = done / total * 100
-            print(f"  [{done}/{total}] {pct:.0f}%% — {embedded} embedded", end="")
+            print(f"  [{done}/{total}] {pct:.0f}% — {embedded} embedded", end="")
 
         print(f"\nDone: {embedded} nodes embedded, {errors} errors.")
         count = vector_store.count()
