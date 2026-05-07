@@ -1198,17 +1198,6 @@ def create_engrama_mcp(
 
     # -- Tool: engrama_reflect ---
 
-    from engrama.skills.reflect import (
-        _QUERY_CROSS_PROJECT_SOLUTION,
-        _QUERY_SHARED_TECHNOLOGY,
-        _QUERY_TRAINING_OPPORTUNITY,
-        _QUERY_TECHNIQUE_TRANSFER,
-        _QUERY_CONCEPT_CLUSTERING,
-        _QUERY_STALE_KNOWLEDGE,
-        _QUERY_UNDER_CONNECTED,
-        _QUERY_GRAPH_PROFILE,
-    )
-
     @mcp.tool(
         name="engrama_reflect",
         annotations=ToolAnnotations(
@@ -1241,8 +1230,7 @@ def create_engrama_mcp(
         # --- Step 1: Profile the graph ---
         profile: dict[str, int] = {}
         try:
-            profile_results = await store.run_pattern(_QUERY_GRAPH_PROFILE)
-            profile = {r["label"]: r["cnt"] for r in profile_results}
+            profile = await store.count_labels()
         except Exception as e:
             logger.warning("Could not profile graph: %s", e)
 
@@ -1256,8 +1244,7 @@ def create_engrama_mcp(
         # --- Helper to run a query and create Insights ---
         async def _run_pattern(
             query_name: str,
-            query: str,
-            params: dict,
+            detect_fn,
             required_labels: list[str] | None = None,
             any_labels: list[list[str]] | None = None,
             min_label_count: dict[str, int] | None = None,
@@ -1281,7 +1268,7 @@ def create_engrama_mcp(
 
             queries_run.append(query_name)
             try:
-                records = await store.run_pattern(query, params)
+                records = await detect_fn()
             except Exception as e:
                 logger.warning("Reflect query %s failed: %s", query_name, e)
                 return
@@ -1462,37 +1449,39 @@ def create_engrama_mcp(
 
         # --- Step 3: Run applicable patterns ---
         await _run_pattern(
-            "cross_project_solution", _QUERY_CROSS_PROJECT_SOLUTION,
-            {"open_status": "open", "resolved_status": "resolved"},
+            "cross_project_solution",
+            store.detect_cross_project_solutions,
             required_labels=["Problem", "Project"],
             builder_fn=_build_cross_project,
         )
         await _run_pattern(
-            "shared_technology", _QUERY_SHARED_TECHNOLOGY,
-            {},
+            "shared_technology",
+            store.detect_shared_technology,
             required_labels=["Technology"],
             builder_fn=_build_shared_tech,
         )
         await _run_pattern(
-            "training_opportunity", _QUERY_TRAINING_OPPORTUNITY,
-            {"open_status": "open"},
+            "training_opportunity",
+            store.detect_training_opportunities,
             any_labels=[["Problem", "Vulnerability"], ["Course"]],
             builder_fn=_build_training,
         )
         await _run_pattern(
-            "technique_transfer", _QUERY_TECHNIQUE_TRANSFER, {},
+            "technique_transfer",
+            store.detect_technique_transfer,
             required_labels=["Technique"],
             min_label_count={"Domain": 2},
             builder_fn=_build_technique_transfer,
         )
         await _run_pattern(
-            "concept_clustering", _QUERY_CONCEPT_CLUSTERING, {},
+            "concept_clustering",
+            store.detect_concept_clusters,
             required_labels=["Concept"],
             builder_fn=_build_concept_clustering,
         )
         await _run_pattern(
-            "stale_knowledge", _QUERY_STALE_KNOWLEDGE,
-            {"active_status": "active"},
+            "stale_knowledge",
+            store.detect_stale_knowledge,
             any_labels=[["Project", "Course"]],
             builder_fn=_build_stale,
         )
@@ -1502,7 +1491,7 @@ def create_engrama_mcp(
         if total_nodes >= 5:
             queries_run.append("under_connected")
             try:
-                uc_records = await store.run_pattern(_QUERY_UNDER_CONNECTED)
+                uc_records = await store.detect_under_connected_nodes()
                 await _build_under_connected(uc_records)
             except Exception as e:
                 logger.warning("Under-connected query failed: %s", e)
