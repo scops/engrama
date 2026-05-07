@@ -203,11 +203,16 @@ class Neo4jAsyncStore:
         key_value: str,
         soft: bool = True,
     ) -> bool:
-        """Delete or archive a node."""
+        """Delete or archive a node.
+
+        When ``soft=True``, sets ``status='archived'``, ``archived_at``
+        and ``updated_at``.  When ``soft=False``, detach-deletes the node.
+        """
         if soft:
             cypher = (
                 f"MATCH (n:{label} {{{key_field}: $key_value}}) "
-                "SET n.status = 'archived', n.updated_at = datetime() "
+                "SET n.status = 'archived', n.archived_at = datetime(), "
+                "    n.updated_at = datetime() "
                 "RETURN n"
             )
         else:
