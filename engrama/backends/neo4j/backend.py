@@ -747,22 +747,23 @@ class Neo4jGraphStore:
         )
         return [dict(r) for r in records]
 
-    def archive_node_for_missing_note(self, label: str, name: str) -> None:
+    def archive_node_for_missing_note(self, label: str, name: str) -> bool:
         """Archive a node whose Obsidian note no longer exists.
 
         Differs from :meth:`archive_node_by_name`: matches via
-        ``$label IN labels(n)`` rather than ``(n:Label {name})`` — the
-        existing sync behaviour is preserved byte-for-byte.
-
-        The underlying Cypher has no ``RETURN`` clause; the caller
-        (``ObsidianSync.archive_missing``) already knows the node existed
-        because it just listed it via :meth:`list_documented_nodes`.
+        ``$label IN labels(n)`` rather than ``(n:Label {name})``.  Sets
+        the same archive shape (``status`` + ``archived_at`` +
+        ``updated_at``) as the other soft-archive methods.  Returns
+        ``True`` if a node was matched.
         """
-        self._client.run(
+        records = self._client.run(
             "MATCH (n {name: $name}) WHERE $label IN labels(n) "
-            "SET n.status = 'archived', n.updated_at = datetime()",
+            "SET n.status = 'archived', n.archived_at = datetime(), "
+            "    n.updated_at = datetime() "
+            "RETURN n.name AS name",
             {"name": name, "label": label},
         )
+        return len(records) > 0
 
     def merge_wiki_link(
         self,

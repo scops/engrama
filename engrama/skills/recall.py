@@ -87,16 +87,7 @@ class RecallSkill:
 
             # Step 2 — retrieve full node properties
             merge_key = "title" if label in TITLE_KEYED_LABELS else "name"
-            node_query = (
-                f"MATCH (n:{label} {{{merge_key}: $name}}) "
-                "RETURN n"
-            )
-            node_records = engine._client.run(node_query, {"name": name})
-
-            properties: dict[str, Any] = {}
-            if node_records:
-                node = node_records[0]["n"]
-                properties = dict(node.items())
+            properties = engine._store.get_node(label, merge_key, name) or {}
 
             # Step 3 — expand neighbourhood
             neighbours: list[dict[str, Any]] = []
