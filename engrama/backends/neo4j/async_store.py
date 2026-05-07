@@ -476,14 +476,16 @@ class Neo4jAsyncStore:
         return {r["title"] for r in records}
 
     async def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
-        """Retrieve pending Insights ordered by confidence."""
+        """Retrieve pending Insights ordered by confidence (highest first),
+        breaking ties by ``created_at`` (newest first).
+        """
         records, _, _ = await self._driver.execute_query(
             "MATCH (i:Insight {status: $status}) "
             "RETURN i.title AS title, i.body AS body, "
             "       i.confidence AS confidence, "
             "       i.source_query AS source_query, "
             "       i.created_at AS created_at "
-            "ORDER BY i.confidence DESC "
+            "ORDER BY i.confidence DESC, i.created_at DESC "
             "LIMIT $limit",
             parameters_={"status": "pending", "limit": limit},
             database_=self._database,

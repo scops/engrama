@@ -509,11 +509,8 @@ class Neo4jGraphStore:
     # ------------------------------------------------------------------
 
     def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
-        """Return pending Insights ordered by ``created_at`` (newest first).
-
-        Sync-side ordering preserves the byte-for-byte behaviour of
-        ``proactive.surface()``.  The async store orders by confidence —
-        documented divergence (see ``docs/refactor-followups.md``).
+        """Return pending Insights ordered by confidence (highest first),
+        breaking ties by ``created_at`` (newest first).
         """
         records = self._client.run(
             "MATCH (i:Insight {status: $status}) "
@@ -521,7 +518,7 @@ class Neo4jGraphStore:
             "       i.confidence AS confidence, "
             "       i.source_query AS source_query, "
             "       i.created_at AS created_at "
-            "ORDER BY i.created_at DESC "
+            "ORDER BY i.confidence DESC, i.created_at DESC "
             "LIMIT $limit",
             {"status": "pending", "limit": limit},
         )
@@ -560,22 +557,19 @@ class Neo4jGraphStore:
             return dict(records[0])
         return None
 
-    def mark_insight_synced(self, title: str, obsidian_path: str) -> None:
+    def mark_insight_synced(self, title: str, obsidian_path: str) -> bool:
         """Set ``obsidian_path`` + ``synced_at`` + ``updated_at`` on an
-        Insight node.
-
-        The underlying Cypher has no ``RETURN`` clause; this method
-        therefore returns ``None`` rather than a bool.  Async-side
-        :meth:`Neo4jAsyncStore.mark_insight_synced` returns ``bool`` because
-        its query *does* ``RETURN i.title``.  Documented divergence.
+        Insight node.  Returns ``True`` if the Insight existed.
         """
-        self._client.run(
+        records = self._client.run(
             "MATCH (i:Insight {title: $title}) "
             "SET i.obsidian_path = $path, "
             "    i.synced_at = datetime(), "
-            "    i.updated_at = datetime()",
+            "    i.updated_at = datetime() "
+            "RETURN i.title AS title",
             {"title": title, "path": obsidian_path},
         )
+        return len(records) > 0
 
     def get_dismissed_insight_titles(self) -> set[str]:
         """Return titles of all dismissed Insights."""
@@ -821,15 +815,12 @@ class Neo4jGraphStore:
         return 1
 
     def lookup_node_label(self, name: str) -> str | None:
-        """Return the primary label of the node whose ``name`` matches
-        case-insensitively.
-
-        Sync-side uses ``toLower(n.name)`` only — divergent from the async
-        store, which uses ``COALESCE(n.name, n.title)``.  Documented in
-        ``docs/refactor-followups.md``.
+        """Return the primary label of the node whose ``name`` (or
+        ``title``, for nodes that use ``title`` instead of ``name`` such
+        as ``Decision`` / ``Problem``) matches case-insensitively.
         """
         records = self._client.run(
-            "MATCH (n) WHERE toLower(n.name) = toLower($name) "
+            "MATCH (n) WHERE toLower(COALESCE(n.name, n.title)) = toLower($name) "
             "RETURN labels(n)[0] AS label LIMIT 1",
             {"name": name},
         )
