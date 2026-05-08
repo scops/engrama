@@ -420,8 +420,7 @@ uv run engrama init --profile base --modules cooking teaching
 **Reglas para los módulos:**
 
 - Los nodos usan etiquetas en PascalCase y `name` o `title` como clave de merge
-- Las relaciones pueden referenciar cualquier etiqueta de `base.yaml` (Project, Concept,
-  Decision, Problem, Technology, Person) sin necesidad de redefinirlas
+- Las relaciones pueden referenciar cualquier etiqueta de `base.yaml` (Project, Concept, Decision, Problem, Technology, Person) sin necesidad de redefinirlas
 - Si dos módulos definen la misma etiqueta, las propiedades se fusionan automáticamente
 - Los tipos de relación deberían ser verbos (USES, TREATS, COVERS), no sustantivos
 
@@ -435,11 +434,9 @@ creativos freelance).
 
 - **3 a 5 tipos de nodo por módulo** es el punto óptimo. La base ya te da
   6. Un usuario multi-rol típico acaba con 12–18 en total, lo cual está bien.
-- Usa `title` como clave de merge para cosas con forma de frase (decisiones, problemas,
-  protocolos). Usa `name` para todo lo demás.
-- Incluye siempre `status` en nodos con ciclo de vida — el skill de reflect lo usa
-  para distinguir elementos abiertos vs resueltos.
-- Ante la duda, deja que Claude genere el módulo por ti (Opción B).
+- Usa `title` como clave de merge para cosas con forma de frase (decisiones, problemas, protocolos). Usa `name` para todo lo demás.
+- Incluye siempre `status` en nodos con ciclo de vida — el skill de reflect lo usa para distinguir elementos abiertos vs resueltos.
+- Ante la duda, deja que tu agente (Claude, Codex, Gemini, etc.) genere el módulo por ti (Opción B).
 
 ---
 
