@@ -447,6 +447,7 @@ creativos freelance).
 - [Graph Schema](GRAPH-SCHEMA.md) — nodos, relaciones, referencia de Cypher
 - [Roadmap](ROADMAP.md) — fases de desarrollo y estado
 - [Contributing](CONTRIBUTING.md) — cómo contribuir
+- [Glosario](GLOSARIO.md) — términos clave (grafo, embedding, MCP, Insight...)
 
 ---
 
