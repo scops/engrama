@@ -36,12 +36,12 @@ Necesitas tres cosas instaladas antes de empezar. Si ya las tienes, salta a **In
 | **uv** (gestor de paquetes Python) | cualquier versión reciente | `uv --version` | [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) |
 
 > **Usuarios de Windows:** después de instalar Python, asegúrate de marcar
-> "Add Python to PATH". Tras instalar uv, puede que necesites reiniciar la terminal.
+> "Add Python to PATH". Tras instalar uv, puede que necesites reiniciar el terminal.
 
 **Opcionales:**
 
-- [Obsidian](https://obsidian.md/) — solo necesario para las funciones de sincronización con vault.
-- [Ollama](https://ollama.com/) — solo necesario para embeddings locales (búsqueda semántica). Ver [Configuración de embeddings](#configuración-de-embeddings-opcional) más abajo.
+- [Obsidian](https://obsidian.md/) — solo necesario para las funciones de sincronización con vault. Recomendable como base documental de apoyo.
+- [Ollama](https://ollama.com/) — solo necesario para embeddings locales (búsqueda semántica). Ver [Configuración de embeddings](#configuración-de-embeddings-opcional) más abajo. Permite al agente encontrar similitudes más allá del grafo.
 
 ---
 
