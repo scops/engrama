@@ -17,13 +17,14 @@ classifiers = [
 ]
 
 dependencies = [
-    "neo4j>=5.26.0",
+    "sqlite-vec>=0.1",
     "pydantic>=2.0",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
+neo4j = ["neo4j>=5.26.0"]
 embeddings = ["httpx>=0.27"]
 mcp = ["mcp>=1.8", "fastmcp>=2.10.5,<3", "httpx>=0.27"]
 langchain = ["langchain>=0.2", "langchain-community>=0.2"]
@@ -33,7 +34,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
 ]
-all = ["engrama[embeddings,mcp,langchain,rest,dev]"]
+all = ["engrama[neo4j,embeddings,mcp,langchain,rest,dev]"]
 
 [project.scripts]
 engrama = "engrama.cli:main"
