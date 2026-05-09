@@ -13,30 +13,39 @@ from typing import Any
 
 from neo4j import Record
 from neo4j.graph import Node, Relationship
+from neo4j.time import Date, DateTime, Duration, Time
 
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
+
+
+_NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 
 
 def _to_python(value: Any) -> Any:
     """Recursively convert Neo4j driver types to plain Python.
 
     Node → ``{"_id", "_labels", **props}``; Relationship → ``{"_id",
-    "_type", **props}``; lists recurse; everything else passes through.
-    The ``_*`` prefix lets callers tell metadata from real properties.
+    "_type", **props}``; temporal types → ISO-format strings; lists
+    recurse; everything else passes through. The ``_*`` prefix lets
+    callers tell metadata from real properties; ISO strings keep
+    ordering and comparison consistent across backends (SQLite stores
+    timestamps as ISO strings too).
     """
     if isinstance(value, Node):
         return {
             "_id": value.element_id,
             "_labels": list(value.labels),
-            **dict(value.items()),
+            **{k: _to_python(v) for k, v in value.items()},
         }
     if isinstance(value, Relationship):
         return {
             "_id": value.element_id,
             "_type": value.type,
-            **dict(value.items()),
+            **{k: _to_python(v) for k, v in value.items()},
         }
+    if isinstance(value, _NEO4J_TIME_TYPES):
+        return value.iso_format()
     if isinstance(value, list):
         return [_to_python(v) for v in value]
     return value
