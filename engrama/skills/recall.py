@@ -93,32 +93,35 @@ class RecallSkill:
             neighbours: list[dict[str, Any]] = []
             try:
                 ctx_records = engine.get_context(name, label, hops=hops)
-                neighbour_ids: set[int] = set()
+                neighbour_ids: set[str] = set()
                 for ctx in ctx_records:
                     neighbour_node = ctx["neighbour"]
-                    nid = neighbour_node.element_id
+                    if not neighbour_node:
+                        continue
+                    nid = neighbour_node["_id"]
                     if nid in neighbour_ids:
                         continue
                     neighbour_ids.add(nid)
 
-                    n_labels = list(neighbour_node.labels)
+                    n_labels = neighbour_node.get("_labels", [])
                     n_label = n_labels[0] if n_labels else "Unknown"
                     n_key = "title" if n_label in TITLE_KEYED_LABELS else "name"
                     n_name = neighbour_node.get(n_key, "?")
 
-                    # Extract relationship chain info
                     rels = ctx["rel"]
-                    rel_types = []
                     if isinstance(rels, list):
-                        rel_types = [r.type for r in rels]
+                        rel_types = [r["_type"] for r in rels]
                     else:
-                        rel_types = [rels.type]
+                        rel_types = [rels["_type"]]
 
                     neighbours.append({
                         "label": n_label,
                         "name": n_name,
                         "rel_chain": rel_types,
-                        "properties": dict(neighbour_node.items()),
+                        "properties": {
+                            k: v for k, v in neighbour_node.items()
+                            if not k.startswith("_")
+                        },
                     })
             except Exception:
                 # get_context may fail if node was deleted between search

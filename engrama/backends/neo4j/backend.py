@@ -2,12 +2,9 @@
 Engrama — Neo4j graph store.
 
 Implements the ``GraphStore`` protocol using Neo4j's sync driver.
-This module contains the **exact same Cypher** that previously lived in
-``core/engine.py`` — it was extracted, not rewritten.
-
-The class also exposes the underlying :class:`EngramaClient` via the
-``client`` property so that callers that need raw ``list[Record]`` results
-(e.g. the reflect skill's Cypher queries) can still use it directly.
+Public methods always return plain ``list[dict[str, Any]]`` — Node and
+Relationship instances are converted at the boundary so callers never
+import the ``neo4j`` package.
 """
 
 from __future__ import annotations
@@ -15,9 +12,39 @@ from __future__ import annotations
 from typing import Any
 
 from neo4j import Record
+from neo4j.graph import Node, Relationship
 
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
+
+
+def _to_python(value: Any) -> Any:
+    """Recursively convert Neo4j driver types to plain Python.
+
+    Node → ``{"_id", "_labels", **props}``; Relationship → ``{"_id",
+    "_type", **props}``; lists recurse; everything else passes through.
+    The ``_*`` prefix lets callers tell metadata from real properties.
+    """
+    if isinstance(value, Node):
+        return {
+            "_id": value.element_id,
+            "_labels": list(value.labels),
+            **dict(value.items()),
+        }
+    if isinstance(value, Relationship):
+        return {
+            "_id": value.element_id,
+            "_type": value.type,
+            **dict(value.items()),
+        }
+    if isinstance(value, list):
+        return [_to_python(v) for v in value]
+    return value
+
+
+def _records_to_dicts(records: list[Record]) -> list[dict[str, Any]]:
+    """Convert a list of Neo4j Records to plain dicts (no driver types leak)."""
+    return [{k: _to_python(v) for k, v in r.items()} for r in records]
 
 
 class Neo4jGraphStore:
@@ -41,8 +68,9 @@ class Neo4jGraphStore:
     def client(self) -> EngramaClient:
         """Direct access to the underlying sync driver wrapper.
 
-        Skills and adapters that need raw ``list[Record]`` results (e.g.
-        the reflect skill) can use ``store.client.run(cypher, params)``.
+        Reserved for backend-internal use (vector store reuses the same
+        connection). Skills and adapters should never reach for this —
+        they speak the protocol via the named methods on this class.
         """
         return self._client
 
@@ -57,7 +85,7 @@ class Neo4jGraphStore:
         key_value: str,
         properties: dict[str, Any],
         embedding: list[float] | None = None,
-    ) -> list[Record]:
+    ) -> list[dict[str, Any]]:
         """Create or update a node using ``MERGE``.
 
         ``created_at`` is set only on the first write; ``updated_at`` is
@@ -82,7 +110,7 @@ class Neo4jGraphStore:
                 for future vector index usage).
 
         Returns:
-            A ``list[Record]`` with the merged node.
+            A list with one dict shaped ``{"n": {"_id", "_labels", **props}}``.
         """
         # Extract temporal fields from properties (if supplied)
         valid_from = properties.pop("valid_from", None)
@@ -134,7 +162,7 @@ class Neo4jGraphStore:
             "RETURN n"
         )
 
-        return self._client.run(query, params)
+        return _records_to_dicts(self._client.run(query, params))
 
     def get_node(
         self,
@@ -301,7 +329,7 @@ class Neo4jGraphStore:
             "ORDER BY n.confidence DESC "
             "LIMIT $limit"
         )
-        return self._client.run(query, {"date": date, "limit": limit})
+        return _records_to_dicts(self._client.run(query, {"date": date, "limit": limit}))
 
     # ------------------------------------------------------------------
     # Relationship operations
@@ -316,7 +344,7 @@ class Neo4jGraphStore:
         to_label: str,
         to_key: str,
         to_value: str,
-    ) -> list[Record]:
+    ) -> list[dict[str, Any]]:
         """Create a relationship between two existing nodes (idempotent).
 
         If either endpoint does not exist, the relationship simply won't
@@ -329,7 +357,7 @@ class Neo4jGraphStore:
             "RETURN type(r) AS rel_type"
         )
         params = {"from_value": from_value, "to_value": to_value}
-        return self._client.run(query, params)
+        return _records_to_dicts(self._client.run(query, params))
 
     # ------------------------------------------------------------------
     # Query operations
@@ -342,20 +370,26 @@ class Neo4jGraphStore:
         key_value: str,
         hops: int = 1,
         limit: int = 50,
-    ) -> list[Record]:
-        """Traverse N hops from a node and return its neighbourhood."""
+    ) -> list[dict[str, Any]]:
+        """Traverse N hops from a node and return its neighbourhood.
+
+        Returns a list of records, each shaped ``{"start": <node-dict>,
+        "rel": [<rel-dict>, ...], "neighbour": <node-dict>}``.  Node and
+        relationship dicts carry ``_id``, ``_labels`` / ``_type`` plus
+        their properties.
+        """
         query = (
             f"MATCH (start:{label} {{{key_field}: $key_value}})"
             f"-[rel*1..{hops}]-(neighbour) "
             "RETURN start, rel, neighbour"
         )
-        return self._client.run(query, {"key_value": key_value})
+        return _records_to_dicts(self._client.run(query, {"key_value": key_value}))
 
     def fulltext_search(
         self,
         query: str,
         limit: int = 10,
-    ) -> list[Record]:
+    ) -> list[dict[str, Any]]:
         """Keyword search against the ``memory_search`` fulltext index.
 
         Returns records with ``type``, ``name``, ``score``, enrichment
@@ -380,18 +414,19 @@ class Neo4jGraphStore:
             "toString(node.updated_at) AS updated_at "
             "ORDER BY score DESC LIMIT $limit"
         )
-        return self._client.run(cypher, {"query": query, "limit": limit})
+        return _records_to_dicts(self._client.run(cypher, {"query": query, "limit": limit}))
 
     def run_cypher(
         self,
         query: str,
         params: dict[str, Any] | None = None,
-    ) -> list[Record]:
+    ) -> list[dict[str, Any]]:
         """Execute a raw Cypher query.
 
-        Delegates directly to :meth:`EngramaClient.run`.
+        Delegates to :meth:`EngramaClient.run` and converts driver types
+        to plain dicts so callers don't import ``neo4j``.
         """
-        return self._client.run(query, params)
+        return _records_to_dicts(self._client.run(query, params))
 
     def count_labels(self) -> dict[str, int]:
         """Count nodes per label.  Used by reflect to profile the graph."""
