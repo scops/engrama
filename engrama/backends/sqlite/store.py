@@ -857,6 +857,273 @@ class SqliteGraphStore:
         return dict(row) if row else None
 
     # ------------------------------------------------------------------
+    # Reflect — pattern detection (skills/reflect.py)
+    # ------------------------------------------------------------------
+
+    def detect_cross_project_solutions(self) -> list[dict[str, Any]]:
+        """Open Problem in project B shares a Concept with a resolved
+        Problem in project A that has a Decision.
+
+        Returns rows ``{target_project, open_problem, decision,
+        source_project, concept}``.
+        """
+        cur = self._conn.execute(
+            """
+            SELECT DISTINCT
+                pB.key_value     AS target_project,
+                op.key_value     AS open_problem,
+                d.key_value      AS decision,
+                pA.key_value     AS source_project,
+                c.key_value      AS concept
+            FROM nodes pB
+            JOIN edges e1 ON e1.from_id = pB.id AND e1.rel_type = 'HAS'
+            JOIN nodes op ON op.id = e1.to_id
+                         AND op.label = 'Problem'
+                         AND json_extract(op.props, '$.status') = 'open'
+            JOIN edges e2 ON e2.from_id = op.id
+                         AND e2.rel_type IN ('INSTANCE_OF', 'APPLIES')
+            JOIN nodes c  ON c.id = e2.to_id AND c.label = 'Concept'
+            JOIN edges e3 ON e3.to_id = c.id
+                         AND e3.rel_type IN ('INSTANCE_OF', 'APPLIES')
+            JOIN nodes rp ON rp.id = e3.from_id
+                         AND rp.label = 'Problem'
+                         AND json_extract(rp.props, '$.status') = 'resolved'
+            JOIN edges e4 ON e4.from_id = rp.id AND e4.rel_type = 'SOLVED_BY'
+            JOIN nodes d  ON d.id = e4.to_id AND d.label = 'Decision'
+            JOIN edges e5 ON e5.to_id = d.id AND e5.rel_type = 'INFORMED_BY'
+            JOIN nodes pA ON pA.id = e5.from_id AND pA.label = 'Project'
+            WHERE pB.label = 'Project' AND pA.id != pB.id
+            """,
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def detect_shared_technology(self) -> list[dict[str, Any]]:
+        """Two distinct entities both connect to the same Technology via
+        USES / TEACHES / COMPOSED_OF.
+        """
+        cur = self._conn.execute(
+            """
+            SELECT DISTINCT
+                a.key_value AS entity_a, a.label AS type_a,
+                b.key_value AS entity_b, b.label AS type_b,
+                t.key_value AS technology
+            FROM nodes t
+            JOIN edges ea ON ea.to_id = t.id
+                         AND ea.rel_type IN ('USES', 'TEACHES', 'COMPOSED_OF')
+            JOIN nodes a  ON a.id = ea.from_id
+            JOIN edges eb ON eb.to_id = t.id
+                         AND eb.rel_type IN ('USES', 'TEACHES', 'COMPOSED_OF')
+            JOIN nodes b  ON b.id = eb.from_id
+            WHERE t.label = 'Technology'
+              AND a.id < b.id
+              AND a.label != 'Insight' AND b.label != 'Insight'
+            """,
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def detect_training_opportunities(self) -> list[dict[str, Any]]:
+        """Vulnerability or open Problem shares a Concept with a Course."""
+        cur = self._conn.execute(
+            """
+            SELECT DISTINCT
+                issue.key_value AS issue,
+                issue.label     AS issue_type,
+                c.key_value     AS concept,
+                course.key_value AS course
+            FROM nodes issue
+            JOIN edges e1 ON e1.from_id = issue.id
+                         AND e1.rel_type IN ('INSTANCE_OF', 'APPLIES')
+            JOIN nodes c  ON c.id = e1.to_id AND c.label = 'Concept'
+            JOIN edges e2 ON e2.to_id = c.id AND e2.rel_type = 'COVERS'
+            JOIN nodes course ON course.id = e2.from_id AND course.label = 'Course'
+            WHERE issue.label = 'Vulnerability'
+               OR (issue.label = 'Problem'
+                   AND json_extract(issue.props, '$.status') = 'open')
+            """,
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def detect_technique_transfer(self) -> list[dict[str, Any]]:
+        """Technique used in domain A could apply in domain B because
+        another entity in B shares a Concept with the technique.
+        """
+        cur = self._conn.execute(
+            """
+            WITH technique_in_domain AS (
+                SELECT t.id AS t_id, t.key_value AS t_name,
+                       d.id AS d_id, d.key_value AS d_name
+                FROM nodes t
+                JOIN edges e ON e.from_id = t.id AND e.rel_type = 'IN_DOMAIN'
+                JOIN nodes d ON d.id = e.to_id AND d.label = 'Domain'
+                WHERE t.label = 'Technique'
+            ),
+            technique_concept AS (
+                SELECT t.id AS t_id, c.id AS c_id
+                FROM nodes t
+                JOIN edges e ON e.from_id = t.id
+                            AND e.rel_type IN ('INSTANCE_OF', 'APPLIES')
+                JOIN nodes c ON c.id = e.to_id AND c.label = 'Concept'
+                WHERE t.label = 'Technique'
+            )
+            SELECT
+                tid.t_name      AS technique,
+                tid.d_name      AS source_domain,
+                d2.key_value    AS target_domain,
+                COUNT(DISTINCT other.id) AS related_entities
+            FROM technique_in_domain tid
+            JOIN nodes d2 ON d2.label = 'Domain' AND d2.id != tid.d_id
+            JOIN edges eo ON eo.to_id = d2.id AND eo.rel_type = 'IN_DOMAIN'
+            JOIN nodes other ON other.id = eo.from_id
+            JOIN edges oc ON oc.from_id = other.id
+                         AND oc.rel_type IN ('INSTANCE_OF', 'APPLIES')
+            JOIN technique_concept tc ON tc.t_id = tid.t_id AND tc.c_id = oc.to_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM edges
+                WHERE from_id = tid.t_id
+                  AND rel_type = 'IN_DOMAIN'
+                  AND to_id = d2.id
+            )
+            GROUP BY tid.t_id, tid.d_id, d2.id
+            ORDER BY related_entities DESC
+            LIMIT 10
+            """,
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def detect_concept_clusters(self) -> list[dict[str, Any]]:
+        """Concept connected to >= 3 entities via INSTANCE_OF/APPLIES.
+
+        Returns ``{concept, entity_count, sample}`` with ``sample`` a
+        list of up to 5 ``{name, label}`` dicts (mirrors Neo4j
+        ``connected[..5]``).
+        """
+        cur = self._conn.execute(
+            """
+            SELECT
+                c.key_value AS concept,
+                COUNT(DISTINCT n.id) AS entity_count,
+                json_group_array(
+                    DISTINCT json_object('name', n.key_value, 'label', n.label)
+                ) AS sample_raw
+            FROM nodes c
+            JOIN edges e ON e.to_id = c.id
+                        AND e.rel_type IN ('INSTANCE_OF', 'APPLIES')
+            JOIN nodes n ON n.id = e.from_id
+            WHERE c.label = 'Concept'
+            GROUP BY c.id
+            HAVING COUNT(DISTINCT n.id) >= 3
+            ORDER BY entity_count DESC
+            LIMIT 10
+            """,
+        )
+        results = []
+        for r in cur.fetchall():
+            sample = json.loads(r["sample_raw"])[:5]
+            results.append({
+                "concept": r["concept"],
+                "entity_count": r["entity_count"],
+                "sample": sample,
+            })
+        return results
+
+    def detect_stale_knowledge(self) -> list[dict[str, Any]]:
+        """Nodes >=90d stale or with confidence <0.3 connected to an
+        active Project or Course.
+        """
+        cutoff = (
+            _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=90)
+        ).isoformat()
+        # Edges in either direction connect n to active. We UNION ALL
+        # the two directions so SQLite can use the indexes on each side.
+        cur = self._conn.execute(
+            """
+            SELECT n_name, n_label, last_updated, confidence, project, rel
+            FROM (
+                SELECT
+                    n.key_value AS n_name,
+                    n.label     AS n_label,
+                    n.updated_at AS last_updated,
+                    json_extract(n.props, '$.confidence') AS confidence,
+                    active.key_value AS project,
+                    e.rel_type  AS rel,
+                    n.id AS n_id
+                FROM nodes n
+                JOIN edges e ON e.from_id = n.id
+                JOIN nodes active ON active.id = e.to_id
+                                  AND active.label IN ('Project', 'Course')
+                                  AND COALESCE(
+                                        json_extract(active.props, '$.status'),
+                                        'active'
+                                      ) IN ('active', '')
+                WHERE n.label NOT IN ('Project', 'Course', 'Domain', 'Insight')
+                  AND (
+                        n.updated_at < ?
+                     OR (json_extract(n.props, '$.confidence') IS NOT NULL
+                         AND CAST(json_extract(n.props, '$.confidence') AS REAL) < 0.3)
+                      )
+                UNION
+                SELECT
+                    n.key_value, n.label, n.updated_at,
+                    json_extract(n.props, '$.confidence'),
+                    active.key_value, e.rel_type, n.id
+                FROM nodes n
+                JOIN edges e ON e.to_id = n.id
+                JOIN nodes active ON active.id = e.from_id
+                                  AND active.label IN ('Project', 'Course')
+                                  AND COALESCE(
+                                        json_extract(active.props, '$.status'),
+                                        'active'
+                                      ) IN ('active', '')
+                WHERE n.label NOT IN ('Project', 'Course', 'Domain', 'Insight')
+                  AND (
+                        n.updated_at < ?
+                     OR (json_extract(n.props, '$.confidence') IS NOT NULL
+                         AND CAST(json_extract(n.props, '$.confidence') AS REAL) < 0.3)
+                      )
+            )
+            ORDER BY COALESCE(CAST(confidence AS REAL), 1.0) ASC, last_updated ASC
+            LIMIT 15
+            """,
+            (cutoff, cutoff),
+        )
+        return [
+            {
+                "name": r["n_name"],
+                "label": r["n_label"],
+                "last_updated": r["last_updated"],
+                "confidence": r["confidence"],
+                "project": r["project"],
+                "rel": r["rel"],
+            }
+            for r in cur.fetchall()
+        ]
+
+    def detect_under_connected_nodes(self) -> list[dict[str, Any]]:
+        """Nodes with fewer than 2 relationships (excluding Domain/Insight
+        and archived).
+        """
+        cur = self._conn.execute(
+            """
+            SELECT
+                n.key_value AS name,
+                n.label     AS label,
+                (
+                    SELECT COUNT(*) FROM edges e
+                    WHERE e.from_id = n.id OR e.to_id = n.id
+                ) AS rel_count,
+                n.created_at AS created
+            FROM nodes n
+            WHERE n.label NOT IN ('Domain', 'Insight')
+              AND COALESCE(json_extract(n.props, '$.status'), '') != 'archived'
+            GROUP BY n.id
+            HAVING rel_count < 2
+            ORDER BY n.created_at DESC
+            LIMIT 15
+            """,
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    # ------------------------------------------------------------------
     # Obsidian helpers (adapters/obsidian/sync.py + skills/associate.py)
     # ------------------------------------------------------------------
 
