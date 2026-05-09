@@ -538,11 +538,476 @@ class SqliteGraphStore:
         )
 
     # ------------------------------------------------------------------
+    # Temporal operations
+    # ------------------------------------------------------------------
+
+    def expire_node(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+    ) -> bool:
+        """Mark a node as no longer current (sets ``valid_to`` to now).
+
+        Re-merging the node later clears ``valid_to`` (revival).
+        """
+        cur = self._conn.execute(
+            "SELECT id, props FROM nodes WHERE label = ? AND key_value = ?",
+            (label, key_value),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return False
+        now = _now_iso()
+        props = json.loads(row["props"]) if row["props"] else {}
+        props["valid_to"] = now
+        self._conn.execute(
+            "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(props), now, row["id"]),
+        )
+        self._conn.commit()
+        return True
+
+    def decay_scores(
+        self,
+        rate: float = 0.01,
+        min_confidence: float = 0.0,
+        max_age_days: int = 0,
+        label: str | None = None,
+    ) -> dict[str, int]:
+        """Apply exponential confidence decay, then optionally archive.
+
+        Done in Python (fetch + recompute + write) because SQLite has no
+        native ``exp``. For typical graphs (<100k nodes) this is fast
+        enough; if it ever bites we'll move to a SQLite extension.
+        """
+        import math
+
+        label_filter = "AND label = ?" if label else ""
+        params: tuple = (label,) if label else ()
+        cur = self._conn.execute(
+            f"SELECT id, props, updated_at FROM nodes "
+            f"WHERE json_extract(props, '$.confidence') IS NOT NULL "
+            f"  AND updated_at IS NOT NULL "
+            f"  {label_filter}",
+            params,
+        )
+        rows = cur.fetchall()
+
+        now = _dt.datetime.now(_dt.UTC)
+        decayed = 0
+        updates: list[tuple[str, str, int]] = []
+        for r in rows:
+            try:
+                ts = _dt.datetime.fromisoformat(r["updated_at"])
+            except ValueError:
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=_dt.UTC)
+            days_old = (now - ts).total_seconds() / 86400.0
+            if days_old <= 0:
+                continue
+            props = json.loads(r["props"])
+            old_conf = float(props.get("confidence", 1.0))
+            new_conf = old_conf * math.exp(-rate * days_old)
+            if new_conf == old_conf:
+                continue
+            props["confidence"] = new_conf
+            updates.append((json.dumps(props), r["updated_at"], r["id"]))
+            decayed += 1
+        if updates:
+            self._conn.executemany(
+                "UPDATE nodes SET props = ? WHERE id = ?",
+                [(p, i) for p, _, i in updates],
+            )
+            # We refresh the FTS index for the same rows because tags etc.
+            # may include serialised confidence; cheap enough.
+            for _, _, node_id in updates:
+                self._conn.execute(
+                    "SELECT props FROM nodes WHERE id = ?", (node_id,),
+                )
+                # We don't bother updating FTS here — confidence isn't a
+                # searchable field.
+        archived = 0
+        archive_now = _now_iso()
+        if min_confidence > 0:
+            cur = self._conn.execute(
+                f"SELECT id, props FROM nodes WHERE "
+                f"json_extract(props, '$.confidence') < ? "
+                f"AND COALESCE(json_extract(props, '$.status'), '') != 'archived' "
+                f"{label_filter}",
+                (min_confidence, *params),
+            )
+            for r in cur.fetchall():
+                props = json.loads(r["props"])
+                props["status"] = "archived"
+                props["archived_at"] = archive_now
+                self._conn.execute(
+                    "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(props), archive_now, r["id"]),
+                )
+                archived += 1
+        if max_age_days > 0:
+            cutoff = (
+                _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=max_age_days)
+            ).isoformat()
+            cur = self._conn.execute(
+                f"SELECT id, props FROM nodes WHERE updated_at < ? "
+                f"AND COALESCE(json_extract(props, '$.status'), '') != 'archived' "
+                f"{label_filter}",
+                (cutoff, *params),
+            )
+            for r in cur.fetchall():
+                props = json.loads(r["props"])
+                props["status"] = "archived"
+                props["archived_at"] = archive_now
+                self._conn.execute(
+                    "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(props), archive_now, r["id"]),
+                )
+                archived += 1
+        self._conn.commit()
+        return {"decayed": decayed, "archived": archived}
+
+    def query_at_date(
+        self,
+        date: str,
+        label: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return what was true at a given date (ISO string).
+
+        Uses ISO lexicographic ordering — works because ISO timestamps
+        sort the same as datetime values.
+        """
+        label_filter = "AND label = ?" if label else ""
+        params: tuple = (date, date, *(label and (label,) or ()))
+        cur = self._conn.execute(
+            f"""
+            SELECT label,
+                   key_value AS name,
+                   json_extract(props, '$.confidence') AS confidence,
+                   json_extract(props, '$.valid_from') AS valid_from,
+                   json_extract(props, '$.valid_to')   AS valid_to,
+                   json_extract(props, '$.status')     AS status
+            FROM nodes
+            WHERE json_extract(props, '$.valid_from') IS NOT NULL
+              AND json_extract(props, '$.valid_from') <= ?
+              AND (json_extract(props, '$.valid_to') IS NULL
+                   OR json_extract(props, '$.valid_to') >= ?)
+              AND label NOT IN ('Insight', 'Domain')
+              {label_filter}
+            ORDER BY confidence DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def archive_nodes_older_than(
+        self,
+        label: str,
+        days: int,
+        *,
+        purge: bool = False,
+    ) -> dict[str, Any]:
+        """Soft-archive (or DELETE) nodes whose ``updated_at`` is older
+        than *days*. Returns ``{"affected": int}``.
+        """
+        cutoff = (
+            _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)
+        ).isoformat()
+        cur = self._conn.execute(
+            "SELECT id, props FROM nodes "
+            "WHERE label = ? AND updated_at < ? "
+            "AND COALESCE(json_extract(props, '$.status'), '') != 'archived'",
+            (label, cutoff),
+        )
+        rows = cur.fetchall()
+        affected = 0
+        if purge:
+            ids = [r["id"] for r in rows]
+            if ids:
+                placeholders = ", ".join(["?"] * len(ids))
+                self._conn.execute(
+                    f"DELETE FROM nodes_fts WHERE rowid IN ({placeholders})",
+                    ids,
+                )
+                self._conn.execute(
+                    f"DELETE FROM nodes WHERE id IN ({placeholders})", ids,
+                )
+                affected = len(ids)
+        else:
+            now = _now_iso()
+            for r in rows:
+                props = json.loads(r["props"])
+                props["status"] = "archived"
+                props["archived_at"] = now
+                self._conn.execute(
+                    "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(props), now, r["id"]),
+                )
+                affected += 1
+        self._conn.commit()
+        return {"affected": affected}
+
+    # ------------------------------------------------------------------
+    # Insight operations (skills/proactive.py + skills/reflect.py)
+    # ------------------------------------------------------------------
+
+    def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
+        cur = self._conn.execute(
+            """
+            SELECT key_value AS title,
+                   json_extract(props, '$.body')         AS body,
+                   json_extract(props, '$.confidence')   AS confidence,
+                   json_extract(props, '$.source_query') AS source_query,
+                   created_at
+            FROM nodes
+            WHERE label = 'Insight'
+              AND json_extract(props, '$.status') = 'pending'
+            ORDER BY confidence DESC, created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def update_insight_status(self, title: str, new_status: str) -> bool:
+        cur = self._conn.execute(
+            "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
+            (title,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return False
+        now = _now_iso()
+        props = json.loads(row["props"]) if row["props"] else {}
+        props["status"] = new_status
+        ts_field = "approved_at" if new_status == "approved" else "dismissed_at"
+        props[ts_field] = now
+        self._conn.execute(
+            "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(props), now, row["id"]),
+        )
+        self._conn.commit()
+        return True
+
+    def get_insight_by_title(self, title: str) -> dict[str, Any] | None:
+        cur = self._conn.execute(
+            """
+            SELECT json_extract(props, '$.status')       AS status,
+                   json_extract(props, '$.body')         AS body,
+                   json_extract(props, '$.confidence')   AS confidence,
+                   json_extract(props, '$.source_query') AS source_query
+            FROM nodes
+            WHERE label = 'Insight' AND key_value = ?
+            """,
+            (title,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def mark_insight_synced(self, title: str, obsidian_path: str) -> bool:
+        cur = self._conn.execute(
+            "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
+            (title,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return False
+        now = _now_iso()
+        props = json.loads(row["props"]) if row["props"] else {}
+        props["obsidian_path"] = obsidian_path
+        props["synced_at"] = now
+        self._conn.execute(
+            "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(props), now, row["id"]),
+        )
+        self._conn.commit()
+        return True
+
+    def get_dismissed_insight_titles(self) -> set[str]:
+        cur = self._conn.execute(
+            "SELECT key_value FROM nodes WHERE label = 'Insight' "
+            "AND json_extract(props, '$.status') = 'dismissed'",
+        )
+        return {r["key_value"] for r in cur.fetchall()}
+
+    def find_insight_by_source_query(
+        self,
+        source_query: str,
+        statuses: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        status_list = statuses or ["pending", "approved"]
+        placeholders = ", ".join(["?"] * len(status_list))
+        cur = self._conn.execute(
+            f"""
+            SELECT key_value                            AS title,
+                   json_extract(props, '$.status')      AS status
+            FROM nodes
+            WHERE label = 'Insight'
+              AND json_extract(props, '$.source_query') = ?
+              AND json_extract(props, '$.status') IN ({placeholders})
+            LIMIT 1
+            """,
+            (source_query, *status_list),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    # ------------------------------------------------------------------
+    # Obsidian helpers (adapters/obsidian/sync.py + skills/associate.py)
+    # ------------------------------------------------------------------
+
+    def find_obsidian_path(self, label: str, name: str) -> str | None:
+        cur = self._conn.execute(
+            "SELECT json_extract(props, '$.obsidian_path') AS path "
+            "FROM nodes WHERE label = ? AND key_value = ?",
+            (label, name),
+        )
+        row = cur.fetchone()
+        return row["path"] if row and row["path"] else None
+
+    def list_documented_nodes(self) -> list[dict[str, Any]]:
+        cur = self._conn.execute(
+            "SELECT label, key_value AS name, "
+            "       json_extract(props, '$.obsidian_path') AS path "
+            "FROM nodes WHERE json_extract(props, '$.obsidian_path') IS NOT NULL"
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def archive_node_for_missing_note(self, label: str, name: str) -> bool:
+        """Like ``archive_node_by_name`` but used by the obsidian sync's
+        archive-missing pass. Returns ``True`` if a node was matched.
+        """
+        cur = self._conn.execute(
+            "SELECT id, props FROM nodes WHERE label = ? AND key_value = ?",
+            (label, name),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return False
+        now = _now_iso()
+        props = json.loads(row["props"]) if row["props"] else {}
+        props["status"] = "archived"
+        props["archived_at"] = now
+        self._conn.execute(
+            "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(props), now, row["id"]),
+        )
+        self._sync_fts(row["id"], props)
+        self._conn.commit()
+        return True
+
+    def merge_wiki_link(
+        self,
+        *,
+        from_label: str,
+        from_name: str,
+        to_label: str,
+        to_name: str,
+    ) -> None:
+        """``MERGE (a)-[:LINKS_TO]->(b)`` — silent no-op if either endpoint
+        is missing (ObsidianSync calls this for unresolved wiki-links).
+        """
+        self.merge_relation(
+            from_label, "name", from_name,
+            "LINKS_TO",
+            to_label, "name", to_name,
+        )
+
+    def merge_wiki_link_by_target_name(
+        self,
+        *,
+        from_label: str,
+        from_name: str,
+        target_name: str,
+    ) -> int:
+        """Resolve target by case-insensitive name and merge LINKS_TO.
+
+        Returns ``1`` to mirror the unconditional counter in the Neo4j
+        version (caller increments per call regardless of success).
+        """
+        cur = self._conn.execute(
+            "SELECT label, key_value FROM nodes "
+            "WHERE LOWER(key_value) = LOWER(?) LIMIT 1",
+            (target_name,),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            self.merge_relation(
+                from_label, "name", from_name,
+                "LINKS_TO",
+                row["label"], "name", row["key_value"],
+            )
+        return 1
+
+    # ------------------------------------------------------------------
+    # CLI helpers (engrama/cli.py)
+    # ------------------------------------------------------------------
+
+    def apply_schema_statements(
+        self, statements: list[str],
+    ) -> list[tuple[str, Exception]]:
+        """Execute Cypher schema statements one at a time.
+
+        SQLite cannot speak Cypher, so each statement is treated as a
+        no-op and reported as a failure. The CLI ignores SQLite-side
+        failures gracefully (the SQLite schema lives in schema.sql and
+        is applied at connection time anyway).
+        """
+        return [
+            (stmt, NotImplementedError("SQLite backend ignores Cypher schema"))
+            for stmt in statements
+        ]
+
+    def seed_domain(self, name: str, description: str) -> None:
+        self.merge_node("Domain", "name", name, {"description": description})
+
+    def seed_concept_in_domain(
+        self, concept_name: str, domain_name: str,
+    ) -> None:
+        self.merge_node("Concept", "name", concept_name, {})
+        self.merge_relation(
+            "Concept", "name", concept_name,
+            "IN_DOMAIN",
+            "Domain", "name", domain_name,
+        )
+
+    def list_nodes_for_embedding(
+        self, force: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return nodes that need embeddings.
+
+        Once the vector store is wired, this filters by absence of an
+        entry in ``node_embeddings``. For now we return every node
+        (force=True) or every node missing an embedding flag in props.
+        """
+        if force:
+            cur = self._conn.execute(
+                "SELECT id, label, props FROM nodes"
+            )
+        else:
+            cur = self._conn.execute(
+                "SELECT id, label, props FROM nodes "
+                "WHERE COALESCE(json_extract(props, '$.embedded'), 0) = 0"
+            )
+        return [
+            {
+                "eid": str(r["id"]),
+                "labels": [r["label"]],
+                "props": json.loads(r["props"]) if r["props"] else {},
+            }
+            for r in cur.fetchall()
+        ]
+
+    # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
     def _sync_fts(self, node_id: int, props: dict[str, Any]) -> None:
-        """Mirror node text fields into the FTS5 contentless index."""
+        """Mirror node text fields into the FTS5 index."""
         self._conn.execute("DELETE FROM nodes_fts WHERE rowid = ?", (node_id,))
         cols = ", ".join(_FTS_FIELDS)
         placeholders = ", ".join(["?"] * len(_FTS_FIELDS))

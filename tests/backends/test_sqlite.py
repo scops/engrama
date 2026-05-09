@@ -276,3 +276,220 @@ def test_fulltext_indexes_tags_as_text(store):
 def test_run_cypher_is_not_supported(store):
     with pytest.raises(NotImplementedError):
         store.run_cypher("MATCH (n) RETURN n")
+
+
+# ----------------------------------------------------------------------
+# Insights
+# ----------------------------------------------------------------------
+
+
+def test_insight_lifecycle_pending_to_approved(store):
+    store.merge_node("Insight", "title", "i1", {
+        "body": "an insight",
+        "confidence": 0.9,
+        "status": "pending",
+        "source_query": "q1",
+    })
+    pending = store.get_pending_insights()
+    assert any(p["title"] == "i1" and p["confidence"] == 0.9 for p in pending)
+    assert store.update_insight_status("i1", "approved") is True
+    assert store.get_pending_insights() == []
+    by_title = store.get_insight_by_title("i1")
+    assert by_title["status"] == "approved"
+
+
+def test_get_pending_insights_orders_by_confidence(store):
+    store.merge_node("Insight", "title", "low",  {"confidence": 0.3, "status": "pending"})
+    store.merge_node("Insight", "title", "high", {"confidence": 0.9, "status": "pending"})
+    store.merge_node("Insight", "title", "mid",  {"confidence": 0.6, "status": "pending"})
+    titles = [p["title"] for p in store.get_pending_insights()]
+    assert titles == ["high", "mid", "low"]
+
+
+def test_dismissed_insights_excluded_from_pending(store):
+    store.merge_node("Insight", "title", "kept", {"confidence": 0.5, "status": "pending"})
+    store.merge_node("Insight", "title", "drop", {"confidence": 0.5, "status": "pending"})
+    store.update_insight_status("drop", "dismissed")
+    titles = {p["title"] for p in store.get_pending_insights()}
+    assert "kept" in titles and "drop" not in titles
+    assert store.get_dismissed_insight_titles() == {"drop"}
+
+
+def test_mark_insight_synced(store):
+    store.merge_node("Insight", "title", "i1", {"confidence": 0.5, "status": "approved"})
+    assert store.mark_insight_synced("i1", "vault/insights/i1.md") is True
+    by_title = store.get_insight_by_title("i1")
+    # mark_insight_synced sets obsidian_path in props; not in get_insight_by_title
+    # selection but visible via get_node.
+    full = store.get_node("Insight", "title", "i1")
+    assert full["obsidian_path"] == "vault/insights/i1.md"
+    assert full["synced_at"]
+    assert by_title["status"] == "approved"
+
+
+def test_find_insight_by_source_query(store):
+    store.merge_node("Insight", "title", "i1", {
+        "confidence": 0.5, "status": "pending", "source_query": "qX",
+    })
+    found = store.find_insight_by_source_query("qX")
+    assert found["title"] == "i1"
+    assert store.find_insight_by_source_query("nope") is None
+
+
+# ----------------------------------------------------------------------
+# Temporal
+# ----------------------------------------------------------------------
+
+
+def test_expire_node_sets_valid_to(store):
+    store.merge_node("Project", "name", "p", {})
+    assert store.expire_node("Project", "name", "p") is True
+    n = store.get_node("Project", "name", "p")
+    assert n["valid_to"]
+
+
+def test_expire_then_remerge_revives(store):
+    store.merge_node("Project", "name", "p", {})
+    store.expire_node("Project", "name", "p")
+    n = store.merge_node("Project", "name", "p", {"description": "back"})[0]["n"]
+    assert "valid_to" not in n
+
+
+def test_decay_scores_reduces_old_confidence(store):
+    """Decay applies when updated_at is in the past."""
+    import datetime as dt
+    import json as _json
+    # Backdate a node manually so decay has something to chew on.
+    store.merge_node("Project", "name", "p", {"description": "x"})
+    old = (dt.datetime.now(dt.UTC) - dt.timedelta(days=30)).isoformat()
+    store._conn.execute(
+        "UPDATE nodes SET updated_at = ?, "
+        "props = json_set(props, '$.confidence', 1.0) WHERE label = 'Project'",
+        (old,),
+    )
+    store._conn.commit()
+    out = store.decay_scores(rate=0.05)
+    assert out["decayed"] >= 1
+    n = store.get_node("Project", "name", "p")
+    assert n["confidence"] < 1.0
+
+
+def test_decay_scores_archives_below_threshold(store):
+    import datetime as dt
+    store.merge_node("Project", "name", "p", {})
+    old = (dt.datetime.now(dt.UTC) - dt.timedelta(days=365 * 5)).isoformat()
+    store._conn.execute(
+        "UPDATE nodes SET updated_at = ?, "
+        "props = json_set(props, '$.confidence', 0.5) WHERE label = 'Project'",
+        (old,),
+    )
+    store._conn.commit()
+    out = store.decay_scores(rate=0.5, min_confidence=0.1)
+    assert out["archived"] >= 1
+    n = store.get_node("Project", "name", "p")
+    assert n["status"] == "archived"
+
+
+def test_query_at_date_filters_validity_window(store):
+    store.merge_node("Project", "name", "old", {
+        "valid_from": "2026-01-01T00:00:00+00:00",
+        "valid_to":   "2026-02-01T00:00:00+00:00",
+    })
+    store.merge_node("Project", "name", "current", {
+        "valid_from": "2026-01-01T00:00:00+00:00",
+    })
+    on_jan = {r["name"] for r in store.query_at_date("2026-01-15T00:00:00+00:00")}
+    on_mar = {r["name"] for r in store.query_at_date("2026-03-15T00:00:00+00:00")}
+    assert "old" in on_jan and "current" in on_jan
+    assert "current" in on_mar and "old" not in on_mar
+
+
+def test_archive_nodes_older_than(store):
+    import datetime as dt
+    store.merge_node("Project", "name", "stale", {})
+    store.merge_node("Project", "name", "fresh", {})
+    old = (dt.datetime.now(dt.UTC) - dt.timedelta(days=400)).isoformat()
+    store._conn.execute(
+        "UPDATE nodes SET updated_at = ? WHERE key_value = 'stale'", (old,),
+    )
+    store._conn.commit()
+    out = store.archive_nodes_older_than("Project", days=180)
+    assert out["affected"] == 1
+    assert store.get_node("Project", "name", "stale")["status"] == "archived"
+    assert store.get_node("Project", "name", "fresh").get("status") != "archived"
+
+
+# ----------------------------------------------------------------------
+# Obsidian helpers
+# ----------------------------------------------------------------------
+
+
+def test_find_obsidian_path(store):
+    store.merge_node("Project", "name", "p", {"obsidian_path": "vault/p.md"})
+    assert store.find_obsidian_path("Project", "p") == "vault/p.md"
+    store.merge_node("Project", "name", "q", {})
+    assert store.find_obsidian_path("Project", "q") is None
+    assert store.find_obsidian_path("Project", "missing") is None
+
+
+def test_list_documented_nodes_filters_by_obsidian_path(store):
+    store.merge_node("Project", "name", "withpath", {"obsidian_path": "vault/x.md"})
+    store.merge_node("Project", "name", "nopath", {})
+    out = store.list_documented_nodes()
+    names = {r["name"] for r in out}
+    assert names == {"withpath"}
+
+
+def test_archive_node_for_missing_note(store):
+    store.merge_node("Project", "name", "to-archive", {"obsidian_path": "vault/x.md"})
+    assert store.archive_node_for_missing_note("Project", "to-archive") is True
+    assert store.get_node("Project", "name", "to-archive")["status"] == "archived"
+    assert store.archive_node_for_missing_note("Project", "missing") is False
+
+
+def test_merge_wiki_link_creates_links_to(store):
+    store.merge_node("Project", "name", "a", {})
+    store.merge_node("Concept", "name", "b", {})
+    store.merge_wiki_link(from_label="Project", from_name="a", to_label="Concept", to_name="b")
+    rows = store.get_neighbours("Project", "name", "a", hops=1)
+    assert any(r["neighbour"]["name"] == "b" and r["rel"][0]["_type"] == "LINKS_TO" for r in rows)
+
+
+def test_merge_wiki_link_by_target_name_resolves_label(store):
+    store.merge_node("Project", "name", "a", {})
+    store.merge_node("Concept", "name", "B", {})
+    n = store.merge_wiki_link_by_target_name(
+        from_label="Project", from_name="a", target_name="b",
+    )
+    assert n == 1
+    rows = store.get_neighbours("Project", "name", "a", hops=1)
+    assert any(r["neighbour"]["name"] == "B" for r in rows)
+
+
+# ----------------------------------------------------------------------
+# Seed / CLI helpers
+# ----------------------------------------------------------------------
+
+
+def test_seed_domain_and_concept(store):
+    store.seed_domain("cybersecurity", "security domain")
+    store.seed_concept_in_domain("threat-modelling", "cybersecurity")
+    rows = store.get_neighbours("Concept", "name", "threat-modelling", hops=1)
+    assert any(
+        r["neighbour"]["name"] == "cybersecurity" and r["rel"][0]["_type"] == "IN_DOMAIN"
+        for r in rows
+    )
+
+
+def test_apply_schema_statements_returns_failures(store):
+    out = store.apply_schema_statements(["CREATE INDEX neo_only FOR (n:Project)"])
+    assert len(out) == 1
+    assert isinstance(out[0][1], NotImplementedError)
+
+
+def test_list_nodes_for_embedding_force(store):
+    store.merge_node("Project", "name", "a", {})
+    store.merge_node("Project", "name", "b", {})
+    out = store.list_nodes_for_embedding(force=True)
+    names = {n["props"].get("name") for n in out}
+    assert {"a", "b"}.issubset(names)
