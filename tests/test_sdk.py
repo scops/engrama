@@ -1,7 +1,9 @@
 """
 Tests for Engrama Phase 7 — Python SDK public API.
 
-Integration tests against a real Neo4j instance.
+Integration tests against a real Neo4j instance — the SDK fixture
+explicitly opts in to ``backend="neo4j"`` because these tests assert
+about Neo4j-shaped state (via the ``neo4j_session`` fixture).
 """
 
 from __future__ import annotations
@@ -13,8 +15,8 @@ from engrama import Engrama
 
 @pytest.fixture()
 def eng() -> Engrama:
-    """Create an Engrama SDK instance."""
-    e = Engrama()
+    """SDK pinned to the Neo4j backend (matches neo4j_session writes)."""
+    e = Engrama(backend="neo4j")
     yield e
     e.close()
 
@@ -29,15 +31,15 @@ class TestConnection:
 
     def test_context_manager(self) -> None:
         """Engrama works as a context manager."""
-        with Engrama() as e:
+        with Engrama(backend="neo4j") as e:
             e.verify()
         # Connection should be closed after __exit__
 
     def test_repr(self, eng: Engrama) -> None:
-        """Repr shows URI."""
+        """Repr identifies the backend in use."""
         r = repr(eng)
         assert "Engrama(" in r
-        assert "bolt://" in r
+        assert "Neo4jGraphStore" in r
 
 
 # ===========================================================================

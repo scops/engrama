@@ -37,12 +37,10 @@ from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
-from neo4j import AsyncGraphDatabase, AsyncDriver
 from pydantic import BaseModel, ConfigDict, Field
 
 from engrama.core.schema import NodeType, RelationType, TITLE_KEYED_LABELS
 from engrama.adapters.obsidian import ObsidianAdapter, NoteParser
-from engrama.backends.neo4j.async_store import Neo4jAsyncStore
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -262,33 +260,32 @@ class WriteInsightInput(BaseModel):
 
 
 def create_engrama_mcp(
-    db_url: str = "bolt://localhost:7687",
-    username: str = "neo4j",
-    password: str = "",
-    database: str = "neo4j",
+    backend: str | None = None,
+    config: dict[str, Any] | None = None,
     vault_path: str | None = None,
 ) -> FastMCP:
     """Create and return a configured Engrama MCP server.
 
     Parameters:
-        db_url: Neo4j bolt URI.
-        username: Neo4j username.
-        password: Neo4j password.
-        database: Neo4j database name.
+        backend: Optional ``GRAPH_BACKEND`` override. Defaults to env
+            (``sqlite`` if unset).
+        config: Optional configuration dict forwarded to
+            :func:`engrama.backends.create_async_stores` (recognised
+            keys: ``ENGRAMA_DB_PATH``, ``NEO4J_URI``,
+            ``NEO4J_USERNAME``, ``NEO4J_PASSWORD``,
+            ``NEO4J_DATABASE``, ``EMBEDDING_DIMENSIONS``).
         vault_path: Absolute path to the Obsidian vault root.
-                    Falls back to ``VAULT_PATH`` env var.
+            Falls back to ``VAULT_PATH`` env var.
 
     Returns:
         A :class:`FastMCP` instance ready to run.
     """
-
-    # -- Lifespan: manage the async Neo4j driver + async store ------
+    cfg: dict[str, Any] = dict(config or {})
+    if backend is not None:
+        cfg["GRAPH_BACKEND"] = backend
 
     @asynccontextmanager
     async def lifespan(server: FastMCP):  # noqa: ARG001
-        driver: AsyncDriver = AsyncGraphDatabase.driver(
-            db_url, auth=(username, password)
-        )
         # Initialise Obsidian adapter (optional — sync tools disabled if no vault)
         resolved_vault = vault_path or os.environ.get("VAULT_PATH")
         obsidian: ObsidianAdapter | None = None
@@ -301,20 +298,12 @@ def create_engrama_mcp(
         else:
             logger.info("VAULT_PATH not set — Obsidian sync tools disabled")
 
-        # DDR-003: create async store + embedding provider
+        # Create the backend-agnostic async store via the factory.
+        from engrama.backends import create_async_stores, create_embedding_provider
         async_store = None
         embedder = None
         try:
-            from engrama.backends import create_async_store, create_embedding_provider
-            config = {
-                "GRAPH_BACKEND": "neo4j",
-                "NEO4J_URI": db_url,
-                "NEO4J_USERNAME": username,
-                "NEO4J_PASSWORD": password,
-            }
-            # Create async store for all MCP operations (graph + vector)
-            async_store = create_async_store(driver, database, config)
-            # Create embedding provider (sync+async methods)
+            async_store, _ = create_async_stores(cfg)
             embedder = create_embedding_provider()
             logger.info(
                 "Async store: %r, embedder: %r (dims=%d)",
@@ -325,32 +314,38 @@ def create_engrama_mcp(
             async_store = None
 
         try:
-            await driver.verify_connectivity()
-            logger.info("Engrama MCP connected to Neo4j at %s", db_url)
+            if async_store is not None:
+                health = await async_store.health_check()
+                logger.info("Engrama MCP backend ready: %s", health)
             yield {
-                "driver": driver,
-                "database": database,
                 "async_store": async_store,
                 "obsidian": obsidian,
                 "parser": NoteParser(),
                 "embedder": embedder,
             }
         finally:
-            # Close async embedding client if present
             if embedder is not None and hasattr(embedder, "aclose"):
                 try:
                     await embedder.aclose()
                 except Exception:
                     pass
-            await driver.close()
-            logger.info("Engrama MCP disconnected from Neo4j")
+            if async_store is not None and hasattr(async_store, "close"):
+                try:
+                    await async_store.close()
+                except Exception:
+                    pass
+            logger.info("Engrama MCP shut down cleanly")
 
     mcp = FastMCP("engrama_mcp", lifespan=lifespan)
 
     # -- Helper: get async store from context -----
 
-    def _store(ctx: Context) -> Neo4jAsyncStore:
-        """Extract the async store from the lifespan state."""
+    def _store(ctx: Context) -> Any:
+        """Extract the async store from the lifespan state.
+
+        Returned type is the protocol-shaped store; caller doesn't need
+        to know whether it's the SQLite or Neo4j implementation.
+        """
         state = ctx.request_context.lifespan_context
         store = state.get("async_store")
         if store is None:

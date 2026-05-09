@@ -50,6 +50,10 @@ class Neo4jAsyncStore:
         self._database = database
         self._vector_dimensions = vector_dimensions
         self._vector_index = vector_index
+        # Set to True by the factory when it created the driver itself,
+        # so close() knows whether to shut the driver down or leave it
+        # to the caller (legacy lifespan path).
+        self._owns_driver = False
 
     # ------------------------------------------------------------------
     # Properties
@@ -951,6 +955,17 @@ class Neo4jAsyncStore:
         """Return backend status."""
         await self._driver.verify_connectivity()
         return {"status": "ok", "backend": "neo4j-async"}
+
+    async def close(self) -> None:
+        """Shut the driver down if this store owns it.
+
+        Stores returned by :func:`engrama.backends.create_async_stores`
+        own their driver; manually constructed stores (driver passed in
+        from a caller-managed lifespan) do not.
+        """
+        if self._owns_driver and self._driver is not None:
+            await self._driver.close()
+            self._driver = None  # type: ignore[assignment]
 
     # ------------------------------------------------------------------
     # Repr

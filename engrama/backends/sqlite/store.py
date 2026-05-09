@@ -237,38 +237,42 @@ class SqliteGraphStore:
         self,
         label: str,
         name: str,
+        *,
+        purge: bool = False,
     ) -> dict[str, Any]:
-        """Archive a node by its name (or title). Returns shape used by
-        the forget skill: ``{"archived": bool, "node": {...} | None}``.
+        """Archive (or hard-delete) a node by ``(label, name|title)``.
+
+        Returns ``{"matched": bool, "deleted": int}`` to mirror the
+        Neo4j store's contract — used by the forget skill.
         """
-        # Try name-keyed first, then title-keyed.
         cur = self._conn.execute(
-            "SELECT id, props, label, key_field, key_value FROM nodes "
-            "WHERE label = ? AND key_value = ?",
+            "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
             (label, name),
         )
         row = cur.fetchone()
         if row is None:
-            return {"archived": False, "node": None}
+            return {"matched": False, "deleted": 0}
+        node_id = row["id"]
+        if purge:
+            self._conn.execute("DELETE FROM nodes_fts WHERE rowid = ?", (node_id,))
+            self._conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
+            self._conn.commit()
+            return {"matched": True, "deleted": 1}
+        # Soft-archive
         now = _now_iso()
-        props = json.loads(row["props"]) if row["props"] else {}
+        cur = self._conn.execute(
+            "SELECT props FROM nodes WHERE id = ?", (node_id,),
+        )
+        props = json.loads(cur.fetchone()["props"] or "{}")
         props["status"] = "archived"
         props["archived_at"] = now
         self._conn.execute(
             "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(props), now, row["id"]),
+            (json.dumps(props), now, node_id),
         )
-        self._sync_fts(row["id"], props)
+        self._sync_fts(node_id, props)
         self._conn.commit()
-        return {
-            "archived": True,
-            "node": {
-                "label": row["label"],
-                "key": row["key_field"],
-                "name": row["key_value"],
-                "archived_at": now,
-            },
-        }
+        return {"matched": True, "deleted": 0}
 
     def list_existing_nodes(self, limit: int = 200) -> list[dict[str, str]]:
         cur = self._conn.execute(

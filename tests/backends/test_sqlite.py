@@ -101,10 +101,17 @@ def test_delete_node_hard(store):
 def test_archive_node_by_name(store):
     store.merge_node("Project", "name", "to-forget", {"status": "active"})
     out = store.archive_node_by_name("Project", "to-forget")
-    assert out["archived"] is True
-    assert out["node"]["name"] == "to-forget"
-    assert out["node"]["archived_at"]
-    assert store.archive_node_by_name("Project", "missing")["archived"] is False
+    assert out == {"matched": True, "deleted": 0}
+    n = store.get_node("Project", "name", "to-forget")
+    assert n["status"] == "archived" and n["archived_at"]
+    assert store.archive_node_by_name("Project", "missing") == {"matched": False, "deleted": 0}
+
+
+def test_archive_node_by_name_purge(store):
+    store.merge_node("Project", "name", "to-purge", {})
+    out = store.archive_node_by_name("Project", "to-purge", purge=True)
+    assert out == {"matched": True, "deleted": 1}
+    assert store.get_node("Project", "name", "to-purge") is None
 
 
 def test_list_existing_nodes(store):
