@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -50,7 +50,7 @@ jobs:
     # shouldn't.
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -86,7 +86,7 @@ jobs:
     # (DDR-004). The Neo4j matrix is wired up in Phase 2 of the CI plan.
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
