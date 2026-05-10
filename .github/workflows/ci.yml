@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel an in-flight run if a newer commit lands on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The workflow only reads source; explicit minimum permissions.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Install dev extras
+        run: uv sync --extra dev
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: ruff check
+        run: uv run ruff check .
+
+  test-sqlite:
+    name: Tests (SQLite, no Docker)
+    runs-on: ubuntu-latest
+    # The SQLite-only suite is the contract Engrama promises to anyone
+    # running `pip install engrama` with no Neo4j and no .env. Keeping
+    # it green on every PR is the baseline for portable storage
+    # (DDR-004). The Neo4j matrix is wired up in Phase 2 of the CI plan.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Install dev + mcp extras
+        # mcp is needed by tests/test_adapters.py and the SDK tests
+        # that touch the MCP server module; dev gives us pytest +
+        # pytest-asyncio. Neo4j extra deliberately omitted so the
+        # Neo4j-dependent fixtures skip via NEO4J_PASSWORD being unset.
+        run: uv sync --extra dev --extra mcp
+
+      - name: Run pytest (SQLite + backend-agnostic)
+        # tests/test_sdk.py explicitly opts into backend="neo4j" — those
+        # are integration tests for the Neo4j path and run in Phase 2's
+        # matrix. tests/test_neo4j_store.py and tests that depend on the
+        # `neo4j_session` fixture skip cleanly via the conftest skip
+        # when NEO4J_PASSWORD is unset.
+        run: |
+          uv run pytest -q \
+            tests/backends \
+            tests/contracts \
+            tests/test_protocols.py \
+            tests/test_composable.py \
+            tests/test_openai_compat_embedder.py \
+            tests/test_cli.py
