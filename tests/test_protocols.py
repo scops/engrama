@@ -3,13 +3,22 @@ Tests for Engrama storage protocols.
 
 Verifies that concrete backend implementations satisfy the abstract
 protocol interfaces defined in ``engrama.core.protocols``.
+
+The Neo4j classes need the ``neo4j`` extra (DDR-004 made it opt-in);
+when it isn't installed the whole file skips so a base-install CI run
+stays green. The Null-store tests still run on the Neo4j-enabled CI
+matrix.
 """
 
 from __future__ import annotations
 
-from engrama.backends.neo4j.backend import Neo4jGraphStore
-from engrama.backends.neo4j.vector import Neo4jVectorStore
-from engrama.backends.null import NullGraphStore, NullVectorStore
+import pytest
+
+pytest.importorskip("neo4j")
+
+from engrama.backends.neo4j.backend import Neo4jGraphStore  # noqa: E402
+from engrama.backends.neo4j.vector import Neo4jVectorStore  # noqa: E402
+from engrama.backends.null import NullGraphStore, NullVectorStore  # noqa: E402
 
 
 class TestGraphStoreProtocol:
