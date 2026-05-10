@@ -8,7 +8,9 @@ Karpathy built his second brain in Markdown and wikis — that works for humans 
 
 ## The solution
 
-**Engrama** is a plug-and-play Python framework that gives any AI agent persistent, structured memory backed by a Neo4j knowledge graph. The agent can remember, associate, forget, and reason about its accumulated knowledge — exactly as a human with good memory would.
+**Engrama** is a plug-and-play Python framework that gives any AI agent persistent, structured memory backed by a knowledge graph. The agent can remember, associate, forget, and reason about its accumulated knowledge — exactly as a human with good memory would.
+
+The graph runs on either **SQLite + sqlite-vec** (default since 0.9 — single file, zero external services, `pip install engrama` and you're running) or **Neo4j 5.26 LTS** (opt-in for multi-process production, large vector indexes, or teams already invested in Cypher). Both expose the same data model and the same eleven MCP tools — see [BACKENDS.md](BACKENDS.md) for the decision guide.
 
 ## What makes it different
 
@@ -18,6 +20,7 @@ Karpathy built his second brain in Markdown and wikis — that works for humans 
 | Obsidian / Markdown | Obsidian is for humans. Engrama is for agents. Relationships are first-class citizens, not text links. |
 | Mem0 / Zep (cloud) | Engrama is local-first. Your data never leaves your machine. |
 | RAG + vector DB | Engrama doesn't need embeddings for structured queries. They're an optional layer, not a requirement. |
+| Other graph-memory frameworks | Zero external services on the default install. No Docker, no JVM, no cloud — just `pip install engrama`. |
 
 ## Who it's for
 
@@ -29,10 +32,11 @@ Karpathy built his second brain in Markdown and wikis — that works for humans 
 ## Design philosophy
 
 1. **Local-first** — your graph, on your machine, zero cloud dependencies
-2. **Plug-and-play** — `engrama init --profile developer` and ready in 2 minutes
+2. **Zero-friction install** — `pip install engrama && engrama init`, no Docker, no JVM, no service to configure (Neo4j is there when you grow into it — see [BACKENDS.md](BACKENDS.md))
 3. **Agent-agnostic** — works with Claude, LangChain, n8n, or anything that speaks MCP or Python
-4. **Schema as configuration** — profiles define node types and relationships without touching code
-5. **Graphs first, vectors later** — explicit structure always beats brute-force semantic search for efficiency
+4. **Backend-agnostic** — skills, tools and the engine talk to abstract `GraphStore` / `VectorStore` / `EmbeddingProvider` protocols. Swapping SQLite for Neo4j (or, eventually, Chroma / pgvector / ArcadeDB) is a one-variable change
+5. **Schema as configuration** — profiles define node types and relationships without touching code
+6. **Graphs first, vectors later** — explicit structure always beats brute-force semantic search for efficiency
 
 ## The name
 

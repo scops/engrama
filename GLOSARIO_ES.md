@@ -16,10 +16,28 @@ Cada elemento individual del grafo. Tiene una **etiqueta** (`Project`, `Technolo
 La conexión entre dos nodos. Tiene un **tipo** en mayúsculas y suele ser un verbo: `USES`, `TREATS`, `DOCUMENTS`. Es dirigida: va de un nodo origen a un nodo destino.
 
 **Neo4j**
-Base de datos de grafos open source (con versión LTS gratuita). Engrama la usa como motor de almacenamiento. Se administra con un lenguaje propio llamado **Cypher**.
+Base de datos de grafos open source (con versión LTS gratuita). Engrama la soporta como backend opcional para producción multi-proceso, índices vectoriales muy grandes o equipos que ya usan Cypher. Se administra con un lenguaje propio llamado **Cypher**. Se instala con `pip install engrama[neo4j]`.
+
+**SQLite**
+Base de datos relacional embebida en un único archivo. Es el backend por defecto de Engrama desde la versión 0.9 (DDR-004): cero servicios externos, cero Docker, cero JVM. Cualquier laptop o VM puede ejecutar Engrama con `pip install engrama` y un comando `engrama init`.
+
+**sqlite-vec**
+Extensión de SQLite que añade búsqueda vectorial mediante una "virtual table" llamada `vec0`. Engrama la usa para que los embeddings vivan en el mismo archivo `.db` que el grafo. Búsqueda por fuerza bruta — cómoda hasta ~100k vectores; más allá compensa pasar a Neo4j (ver [BACKENDS.md](BACKENDS.md)).
+
+**FTS5**
+Motor de búsqueda fulltext integrado en SQLite (similar a Lucene). Engrama lo usa para la búsqueda por palabras clave cuando el backend es SQLite. En Neo4j el equivalente es el índice fulltext nativo (`memory_search`).
 
 **Cypher**
-El lenguaje de consultas de Neo4j. Sintaxis tipo "ASCII art": `(a:Project)-[:USES]->(b:Technology)` significa "un nodo Project conectado a un Technology mediante una relación USES".
+El lenguaje de consultas de Neo4j. Sintaxis tipo "ASCII art": `(a:Project)-[:USES]->(b:Technology)` significa "un nodo Project conectado a un Technology mediante una relación USES". El backend SQLite no habla Cypher; usa SQL traducido encapsulado tras los métodos del protocolo `GraphStore`, así que los callers no escriben ni Cypher ni SQL a mano.
+
+**Backend (de almacenamiento)**
+La implementación concreta del protocolo `GraphStore` + `VectorStore` que Engrama usa para guardar el grafo. Hoy hay dos: `sqlite` (por defecto) y `neo4j` (opt-in). Cambiar de uno a otro es una variable de entorno (`GRAPH_BACKEND=...`).
+
+**Protocolo (`GraphStore` / `VectorStore` / `EmbeddingProvider`)**
+Las interfaces abstractas (en `engrama/core/protocols.py`) que cualquier backend o proveedor debe implementar. Skills, MCP server, CLI y SDK hablan solo con los protocolos — no saben qué hay debajo. Esto es lo que permite que añadir un backend nuevo (Chroma, ArcadeDB, pgvector, ...) no toque ni el motor ni las tools.
+
+**Factory (de backends)**
+La función `create_stores()` / `create_async_stores()` en `engrama/backends/__init__.py` que lee `GRAPH_BACKEND` y devuelve el backend adecuado. Único punto de wiring entre la config y el resto del código.
 
 **MERGE**
 Operación de Cypher que crea un nodo si no existe, o lo actualiza si ya existe. Engrama hace MERGE siempre, evitando duplicados.
@@ -32,10 +50,13 @@ Definición formal de qué tipos de nodos y relaciones puede haber en el grafo. 
 ## Búsqueda
 
 **Embedding**
-Representación de un texto como un vector numérico (en Engrama, 768 dimensiones con `nomic-embed-text`). Textos con significado parecido producen vectores cercanos en el espacio. Es la base de la búsqueda semántica.
+Representación de un texto como un vector numérico (por defecto 768 dimensiones con `nomic-embed-text` vía Ollama, pero el embedder OpenAI-compatible acepta cualquier modelo y dimensión). Textos con significado parecido producen vectores cercanos. Es la base de la búsqueda semántica.
+
+**Embedder OpenAI-compatible**
+Un único cliente HTTP en Engrama que habla el endpoint `/v1/embeddings` definido por OpenAI y reutilizado por Ollama (modo `/v1`), LM Studio, vLLM, llama.cpp, Jina y otros. Con cambiar `OPENAI_BASE_URL` cambias de proveedor sin tocar código (DDR-004).
 
 **Base de datos vectorial**
-Almacén optimizado para encontrar embeddings cercanos a uno dado (vecinos más próximos). Engrama no usa una BD vectorial separada — Neo4j 5 incluye índice vectorial nativo.
+Almacén optimizado para encontrar embeddings cercanos a uno dado (vecinos más próximos). Engrama no requiere una BD vectorial dedicada: con SQLite se usa la extensión `sqlite-vec` en el mismo archivo, y con Neo4j el índice vectorial nativo de Neo4j 5.
 
 **Búsqueda fulltext**
 Búsqueda clásica por palabras clave (tipo Lucene). Encuentra "Neo4j" si tu consulta contiene literalmente "Neo4j". Funciona sin embeddings.
@@ -112,6 +133,12 @@ Framework Python para construir servidores MCP con poco código (decoradores `@m
 
 **uv**
 Gestor moderno de paquetes y entornos virtuales para Python, escrito en Rust. Reemplaza a `pip` + `venv` + `pip-tools`. Mucho más rápido. `uv run X` ejecuta un comando dentro del entorno del proyecto sin necesidad de activarlo.
+
+**Extra (de instalación)**
+Grupo opcional de dependencias declarado en `pyproject.toml`. `pip install engrama` instala solo el núcleo (SQLite); `pip install engrama[neo4j]` añade el driver de Neo4j; `pip install engrama[mcp]` añade FastMCP. Pueden combinarse: `pip install engrama[neo4j,mcp]`.
+
+**DDR (Design Decision Record)**
+Documento corto que registra una decisión arquitectónica importante, su contexto y sus consecuencias. Engrama tiene cuatro: DDR-001 clasificación facetada, DDR-002 sincronización bidireccional vault ↔ grafo, DDR-003 protocolos + embeddings + búsqueda híbrida + razonamiento temporal, DDR-004 almacenamiento portátil (SQLite por defecto).
 
 **YAML**
 Formato de serialización legible por humanos, basado en indentación. Se usa para el esquema de Engrama y para el frontmatter de Obsidian.

@@ -1,6 +1,13 @@
 # Graph Schema
 
-> Canonical reference for the Neo4j schema. `scripts/init-schema.cypher` must stay in sync with this document.
+> Canonical reference for the Engrama graph schema. The same schema
+> applies to both backends: on Neo4j it is enforced by the Cypher
+> constraints in `scripts/init-schema.cypher`; on SQLite it is enforced
+> by the `nodes` / `edges` / `nodes_fts` tables defined in
+> `engrama/backends/sqlite/schema.sql` (applied automatically). The
+> Cypher snippets below also apply to Neo4j; the SQLite-equivalent
+> queries are encapsulated by the `GraphStore` protocol methods —
+> callers don't need to write either dialect by hand.
 
 ## Nodes — `developer` profile
 
@@ -191,6 +198,7 @@ RETURN path LIMIT 50
 - **`MERGE` always** — engine never uses bare `CREATE`
 - **Automatic timestamps** — engine manages `created_at` / `updated_at`
 - **No relationship properties in v1** — added only when demonstrated need arises
-- **Embeddings are optional** — local embeddings via Ollama enhance search when enabled (DDR-003 Phase B+C). Vector index on `(:Embedded)` covers all node types.
-- **Always use Cypher parameters** — never string-format queries
+- **Embeddings are optional** — semantic search via any OpenAI-compatible service (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina) enhances search when enabled (DDR-003 Phase B+C, DDR-004). On Neo4j the vector index on `(:Embedded)` covers all node types; on SQLite vectors live in the `node_embeddings` `vec0` virtual table.
+- **Always parameterise queries** — never string-format Cypher (Neo4j) or SQL (SQLite). Both backends use parameter binding.
 - **Temporal fields auto-managed** — `valid_from`, `confidence` set on creation; `valid_to` cleared on revival (MATCH). Decay applied via `engrama decay` CLI.
+- **Schema is backend-agnostic** — the same labels and relationships defined in `profiles/*.yaml` apply to either backend. See [BACKENDS.md](BACKENDS.md) for the decision guide between SQLite and Neo4j.

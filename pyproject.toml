@@ -1,11 +1,11 @@
 [project]
 name = "engrama"
-version = "0.1.0"
-description = "Graph-based long-term memory framework for AI agents"
+version = "0.9.0"
+description = "Graph-based long-term memory framework for AI agents (SQLite default, Neo4j optional)"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-keywords = ["ai", "agents", "memory", "neo4j", "graph", "mcp", "knowledge-graph"]
+keywords = ["ai", "agents", "memory", "knowledge-graph", "sqlite", "neo4j", "mcp", "graph"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
