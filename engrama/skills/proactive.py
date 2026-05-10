@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from engrama.core.engine import EngramaEngine
     from engrama.adapters.obsidian import ObsidianAdapter
+    from engrama.core.engine import EngramaEngine
 
 
 @dataclass
@@ -48,7 +48,7 @@ class ProactiveSkill:
 
     def surface(
         self,
-        engine: "EngramaEngine",
+        engine: EngramaEngine,
         *,
         limit: int = 10,
     ) -> list[SurfacedInsight]:
@@ -68,20 +68,22 @@ class ProactiveSkill:
             created = r["created_at"]
             if created is not None:
                 created = str(created)
-            results.append(SurfacedInsight(
-                title=r["title"],
-                body=r["body"],
-                confidence=r["confidence"],
-                source_query=r["source_query"],
-                created_at=created,
-            ))
+            results.append(
+                SurfacedInsight(
+                    title=r["title"],
+                    body=r["body"],
+                    confidence=r["confidence"],
+                    source_query=r["source_query"],
+                    created_at=created,
+                )
+            )
         return results
 
     # ------------------------------------------------------------------
     # Approve / Dismiss
     # ------------------------------------------------------------------
 
-    def approve(self, engine: "EngramaEngine", *, title: str) -> dict:
+    def approve(self, engine: EngramaEngine, *, title: str) -> dict:
         """Mark an Insight as approved by the human.
 
         Args:
@@ -98,7 +100,7 @@ class ProactiveSkill:
             "matched": matched,
         }
 
-    def dismiss(self, engine: "EngramaEngine", *, title: str) -> dict:
+    def dismiss(self, engine: EngramaEngine, *, title: str) -> dict:
         """Mark an Insight as dismissed by the human.
 
         Args:
@@ -121,8 +123,8 @@ class ProactiveSkill:
 
     def write_to_vault(
         self,
-        engine: "EngramaEngine",
-        obsidian: "ObsidianAdapter",
+        engine: EngramaEngine,
+        obsidian: ObsidianAdapter,
         *,
         title: str,
         target_note: str,
@@ -159,7 +161,7 @@ class ProactiveSkill:
                 "target_note": target_note,
                 "written": False,
                 "reason": f"Insight status is '{insight['status']}', not 'approved'. "
-                          "Only approved Insights can be written to the vault.",
+                "Only approved Insights can be written to the vault.",
             }
 
         # Build the markdown section

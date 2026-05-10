@@ -8,18 +8,16 @@ Tests for Engrama embedding providers.
 
 from __future__ import annotations
 
-import json
 import http.server
+import json
 import threading
-from unittest.mock import patch
 
 import pytest
 
+from engrama.embeddings import create_provider
 from engrama.embeddings.null import NullProvider
 from engrama.embeddings.ollama import OllamaProvider
 from engrama.embeddings.text import node_to_text
-from engrama.embeddings import create_provider
-
 
 # ---------------------------------------------------------------------------
 # Helpers — fake Ollama HTTP server
@@ -66,10 +64,14 @@ class _FakeOllamaHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({
-                "model": body.get("model", "test"),
-                "embeddings": embeddings,
-            }).encode())
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "model": body.get("model", "test"),
+                        "embeddings": embeddings,
+                    }
+                ).encode()
+            )
         else:
             self.send_response(404)
             self.end_headers()
@@ -79,9 +81,13 @@ class _FakeOllamaHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({
-                "models": [{"name": "nomic-embed-text:latest"}],
-            }).encode())
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "models": [{"name": "nomic-embed-text:latest"}],
+                    }
+                ).encode()
+            )
         else:
             self.send_response(404)
             self.end_headers()
@@ -203,7 +209,7 @@ class TestOllamaProviderMocked:
         )
         vec = p.embed("12345")  # len=5
         assert vec[0] == pytest.approx(0.05)  # 5/100
-        assert vec[1] == pytest.approx(0.0)   # index 0 / 10
+        assert vec[1] == pytest.approx(0.0)  # index 0 / 10
 
     def test_health_check_succeeds(self, fake_ollama: str):
         p = OllamaProvider(
@@ -363,13 +369,16 @@ class TestNodeToText:
         assert text == "Decision: Use Neo4j Graph native"
 
     def test_all_text_fields(self):
-        text = node_to_text("Problem", {
-            "title": "Auth bug",
-            "description": "Token expiry",
-            "notes": "Affects mobile",
-            "solution": "Refresh tokens",
-            "context": "Production",
-        })
+        text = node_to_text(
+            "Problem",
+            {
+                "title": "Auth bug",
+                "description": "Token expiry",
+                "notes": "Affects mobile",
+                "solution": "Refresh tokens",
+                "context": "Production",
+            },
+        )
         assert "Auth bug" in text
         assert "Token expiry" in text
         assert "Affects mobile" in text
@@ -403,12 +412,14 @@ class TestFactory:
         assert isinstance(p, NullProvider)
 
     def test_ollama_factory(self, fake_ollama: str):
-        p = create_provider({
-            "EMBEDDING_PROVIDER": "ollama",
-            "EMBEDDING_MODEL": "nomic-embed-text",
-            "EMBEDDING_DIMENSIONS": "4",
-            "OLLAMA_URL": fake_ollama,
-        })
+        p = create_provider(
+            {
+                "EMBEDDING_PROVIDER": "ollama",
+                "EMBEDDING_MODEL": "nomic-embed-text",
+                "EMBEDDING_DIMENSIONS": "4",
+                "OLLAMA_URL": fake_ollama,
+            }
+        )
         assert isinstance(p, OllamaProvider)
         assert p.model == "nomic-embed-text"
         assert p.dimensions == 4
@@ -469,10 +480,13 @@ class TestOllamaLive:
     def test_node_to_text_integration(self):
         """End-to-end: node → text → embedding."""
         p = OllamaProvider()
-        text = node_to_text("Project", {
-            "name": "engrama",
-            "description": "Graph-based long-term memory for AI agents",
-        })
+        text = node_to_text(
+            "Project",
+            {
+                "name": "engrama",
+                "description": "Graph-based long-term memory for AI agents",
+            },
+        )
         vec = p.embed(text)
         assert len(vec) == p.dimensions
 

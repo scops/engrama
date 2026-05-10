@@ -19,8 +19,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -112,8 +111,8 @@ def days_since(dt: datetime | str | None) -> float:
     if hasattr(dt, "to_native"):
         dt = dt.to_native()
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
     delta = now - dt
     return max(0.0, delta.total_seconds() / 86400.0)
 
@@ -142,9 +141,9 @@ def detect_conflict(node_props: dict) -> dict | None:
         return None
 
     if vt.tzinfo is None:
-        vt = vt.replace(tzinfo=timezone.utc)
+        vt = vt.replace(tzinfo=UTC)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if vt < now:
         return {
             "conflict": "revived",

@@ -22,7 +22,7 @@ seed node plus its neighbourhood.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from engrama.core.schema import TITLE_KEYED_LABELS
 
@@ -51,7 +51,7 @@ class RecallSkill:
 
     def run(
         self,
-        engine: "EngramaEngine",
+        engine: EngramaEngine,
         *,
         query: str,
         limit: int = 5,
@@ -114,26 +114,29 @@ class RecallSkill:
                     else:
                         rel_types = [rels["_type"]]
 
-                    neighbours.append({
-                        "label": n_label,
-                        "name": n_name,
-                        "rel_chain": rel_types,
-                        "properties": {
-                            k: v for k, v in neighbour_node.items()
-                            if not k.startswith("_")
-                        },
-                    })
+                    neighbours.append(
+                        {
+                            "label": n_label,
+                            "name": n_name,
+                            "rel_chain": rel_types,
+                            "properties": {
+                                k: v for k, v in neighbour_node.items() if not k.startswith("_")
+                            },
+                        }
+                    )
             except Exception:
                 # get_context may fail if node was deleted between search
                 # and expansion — skip gracefully.
                 pass
 
-            results.append(RecallResult(
-                label=label,
-                name=name,
-                score=score,
-                properties=properties,
-                neighbours=neighbours,
-            ))
+            results.append(
+                RecallResult(
+                    label=label,
+                    name=name,
+                    score=score,
+                    properties=properties,
+                    neighbours=neighbours,
+                )
+            )
 
         return results

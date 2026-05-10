@@ -17,7 +17,6 @@ import pytest
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
 
-
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------
@@ -112,9 +111,7 @@ class TestMergeNode:
         )
         assert records[0]["cnt"] == 1
 
-    def test_merge_updates_properties(
-        self, engine: EngramaEngine, client: EngramaClient
-    ) -> None:
+    def test_merge_updates_properties(self, engine: EngramaEngine, client: EngramaClient) -> None:
         """A second ``merge_node`` call should update properties, not replace the node."""
         engine.merge_node(
             "Technology",
@@ -150,9 +147,7 @@ class TestSearch:
     Run ``scripts/init-schema.cypher`` before executing the test suite.
     """
 
-    def test_search_returns_results_after_insert(
-        self, engine: EngramaEngine
-    ) -> None:
+    def test_search_returns_results_after_insert(self, engine: EngramaEngine) -> None:
         """Inserting a node then searching for it should yield at least one hit."""
         engine.merge_node(
             "Concept",
@@ -183,9 +178,7 @@ class TestSearch:
 class TestGetContext:
     """Tests for :meth:`EngramaEngine.get_context`."""
 
-    def test_returns_connected_nodes(
-        self, engine: EngramaEngine
-    ) -> None:
+    def test_returns_connected_nodes(self, engine: EngramaEngine) -> None:
         """``get_context`` should traverse relationships and return neighbours."""
         engine.merge_node(
             "Project",

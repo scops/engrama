@@ -27,8 +27,8 @@ class ParsedNote:
     """Result of parsing a single Obsidian note."""
 
     path: str
-    label: str                          # Engrama node label
-    name: str                           # node name / title
+    label: str  # Engrama node label
+    name: str  # node name / title
     properties: dict[str, Any] = field(default_factory=dict)
     engrama_id: str | None = None
     tags: list[str] = field(default_factory=list)
@@ -41,13 +41,13 @@ class ParsedNote:
 _FIELD_MAP: dict[str, dict[str, str]] = {
     "Project": {
         "status": "status",
-        "repo":   "repo",
-        "stack":  "stack",
+        "repo": "repo",
+        "stack": "stack",
     },
     "Course": {
         "cohort": "cohort",
-        "date":   "date",
-        "level":  "level",
+        "date": "date",
+        "level": "level",
         "client": "client",
     },
 }

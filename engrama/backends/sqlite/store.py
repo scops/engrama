@@ -25,8 +25,16 @@ logger = logging.getLogger("engrama.backends.sqlite")
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 _FTS_FIELDS = (
-    "name", "title", "description", "notes", "rationale",
-    "solution", "context", "body", "summary", "tags",
+    "name",
+    "title",
+    "description",
+    "notes",
+    "rationale",
+    "solution",
+    "context",
+    "body",
+    "summary",
+    "tags",
 )
 
 
@@ -131,8 +139,7 @@ class SqliteGraphStore:
         properties.pop("_labels", None)
 
         cur = self._conn.execute(
-            "SELECT id, props, created_at FROM nodes "
-            "WHERE label = ? AND key_value = ?",
+            "SELECT id, props, created_at FROM nodes WHERE label = ? AND key_value = ?",
             (label, key_value),
         )
         row = cur.fetchone()
@@ -173,15 +180,17 @@ class SqliteGraphStore:
 
         self._sync_fts(node_id, final_props)
         self._conn.commit()
-        return [{
-            "n": {
-                "_id": str(node_id),
-                "_labels": [label],
-                **final_props,
-                "created_at": created_at,
-                "updated_at": now,
+        return [
+            {
+                "n": {
+                    "_id": str(node_id),
+                    "_labels": [label],
+                    **final_props,
+                    "created_at": created_at,
+                    "updated_at": now,
+                }
             }
-        }]
+        ]
 
     def get_node(
         self,
@@ -261,7 +270,8 @@ class SqliteGraphStore:
         # Soft-archive
         now = _now_iso()
         cur = self._conn.execute(
-            "SELECT props FROM nodes WHERE id = ?", (node_id,),
+            "SELECT props FROM nodes WHERE id = ?",
+            (node_id,),
         )
         props = json.loads(cur.fetchone()["props"] or "{}")
         props["status"] = "archived"
@@ -276,8 +286,7 @@ class SqliteGraphStore:
 
     def list_existing_nodes(self, limit: int = 200) -> list[dict[str, str]]:
         cur = self._conn.execute(
-            "SELECT label, key_value AS name FROM nodes "
-            "ORDER BY key_value LIMIT ?",
+            "SELECT label, key_value AS name FROM nodes ORDER BY key_value LIMIT ?",
             (limit,),
         )
         return [{"label": r["label"], "name": r["name"]} for r in cur.fetchall()]
@@ -313,8 +322,7 @@ class SqliteGraphStore:
             return []
         now = _now_iso()
         self._conn.execute(
-            "INSERT OR IGNORE INTO edges(from_id, rel_type, to_id, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO edges(from_id, rel_type, to_id, created_at) VALUES (?, ?, ?, ?)",
             (from_row["id"], rel_type, to_row["id"], now),
         )
         self._conn.commit()
@@ -393,23 +401,25 @@ class SqliteGraphStore:
                 {"_id": str(rid), "_type": rtype}
                 for rid, rtype in zip(rel_ids, rel_types, strict=True)
             ]
-            results.append({
-                "start": {
-                    "_id": str(r["start_id"]),
-                    "_labels": [r["start_label"]],
-                    **start_props,
-                    "created_at": r["start_created"],
-                    "updated_at": r["start_updated"],
-                },
-                "rel": rels,
-                "neighbour": {
-                    "_id": str(r["neighbour_id"]),
-                    "_labels": [r["neighbour_label"]],
-                    **n_props,
-                    "created_at": r["neighbour_created"],
-                    "updated_at": r["neighbour_updated"],
-                },
-            })
+            results.append(
+                {
+                    "start": {
+                        "_id": str(r["start_id"]),
+                        "_labels": [r["start_label"]],
+                        **start_props,
+                        "created_at": r["start_created"],
+                        "updated_at": r["start_updated"],
+                    },
+                    "rel": rels,
+                    "neighbour": {
+                        "_id": str(r["neighbour_id"]),
+                        "_labels": [r["neighbour_label"]],
+                        **n_props,
+                        "created_at": r["neighbour_created"],
+                        "updated_at": r["neighbour_updated"],
+                    },
+                }
+            )
         return results
 
     def get_node_with_neighbours(
@@ -435,20 +445,21 @@ class SqliteGraphStore:
             if not n_name or (n_label, n_name) in seen:
                 continue
             seen.add((n_label, n_name))
-            neighbours.append({
-                "label": n_label,
-                "name": n_name,
-                "via": list(dict.fromkeys(r["_type"] for r in row["rel"])),
-                "properties": {
-                    k: v for k, v in n.items()
-                    if not k.startswith("_")
-                    and k not in {"created_at", "updated_at", "details", "embedding"}
-                },
-            })
+            neighbours.append(
+                {
+                    "label": n_label,
+                    "name": n_name,
+                    "via": list(dict.fromkeys(r["_type"] for r in row["rel"])),
+                    "properties": {
+                        k: v
+                        for k, v in n.items()
+                        if not k.startswith("_")
+                        and k not in {"created_at", "updated_at", "details", "embedding"}
+                    },
+                }
+            )
         # The root node also strips embedding for response compactness.
-        root_node = {
-            k: v for k, v in node.items() if k != "embedding"
-        }
+        root_node = {k: v for k, v in node.items() if k != "embedding"}
         return {"node": root_node, "neighbours": neighbours}
 
     def lookup_node_label(self, name: str) -> str | None:
@@ -519,15 +530,17 @@ class SqliteGraphStore:
                     tags = json.loads(tags)
                 except (TypeError, ValueError):
                     tags = None
-            results.append({
-                "type": r["type"],
-                "name": r["name"],
-                "score": r["score"],
-                "summary": r["summary"] or r["description"] or "",
-                "tags": tags,
-                "confidence": r["confidence"],
-                "updated_at": r["updated_at"],
-            })
+            results.append(
+                {
+                    "type": r["type"],
+                    "name": r["name"],
+                    "score": r["score"],
+                    "summary": r["summary"] or r["description"] or "",
+                    "tags": tags,
+                    "confidence": r["confidence"],
+                    "updated_at": r["updated_at"],
+                }
+            )
         return results
 
     def run_cypher(
@@ -628,7 +641,8 @@ class SqliteGraphStore:
             # may include serialised confidence; cheap enough.
             for _, _, node_id in updates:
                 self._conn.execute(
-                    "SELECT props FROM nodes WHERE id = ?", (node_id,),
+                    "SELECT props FROM nodes WHERE id = ?",
+                    (node_id,),
                 )
                 # We don't bother updating FTS here — confidence isn't a
                 # searchable field.
@@ -652,9 +666,7 @@ class SqliteGraphStore:
                 )
                 archived += 1
         if max_age_days > 0:
-            cutoff = (
-                _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=max_age_days)
-            ).isoformat()
+            cutoff = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=max_age_days)).isoformat()
             cur = self._conn.execute(
                 f"SELECT id, props FROM nodes WHERE updated_at < ? "
                 f"AND COALESCE(json_extract(props, '$.status'), '') != 'archived' "
@@ -718,9 +730,7 @@ class SqliteGraphStore:
         """Soft-archive (or DELETE) nodes whose ``updated_at`` is older
         than *days*. Returns ``{"affected": int}``.
         """
-        cutoff = (
-            _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)
-        ).isoformat()
+        cutoff = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)).isoformat()
         cur = self._conn.execute(
             "SELECT id, props FROM nodes "
             "WHERE label = ? AND updated_at < ? "
@@ -738,7 +748,8 @@ class SqliteGraphStore:
                     ids,
                 )
                 self._conn.execute(
-                    f"DELETE FROM nodes WHERE id IN ({placeholders})", ids,
+                    f"DELETE FROM nodes WHERE id IN ({placeholders})",
+                    ids,
                 )
                 affected = len(ids)
         else:
@@ -1036,20 +1047,20 @@ class SqliteGraphStore:
         results = []
         for r in cur.fetchall():
             sample = json.loads(r["sample_raw"])[:5]
-            results.append({
-                "concept": r["concept"],
-                "entity_count": r["entity_count"],
-                "sample": sample,
-            })
+            results.append(
+                {
+                    "concept": r["concept"],
+                    "entity_count": r["entity_count"],
+                    "sample": sample,
+                }
+            )
         return results
 
     def detect_stale_knowledge(self) -> list[dict[str, Any]]:
         """Nodes >=90d stale or with confidence <0.3 connected to an
         active Project or Course.
         """
-        cutoff = (
-            _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=90)
-        ).isoformat()
+        cutoff = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=90)).isoformat()
         # Edges in either direction connect n to active. We UNION ALL
         # the two directions so SQLite can use the indexes on each side.
         cur = self._conn.execute(
@@ -1196,9 +1207,13 @@ class SqliteGraphStore:
         is missing (ObsidianSync calls this for unresolved wiki-links).
         """
         self.merge_relation(
-            from_label, "name", from_name,
+            from_label,
+            "name",
+            from_name,
             "LINKS_TO",
-            to_label, "name", to_name,
+            to_label,
+            "name",
+            to_name,
         )
 
     def merge_wiki_link_by_target_name(
@@ -1214,16 +1229,19 @@ class SqliteGraphStore:
         version (caller increments per call regardless of success).
         """
         cur = self._conn.execute(
-            "SELECT label, key_value FROM nodes "
-            "WHERE LOWER(key_value) = LOWER(?) LIMIT 1",
+            "SELECT label, key_value FROM nodes WHERE LOWER(key_value) = LOWER(?) LIMIT 1",
             (target_name,),
         )
         row = cur.fetchone()
         if row is not None:
             self.merge_relation(
-                from_label, "name", from_name,
+                from_label,
+                "name",
+                from_name,
                 "LINKS_TO",
-                row["label"], "name", row["key_value"],
+                row["label"],
+                "name",
+                row["key_value"],
             )
         return 1
 
@@ -1232,7 +1250,8 @@ class SqliteGraphStore:
     # ------------------------------------------------------------------
 
     def apply_schema_statements(
-        self, statements: list[str],
+        self,
+        statements: list[str],
     ) -> list[tuple[str, Exception]]:
         """Execute Cypher schema statements one at a time.
 
@@ -1250,17 +1269,24 @@ class SqliteGraphStore:
         self.merge_node("Domain", "name", name, {"description": description})
 
     def seed_concept_in_domain(
-        self, concept_name: str, domain_name: str,
+        self,
+        concept_name: str,
+        domain_name: str,
     ) -> None:
         self.merge_node("Concept", "name", concept_name, {})
         self.merge_relation(
-            "Concept", "name", concept_name,
+            "Concept",
+            "name",
+            concept_name,
             "IN_DOMAIN",
-            "Domain", "name", domain_name,
+            "Domain",
+            "name",
+            domain_name,
         )
 
     def list_nodes_for_embedding(
-        self, force: bool = False,
+        self,
+        force: bool = False,
     ) -> list[dict[str, Any]]:
         """Return nodes that need embeddings.
 
@@ -1269,9 +1295,7 @@ class SqliteGraphStore:
         (force=True) or every node missing an embedding flag in props.
         """
         if force:
-            cur = self._conn.execute(
-                "SELECT id, label, props FROM nodes"
-            )
+            cur = self._conn.execute("SELECT id, label, props FROM nodes")
         else:
             cur = self._conn.execute(
                 "SELECT id, label, props FROM nodes "

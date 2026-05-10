@@ -32,6 +32,7 @@ def _unique(prefix: str = "ct") -> str:
 def store(request, tmp_path):
     if request.param == "sqlite":
         from engrama.backends.sqlite import SqliteGraphStore
+
         s = SqliteGraphStore(tmp_path / "contract.db")
         yield s
         s.close()
@@ -39,12 +40,14 @@ def store(request, tmp_path):
 
     if request.param == "neo4j":
         import os
+
         if not os.getenv("NEO4J_PASSWORD"):
             pytest.skip("Neo4j not configured (set NEO4J_PASSWORD to run)")
         # Lazy imports — module-level neo4j import would fail when the
         # neo4j extra is not installed.
         from engrama.backends.neo4j.backend import Neo4jGraphStore
         from engrama.core.client import EngramaClient
+
         client = EngramaClient()
         s = Neo4jGraphStore(client)
         # Tag every created node with test=true so the conftest cleanup
@@ -136,7 +139,7 @@ def test_delete_node_hard_removes(store):
 def test_merge_relation_idempotent(store):
     a = _unique("a")
     b = _unique("b")
-    store.merge_node("Project",    "name", a, {})
+    store.merge_node("Project", "name", a, {})
     store.merge_node("Technology", "name", b, {})
     store.merge_relation("Project", "name", a, "USES", "Technology", "name", b)
     store.merge_relation("Project", "name", a, "USES", "Technology", "name", b)
@@ -148,7 +151,7 @@ def test_merge_relation_idempotent(store):
 def test_get_neighbours_one_hop(store):
     a = _unique("a")
     b = _unique("b")
-    store.merge_node("Project",    "name", a, {})
+    store.merge_node("Project", "name", a, {})
     store.merge_node("Technology", "name", b, {})
     store.merge_relation("Project", "name", a, "USES", "Technology", "name", b)
     rows = store.get_neighbours("Project", "name", a, hops=1)
@@ -159,19 +162,13 @@ def test_get_neighbours_two_hops_reaches_further(store):
     a = _unique("a")
     b = _unique("b")
     c = _unique("c")
-    store.merge_node("Project",    "name", a, {})
+    store.merge_node("Project", "name", a, {})
     store.merge_node("Technology", "name", b, {})
-    store.merge_node("Concept",    "name", c, {})
-    store.merge_relation("Project",    "name", a, "USES",    "Technology", "name", b)
-    store.merge_relation("Technology", "name", b, "APPLIES", "Concept",    "name", c)
-    one = {
-        r["neighbour"].get("name")
-        for r in store.get_neighbours("Project", "name", a, hops=1)
-    }
-    two = {
-        r["neighbour"].get("name")
-        for r in store.get_neighbours("Project", "name", a, hops=2)
-    }
+    store.merge_node("Concept", "name", c, {})
+    store.merge_relation("Project", "name", a, "USES", "Technology", "name", b)
+    store.merge_relation("Technology", "name", b, "APPLIES", "Concept", "name", c)
+    one = {r["neighbour"].get("name") for r in store.get_neighbours("Project", "name", a, hops=1)}
+    two = {r["neighbour"].get("name") for r in store.get_neighbours("Project", "name", a, hops=2)}
     assert b in one
     assert c not in one
     assert {b, c}.issubset(two)
@@ -205,7 +202,7 @@ def test_lookup_node_label_is_case_insensitive(store):
 def test_count_labels_excludes_insights(store):
     pname = _unique("p")
     iname = _unique("i")
-    store.merge_node("Project", "name",  pname, {})
+    store.merge_node("Project", "name", pname, {})
     store.merge_node("Insight", "title", iname, {"status": "pending"})
     counts = store.count_labels()
     assert counts.get("Project", 0) >= 1

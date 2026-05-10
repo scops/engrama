@@ -91,7 +91,8 @@ class SqliteVecStore:
         rows = [(int(nid), _pack(vec)) for nid, vec in items]
         ids = [(r[0],) for r in rows]
         self._conn.executemany(
-            f"DELETE FROM {self._index_name} WHERE node_id = ?", ids,
+            f"DELETE FROM {self._index_name} WHERE node_id = ?",
+            ids,
         )
         self._conn.executemany(
             f"INSERT INTO {self._index_name}(node_id, embedding) VALUES (?, ?)",
@@ -119,7 +120,9 @@ class SqliteVecStore:
         row = cur.fetchone()
         if row is None:
             return False
-        self.store_vectors([(str(row[0] if not isinstance(row, sqlite3.Row) else row["id"]), embedding)])
+        self.store_vectors(
+            [(str(row[0] if not isinstance(row, sqlite3.Row) else row["id"]), embedding)]
+        )
         return True
 
     def delete_vectors(self, node_ids: list[str]) -> int:
@@ -127,7 +130,8 @@ class SqliteVecStore:
             return 0
         ids = [(int(n),) for n in node_ids]
         self._conn.executemany(
-            f"DELETE FROM {self._index_name} WHERE node_id = ?", ids,
+            f"DELETE FROM {self._index_name} WHERE node_id = ?",
+            ids,
         )
         self._conn.commit()
         return len(ids)
@@ -180,16 +184,18 @@ class SqliteVecStore:
                     tags = json.loads(tags)
                 except (TypeError, ValueError):
                     tags = None
-            results.append({
-                "node_id": str(r["node_id"]),
-                "score": r["score"],
-                "label": r["label"],
-                "key": r["key"],
-                "summary": r["summary"] or r["description"] or "",
-                "tags": tags,
-                "confidence": r["confidence"],
-                "updated_at": r["updated_at"],
-            })
+            results.append(
+                {
+                    "node_id": str(r["node_id"]),
+                    "score": r["score"],
+                    "label": r["label"],
+                    "key": r["key"],
+                    "summary": r["summary"] or r["description"] or "",
+                    "tags": tags,
+                    "confidence": r["confidence"],
+                    "updated_at": r["updated_at"],
+                }
+            )
         return results
 
     def search_similar(

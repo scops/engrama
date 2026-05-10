@@ -32,7 +32,7 @@ class RememberSkill:
 
     def run(
         self,
-        engine: "EngramaEngine",
+        engine: EngramaEngine,
         *,
         label: str,
         name: str,

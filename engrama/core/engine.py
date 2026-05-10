@@ -85,16 +85,12 @@ class EngramaEngine:
         elif "title" in properties:
             merge_key = "title"
         else:
-            raise ValueError(
-                "properties must include 'name' or 'title' as a merge key"
-            )
+            raise ValueError("properties must include 'name' or 'title' as a merge key")
 
         merge_value = properties[merge_key]
 
         extra_props = {
-            k: v
-            for k, v in properties.items()
-            if k not in {merge_key, "created_at", "updated_at"}
+            k: v for k, v in properties.items() if k not in {merge_key, "created_at", "updated_at"}
         }
 
         # --- Embed on write (DDR-003 Phase C) ---
@@ -110,7 +106,11 @@ class EngramaEngine:
                 embedding = None
 
         result = self._store.merge_node(
-            label, merge_key, merge_value, extra_props, embedding=embedding,
+            label,
+            merge_key,
+            merge_value,
+            extra_props,
+            embedding=embedding,
         )
 
         # Store vector via VectorStore (adds :Embedded label for index)
@@ -137,9 +137,13 @@ class EngramaEngine:
         to_key = "title" if to_label in TITLE_KEYED_LABELS else "name"
 
         return self._store.merge_relation(
-            from_label, from_key, from_name,
+            from_label,
+            from_key,
+            from_name,
             rel_type,
-            to_label, to_key, to_name,
+            to_label,
+            to_key,
+            to_name,
         )
 
     def run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -162,23 +166,29 @@ class EngramaEngine:
         """
         if self._embed_on_write:
             from engrama.core.search import HybridSearchEngine
+
             engine = HybridSearchEngine(
-                self._store, self._vector_store, self._embedder,
+                self._store,
+                self._vector_store,
+                self._embedder,
             )
             return engine.search(query, limit=limit)
 
         # Fallback: plain fulltext, wrapped as SearchResult for consistency
         from engrama.core.search import SearchResult
+
         records = self._store.fulltext_search(query, limit=limit)
         results = []
         for r in records:
             d = dict(r) if not isinstance(r, dict) else r
-            results.append(SearchResult(
-                label=d.get("type", ""),
-                name=d.get("name", ""),
-                fulltext_score=d.get("score", 0.0),
-                final_score=d.get("score", 0.0),
-            ))
+            results.append(
+                SearchResult(
+                    label=d.get("type", ""),
+                    name=d.get("name", ""),
+                    fulltext_score=d.get("score", 0.0),
+                    final_score=d.get("score", 0.0),
+                )
+            )
         return results
 
     def decay_scores(

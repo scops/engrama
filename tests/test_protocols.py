@@ -7,7 +7,6 @@ protocol interfaces defined in ``engrama.core.protocols``.
 
 from __future__ import annotations
 
-from engrama.core.protocols import GraphStore, VectorStore, EmbeddingProvider
 from engrama.backends.neo4j.backend import Neo4jGraphStore
 from engrama.backends.neo4j.vector import Neo4jVectorStore
 from engrama.backends.null import NullGraphStore, NullVectorStore
@@ -127,18 +126,31 @@ class TestAsyncStoreProtocol:
 
     def test_async_store_has_all_methods(self) -> None:
         from engrama.backends.neo4j.async_store import Neo4jAsyncStore
+
         required_methods = [
-            "merge_node", "get_node", "delete_node",
-            "merge_relation", "get_neighbours", "get_node_with_neighbours",
-            "fulltext_search", "count_labels", "run_pattern",
+            "merge_node",
+            "get_node",
+            "delete_node",
+            "merge_relation",
+            "get_neighbours",
+            "get_node_with_neighbours",
+            "fulltext_search",
+            "count_labels",
+            "run_pattern",
             "lookup_node_label",
-            "store_embedding", "search_similar", "delete_embedding",
+            "store_embedding",
+            "search_similar",
+            "delete_embedding",
             "count_embeddings",
-            "get_dismissed_titles", "get_pending_insights",
-            "get_insight_by_title", "update_insight_status",
-            "mark_insight_synced", "find_insight_by_source_query",
+            "get_dismissed_titles",
+            "get_pending_insights",
+            "get_insight_by_title",
+            "update_insight_status",
+            "mark_insight_synced",
+            "find_insight_by_source_query",
             "list_existing_nodes",
-            "init_schema", "health_check",
+            "init_schema",
+            "health_check",
         ]
         for method in required_methods:
             assert hasattr(Neo4jAsyncStore, method), f"Missing method: {method}"

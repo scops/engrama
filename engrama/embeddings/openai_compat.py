@@ -64,12 +64,10 @@ class OpenAICompatibleProvider:
         dimensions: int | None = None,
         timeout: float = 30.0,
     ) -> None:
-        self.base_url: str = (
-            base_url or os.getenv("OPENAI_BASE_URL", _DEFAULT_BASE_URL)
-        ).rstrip("/")
-        self.model: str = (
-            model or os.getenv("EMBEDDING_MODEL", _DEFAULT_MODEL)
+        self.base_url: str = (base_url or os.getenv("OPENAI_BASE_URL", _DEFAULT_BASE_URL)).rstrip(
+            "/"
         )
+        self.model: str = model or os.getenv("EMBEDDING_MODEL", _DEFAULT_MODEL)
         self.api_key: str | None = api_key or os.getenv("OPENAI_API_KEY")
         if dimensions is None:
             env_dims = os.getenv("EMBEDDING_DIMENSIONS")
@@ -127,9 +125,7 @@ class OpenAICompatibleProvider:
         response.raise_for_status()
         embeddings = self._parse_embeddings(response.json())
         if not embeddings:
-            raise RuntimeError(
-                f"No embeddings returned for model {self.model!r}"
-            )
+            raise RuntimeError(f"No embeddings returned for model {self.model!r}")
         self._record_dims(embeddings[0])
         return embeddings[0]
 
@@ -145,9 +141,7 @@ class OpenAICompatibleProvider:
         response.raise_for_status()
         embeddings = self._parse_embeddings(response.json())
         if len(embeddings) != len(texts):
-            raise RuntimeError(
-                f"Expected {len(texts)} embeddings, got {len(embeddings)}"
-            )
+            raise RuntimeError(f"Expected {len(texts)} embeddings, got {len(embeddings)}")
         if embeddings:
             self._record_dims(embeddings[0])
         return embeddings
@@ -157,7 +151,9 @@ class OpenAICompatibleProvider:
         try:
             client = self._get_sync_client()
             response = client.get(
-                self._models_url, headers=self._headers(), timeout=5.0,
+                self._models_url,
+                headers=self._headers(),
+                timeout=5.0,
             )
             return response.status_code == 200
         except Exception as e:
@@ -178,9 +174,7 @@ class OpenAICompatibleProvider:
         response.raise_for_status()
         embeddings = self._parse_embeddings(response.json())
         if not embeddings:
-            raise RuntimeError(
-                f"No embeddings returned for model {self.model!r}"
-            )
+            raise RuntimeError(f"No embeddings returned for model {self.model!r}")
         self._record_dims(embeddings[0])
         return embeddings[0]
 
@@ -196,9 +190,7 @@ class OpenAICompatibleProvider:
         response.raise_for_status()
         embeddings = self._parse_embeddings(response.json())
         if len(embeddings) != len(texts):
-            raise RuntimeError(
-                f"Expected {len(texts)} embeddings, got {len(embeddings)}"
-            )
+            raise RuntimeError(f"Expected {len(texts)} embeddings, got {len(embeddings)}")
         if embeddings:
             self._record_dims(embeddings[0])
         return embeddings
@@ -207,13 +199,13 @@ class OpenAICompatibleProvider:
         try:
             client = self._get_async_client()
             response = await client.get(
-                self._models_url, headers=self._headers(), timeout=5.0,
+                self._models_url,
+                headers=self._headers(),
+                timeout=5.0,
             )
             return response.status_code == 200
         except Exception as e:
-            logger.warning(
-                "Async health check failed for %s: %s", self.base_url, e
-            )
+            logger.warning("Async health check failed for %s: %s", self.base_url, e)
             return False
 
     async def aclose(self) -> None:

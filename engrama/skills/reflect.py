@@ -45,7 +45,7 @@ class ReflectSkill:
     dismissed Insights, and scores results by confidence.
     """
 
-    def run(self, engine: "EngramaEngine") -> list[Insight]:
+    def run(self, engine: EngramaEngine) -> list[Insight]:
         """Execute adaptive detection and write Insight nodes.
 
         Returns:
@@ -96,12 +96,12 @@ class ReflectSkill:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _profile_graph(engine: "EngramaEngine") -> dict[str, int]:
+    def _profile_graph(engine: EngramaEngine) -> dict[str, int]:
         """Return a dict of {label: count} for all node types in the graph."""
         return engine._store.count_labels()
 
     @staticmethod
-    def _get_dismissed_titles(engine: "EngramaEngine") -> set[str]:
+    def _get_dismissed_titles(engine: EngramaEngine) -> set[str]:
         """Return titles of all dismissed Insights to avoid re-surfacing."""
         return engine._store.get_dismissed_insight_titles()
 
@@ -110,7 +110,9 @@ class ReflectSkill:
     # ------------------------------------------------------------------
 
     def _detect_cross_project_solutions(
-        self, engine: "EngramaEngine", dismissed: set[str],
+        self,
+        engine: EngramaEngine,
+        dismissed: set[str],
     ) -> list[Insight]:
         records = engine._store.detect_cross_project_solutions()
         results: list[Insight] = []
@@ -122,31 +124,33 @@ class ReflectSkill:
             if title in dismissed:
                 continue
             body = (
-                f"The open problem \"{r['open_problem']}\" in project "
-                f"\"{r['target_project']}\" shares the concept "
-                f"\"{r['concept']}\" with a resolved problem in project "
-                f"\"{r['source_project']}\". The decision "
-                f"\"{r['decision']}\" may apply here."
+                f'The open problem "{r["open_problem"]}" in project '
+                f'"{r["target_project"]}" shares the concept '
+                f'"{r["concept"]}" with a resolved problem in project '
+                f'"{r["source_project"]}". The decision '
+                f'"{r["decision"]}" may apply here.'
             )
             insight = self._write_insight(
-                engine, title=title, body=body,
-                source_query="cross_project_solution", confidence=0.85,
+                engine,
+                title=title,
+                body=body,
+                source_query="cross_project_solution",
+                confidence=0.85,
             )
             results.append(insight)
         return results
 
     def _detect_shared_technology(
-        self, engine: "EngramaEngine", dismissed: set[str],
+        self,
+        engine: EngramaEngine,
+        dismissed: set[str],
     ) -> list[Insight]:
         records = engine._store.detect_shared_technology()
         results: list[Insight] = []
         for r in records:
             a_desc = f"{r['type_a']}:{r['entity_a']}"
             b_desc = f"{r['type_b']}:{r['entity_b']}"
-            title = (
-                f"Shared technology: {r['technology']} "
-                f"({a_desc} & {b_desc})"
-            )
+            title = f"Shared technology: {r['technology']} ({a_desc} & {b_desc})"
             if title in dismissed:
                 continue
             # Cross-type sharing is more interesting than same-type
@@ -156,14 +160,19 @@ class ReflectSkill:
                 f"Consider sharing knowledge or materials between them."
             )
             insight = self._write_insight(
-                engine, title=title, body=body,
-                source_query="shared_technology", confidence=confidence,
+                engine,
+                title=title,
+                body=body,
+                source_query="shared_technology",
+                confidence=confidence,
             )
             results.append(insight)
         return results
 
     def _detect_training_opportunities(
-        self, engine: "EngramaEngine", dismissed: set[str],
+        self,
+        engine: EngramaEngine,
+        dismissed: set[str],
     ) -> list[Insight]:
         records = engine._store.detect_training_opportunities()
         results: list[Insight] = []
@@ -176,13 +185,16 @@ class ReflectSkill:
             if title in dismissed:
                 continue
             body = (
-                f"The {r['issue_type'].lower()} \"{r['issue']}\" involves "
-                f"the concept \"{r['concept']}\", which is covered by the "
-                f"course \"{r['course']}\". Reviewing this material may help."
+                f'The {r["issue_type"].lower()} "{r["issue"]}" involves '
+                f'the concept "{r["concept"]}", which is covered by the '
+                f'course "{r["course"]}". Reviewing this material may help.'
             )
             insight = self._write_insight(
-                engine, title=title, body=body,
-                source_query="training_opportunity", confidence=0.65,
+                engine,
+                title=title,
+                body=body,
+                source_query="training_opportunity",
+                confidence=0.65,
             )
             results.append(insight)
         return results
@@ -192,7 +204,9 @@ class ReflectSkill:
     # ------------------------------------------------------------------
 
     def _detect_technique_transfer(
-        self, engine: "EngramaEngine", dismissed: set[str],
+        self,
+        engine: EngramaEngine,
+        dismissed: set[str],
     ) -> list[Insight]:
         """A Technique used in domain A could apply in domain B."""
         records = engine._store.detect_technique_transfer()
@@ -207,21 +221,26 @@ class ReflectSkill:
             related = r["related_entities"]
             confidence = min(0.5 + (related * 0.1), 0.9)
             body = (
-                f"The technique \"{r['technique']}\" is used in "
-                f"\"{r['source_domain']}\" but not in "
-                f"\"{r['target_domain']}\". There are {related} "
+                f'The technique "{r["technique"]}" is used in '
+                f'"{r["source_domain"]}" but not in '
+                f'"{r["target_domain"]}". There are {related} '
                 f"entities in {r['target_domain']} that share concepts "
                 f"with this technique — it may be applicable there."
             )
             insight = self._write_insight(
-                engine, title=title, body=body,
-                source_query="technique_transfer", confidence=confidence,
+                engine,
+                title=title,
+                body=body,
+                source_query="technique_transfer",
+                confidence=confidence,
             )
             results.append(insight)
         return results
 
     def _detect_concept_clustering(
-        self, engine: "EngramaEngine", dismissed: set[str],
+        self,
+        engine: EngramaEngine,
+        dismissed: set[str],
     ) -> list[Insight]:
         """Multiple unrelated entities share the same Concept."""
         records = engine._store.detect_concept_clusters()
@@ -233,24 +252,27 @@ class ReflectSkill:
             title = f"Concept cluster: {concept} ({count} entities)"
             if title in dismissed:
                 continue
-            sample_desc = ", ".join(
-                f"{s['label']}:{s['name']}" for s in sample[:5]
-            )
+            sample_desc = ", ".join(f"{s['label']}:{s['name']}" for s in sample[:5])
             confidence = min(0.5 + (count * 0.05), 0.9)
             body = (
-                f"The concept \"{concept}\" connects {count} entities: "
+                f'The concept "{concept}" connects {count} entities: '
                 f"{sample_desc}. This cluster may reveal a pattern worth "
                 f"exploring — these entities share a common thread."
             )
             insight = self._write_insight(
-                engine, title=title, body=body,
-                source_query="concept_clustering", confidence=confidence,
+                engine,
+                title=title,
+                body=body,
+                source_query="concept_clustering",
+                confidence=confidence,
             )
             results.append(insight)
         return results
 
     def _detect_stale_knowledge(
-        self, engine: "EngramaEngine", dismissed: set[str],
+        self,
+        engine: EngramaEngine,
+        dismissed: set[str],
     ) -> list[Insight]:
         """Nodes connected to active Projects that are stale.
 
@@ -262,10 +284,7 @@ class ReflectSkill:
         results: list[Insight] = []
         for r in records:
             name = r["name"]
-            title = (
-                f"Stale knowledge: {r['label']}:{name} "
-                f"(linked to {r['project']})"
-            )
+            title = f"Stale knowledge: {r['label']}:{name} (linked to {r['project']})"
             if title in dismissed:
                 continue
             last_updated = r["last_updated"]
@@ -279,13 +298,16 @@ class ReflectSkill:
             else:
                 reason = f"hasn't been updated since {last_updated}"
             body = (
-                f"The {r['label']} \"{name}\" is connected to the active "
-                f"project \"{r['project']}\" via {r['rel']}, but {reason}{conf_str}. "
+                f'The {r["label"]} "{name}" is connected to the active '
+                f'project "{r["project"]}" via {r["rel"]}, but {reason}{conf_str}. '
                 f"Consider updating or archiving this node."
             )
             insight = self._write_insight(
-                engine, title=title, body=body,
-                source_query="stale_knowledge", confidence=0.5,
+                engine,
+                title=title,
+                body=body,
+                source_query="stale_knowledge",
+                confidence=0.5,
             )
             results.append(insight)
         return results
@@ -295,7 +317,9 @@ class ReflectSkill:
     _UNDER_CONNECTED_TITLE = "Under-connected nodes need more relationships"
 
     def _detect_under_connected(
-        self, engine: "EngramaEngine", dismissed: set[str],
+        self,
+        engine: EngramaEngine,
+        dismissed: set[str],
     ) -> list[Insight]:
         """Nodes with fewer than 2 relationships — likely under-classified."""
         title = self._UNDER_CONNECTED_TITLE
@@ -304,7 +328,8 @@ class ReflectSkill:
         if title in dismissed:
             return []
         if engine._store.find_insight_by_source_query(
-            "under_connected", statuses=["dismissed"],
+            "under_connected",
+            statuses=["dismissed"],
         ):
             return []
 
@@ -324,8 +349,11 @@ class ReflectSkill:
 
         # MERGE on stable title — idempotent, updates body on repeat runs
         insight = self._write_insight(
-            engine, title=title, body=body,
-            source_query="under_connected", confidence=0.4,
+            engine,
+            title=title,
+            body=body,
+            source_query="under_connected",
+            confidence=0.4,
         )
         return [insight]
 
@@ -335,7 +363,7 @@ class ReflectSkill:
 
     @staticmethod
     def _write_insight(
-        engine: "EngramaEngine",
+        engine: EngramaEngine,
         *,
         title: str,
         body: str,
@@ -343,13 +371,16 @@ class ReflectSkill:
         confidence: float = 0.8,
     ) -> Insight:
         """Merge an Insight node into Neo4j and return the dataclass."""
-        engine.merge_node("Insight", {
-            "title": title,
-            "body": body,
-            "confidence": confidence,
-            "status": "pending",
-            "source_query": source_query,
-        })
+        engine.merge_node(
+            "Insight",
+            {
+                "title": title,
+                "body": body,
+                "confidence": confidence,
+                "status": "pending",
+                "source_query": source_query,
+            },
+        )
         return Insight(
             title=title,
             body=body,

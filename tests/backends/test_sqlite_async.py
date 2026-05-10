@@ -57,11 +57,20 @@ async def test_merge_node_second_call_marks_not_created(store):
 
 async def test_merge_relation_returns_dict_with_obsidian_path_field(store):
     await store.merge_node(
-        "Project", "name", "a", {"obsidian_path": "a.md"},
+        "Project",
+        "name",
+        "a",
+        {"obsidian_path": "a.md"},
     )
     await store.merge_node("Technology", "name", "py", {})
     out = await store.merge_relation(
-        "Project", "name", "a", "USES", "Technology", "name", "py",
+        "Project",
+        "name",
+        "a",
+        "USES",
+        "Technology",
+        "name",
+        "py",
     )
     assert isinstance(out, dict)
     assert out["rel_type"] == "USES"
@@ -72,7 +81,13 @@ async def test_merge_relation_returns_dict_with_obsidian_path_field(store):
 
 async def test_merge_relation_returns_empty_dict_on_missing_endpoint(store):
     out = await store.merge_relation(
-        "Project", "name", "ghost", "USES", "Technology", "name", "py",
+        "Project",
+        "name",
+        "ghost",
+        "USES",
+        "Technology",
+        "name",
+        "py",
     )
     assert out == {}
 
@@ -81,7 +96,13 @@ async def test_get_neighbours_returns_label_name_via_properties_shape(store):
     await store.merge_node("Project", "name", "a", {})
     await store.merge_node("Technology", "name", "py", {"summary": "lang"})
     await store.merge_relation(
-        "Project", "name", "a", "USES", "Technology", "name", "py",
+        "Project",
+        "name",
+        "a",
+        "USES",
+        "Technology",
+        "name",
+        "py",
     )
     out = await store.get_neighbours("Project", "name", "a", hops=1)
     assert len(out) == 1
@@ -102,18 +123,32 @@ async def test_get_neighbours_returns_label_name_via_properties_shape(store):
 
 
 async def test_get_dismissed_titles_alias(store):
-    await store.merge_node("Insight", "title", "i1", {
-        "body": "x", "confidence": 0.9, "status": "pending",
-    })
+    await store.merge_node(
+        "Insight",
+        "title",
+        "i1",
+        {
+            "body": "x",
+            "confidence": 0.9,
+            "status": "pending",
+        },
+    )
     assert await store.get_dismissed_titles() == set()
     await store.update_insight_status("i1", "dismissed")
     assert await store.get_dismissed_titles() == {"i1"}
 
 
 async def test_pending_insight_lifecycle(store):
-    await store.merge_node("Insight", "title", "i1", {
-        "body": "x", "confidence": 0.9, "status": "pending",
-    })
+    await store.merge_node(
+        "Insight",
+        "title",
+        "i1",
+        {
+            "body": "x",
+            "confidence": 0.9,
+            "status": "pending",
+        },
+    )
     pending = await store.get_pending_insights()
     assert pending and pending[0]["title"] == "i1"
     assert await store.update_insight_status("i1", "approved") is True
@@ -125,13 +160,24 @@ async def test_pending_insight_lifecycle(store):
 
 
 async def test_store_embedding_and_search_similar(store):
-    await store.merge_node("Project", "name", "p", {
-        "summary": "demo summary",
-        "tags": ["demo", "vector"],
-    })
-    assert await store.store_embedding(
-        "Project", "name", "p", [1.0, 0.0, 0.0, 0.0],
-    ) is True
+    await store.merge_node(
+        "Project",
+        "name",
+        "p",
+        {
+            "summary": "demo summary",
+            "tags": ["demo", "vector"],
+        },
+    )
+    assert (
+        await store.store_embedding(
+            "Project",
+            "name",
+            "p",
+            [1.0, 0.0, 0.0, 0.0],
+        )
+        is True
+    )
     assert await store.count_embeddings() == 1
     out = await store.search_similar([1.0, 0.0, 0.0, 0.0], limit=1)
     assert out

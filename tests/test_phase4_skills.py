@@ -10,11 +10,10 @@ import pytest
 
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
-from engrama.skills.remember import RememberSkill
-from engrama.skills.recall import RecallSkill
 from engrama.skills.associate import AssociateSkill
 from engrama.skills.forget import ForgetSkill
-
+from engrama.skills.recall import RecallSkill
+from engrama.skills.remember import RememberSkill
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -94,9 +93,7 @@ def seed_old_node_purge(neo4j_session) -> None:
 class TestRememberSkill:
     """Integration tests for the remember skill."""
 
-    def test_remember_creates_new_node(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_remember_creates_new_node(self, engine: EngramaEngine, neo4j_session) -> None:
         """Remember creates a new node when it doesn't exist."""
         skill = RememberSkill()
         result = skill.run(
@@ -119,24 +116,24 @@ class TestRememberSkill:
         assert rec["notes"] == "A test technology for remember skill"
 
         # Cleanup
-        neo4j_session.run(
-            "MATCH (n:Technology {name: 'P4_TestRememberTech'}) DETACH DELETE n"
-        )
+        neo4j_session.run("MATCH (n:Technology {name: 'P4_TestRememberTech'}) DETACH DELETE n")
 
-    def test_remember_updates_existing_node(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_remember_updates_existing_node(self, engine: EngramaEngine, neo4j_session) -> None:
         """Remember updates notes on an existing node."""
         skill = RememberSkill()
 
         # Create first
         skill.run(
-            engine, label="Concept", name="P4_TestConcept",
+            engine,
+            label="Concept",
+            name="P4_TestConcept",
             observation="Initial observation",
         )
         # Update
         result = skill.run(
-            engine, label="Concept", name="P4_TestConcept",
+            engine,
+            label="Concept",
+            name="P4_TestConcept",
             observation="Updated observation",
         )
         assert result["created"] is False
@@ -148,17 +145,15 @@ class TestRememberSkill:
         assert rec["notes"] == "Updated observation"
 
         # Cleanup
-        neo4j_session.run(
-            "MATCH (n:Concept {name: 'P4_TestConcept'}) DETACH DELETE n"
-        )
+        neo4j_session.run("MATCH (n:Concept {name: 'P4_TestConcept'}) DETACH DELETE n")
 
-    def test_remember_title_keyed_node(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_remember_title_keyed_node(self, engine: EngramaEngine, neo4j_session) -> None:
         """Remember correctly uses 'title' as key for Decision nodes."""
         skill = RememberSkill()
         result = skill.run(
-            engine, label="Decision", name="P4_Use microservices",
+            engine,
+            label="Decision",
+            name="P4_Use microservices",
             observation="Decided for scalability reasons",
         )
         assert result["key"] == "title"
@@ -172,17 +167,15 @@ class TestRememberSkill:
         assert rec["notes"] == "Decided for scalability reasons"
 
         # Cleanup
-        neo4j_session.run(
-            "MATCH (n:Decision {title: 'P4_Use microservices'}) DETACH DELETE n"
-        )
+        neo4j_session.run("MATCH (n:Decision {title: 'P4_Use microservices'}) DETACH DELETE n")
 
-    def test_remember_with_extra_properties(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_remember_with_extra_properties(self, engine: EngramaEngine, neo4j_session) -> None:
         """Remember passes extra properties through to the node."""
         skill = RememberSkill()
         skill.run(
-            engine, label="Project", name="P4_ExtraPropsProject",
+            engine,
+            label="Project",
+            name="P4_ExtraPropsProject",
             observation="Testing extra props",
             extra={"status": "active", "repo": "github.com/test"},
         )
@@ -197,9 +190,7 @@ class TestRememberSkill:
         assert rec["notes"] == "Testing extra props"
 
         # Cleanup
-        neo4j_session.run(
-            "MATCH (n:Project {name: 'P4_ExtraPropsProject'}) DETACH DELETE n"
-        )
+        neo4j_session.run("MATCH (n:Project {name: 'P4_ExtraPropsProject'}) DETACH DELETE n")
 
 
 # ===========================================================================
@@ -225,8 +216,7 @@ class TestRecallSkill:
 
         # Should have neighbours (Technology, Problem at 1 hop)
         neighbour_names = {n["name"] for n in hit.neighbours}
-        assert "P4_FastAPI" in neighbour_names or \
-               "P4_MemoryLeak in worker pool" in neighbour_names
+        assert "P4_FastAPI" in neighbour_names or "P4_MemoryLeak in worker pool" in neighbour_names
 
     def test_recall_expands_two_hops(
         self, engine: EngramaEngine, neo4j_session, seed_recall_data
@@ -241,14 +231,10 @@ class TestRecallSkill:
         # P4_Caching is 2 hops away: Project -> Problem -> Concept
         assert "P4_Caching" in neighbour_names
 
-    def test_recall_no_results(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_recall_no_results(self, engine: EngramaEngine, neo4j_session) -> None:
         """Recall returns empty list for unmatched query."""
         skill = RecallSkill()
-        results = skill.run(
-            engine, query="P4_ZzNonexistentXyZ_12345", limit=5
-        )
+        results = skill.run(engine, query="P4_ZzNonexistentXyZ_12345", limit=5)
         assert results == []
 
 
@@ -260,9 +246,7 @@ class TestRecallSkill:
 class TestAssociateSkill:
     """Integration tests for the associate skill."""
 
-    def test_associate_creates_relationship(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_associate_creates_relationship(self, engine: EngramaEngine, neo4j_session) -> None:
         """Associate creates a relationship between two existing nodes."""
         # Seed nodes
         neo4j_session.run(
@@ -294,9 +278,7 @@ class TestAssociateSkill:
         assert rec is not None
         assert rec["rel"] == "USES"
 
-    def test_associate_missing_endpoint(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_associate_missing_endpoint(self, engine: EngramaEngine, neo4j_session) -> None:
         """Associate returns matched=False when an endpoint doesn't exist."""
         skill = AssociateSkill()
         result = skill.run(
@@ -315,9 +297,11 @@ class TestAssociateSkill:
         with pytest.raises(ValueError, match="Unknown source label"):
             skill.run(
                 engine,
-                from_name="x", from_label="FakeLabel",
+                from_name="x",
+                from_label="FakeLabel",
                 rel_type="USES",
-                to_name="y", to_label="Technology",
+                to_name="y",
+                to_label="Technology",
             )
 
     def test_associate_invalid_rel_raises(self, engine: EngramaEngine) -> None:
@@ -326,14 +310,14 @@ class TestAssociateSkill:
         with pytest.raises(ValueError, match="Unknown relationship type"):
             skill.run(
                 engine,
-                from_name="x", from_label="Project",
+                from_name="x",
+                from_label="Project",
                 rel_type="FAKE_REL",
-                to_name="y", to_label="Technology",
+                to_name="y",
+                to_label="Technology",
             )
 
-    def test_associate_title_keyed_nodes(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_associate_title_keyed_nodes(self, engine: EngramaEngine, neo4j_session) -> None:
         """Associate works correctly with title-keyed nodes (Decision)."""
         neo4j_session.run(
             "MERGE (p:Problem {title: $prob}) SET p.test = true, "
@@ -363,9 +347,7 @@ class TestAssociateSkill:
 class TestForgetSkill:
     """Integration tests for the forget skill."""
 
-    def test_forget_by_name_archives(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_forget_by_name_archives(self, engine: EngramaEngine, neo4j_session) -> None:
         """Forget by name sets status to 'archived'."""
         # Seed
         neo4j_session.run(
@@ -375,9 +357,7 @@ class TestForgetSkill:
         )
 
         skill = ForgetSkill()
-        result = skill.forget_by_name(
-            engine, label="Technology", name="P4_ForgetMe"
-        )
+        result = skill.forget_by_name(engine, label="Technology", name="P4_ForgetMe")
         assert result["action"] == "archived"
         assert result["matched"] is True
 
@@ -390,9 +370,7 @@ class TestForgetSkill:
         assert rec["status"] == "archived"
         assert rec["has_ts"] is True
 
-    def test_forget_by_name_purge(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_forget_by_name_purge(self, engine: EngramaEngine, neo4j_session) -> None:
         """Forget with purge=True permanently deletes the node."""
         neo4j_session.run(
             "MERGE (t:Technology {name: $name}) SET t.test = true, "
@@ -401,31 +379,21 @@ class TestForgetSkill:
         )
 
         skill = ForgetSkill()
-        result = skill.forget_by_name(
-            engine, label="Technology", name="P4_PurgeMe", purge=True
-        )
+        result = skill.forget_by_name(engine, label="Technology", name="P4_PurgeMe", purge=True)
         assert result["action"] == "deleted"
         assert result["matched"] is True
 
         # Verify node is gone
-        rec = neo4j_session.run(
-            "MATCH (n:Technology {name: 'P4_PurgeMe'}) RETURN n"
-        ).single()
+        rec = neo4j_session.run("MATCH (n:Technology {name: 'P4_PurgeMe'}) RETURN n").single()
         assert rec is None
 
-    def test_forget_by_name_nonexistent(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_forget_by_name_nonexistent(self, engine: EngramaEngine, neo4j_session) -> None:
         """Forget returns matched=False for a nonexistent node."""
         skill = ForgetSkill()
-        result = skill.forget_by_name(
-            engine, label="Technology", name="P4_GhostNode_XYZ"
-        )
+        result = skill.forget_by_name(engine, label="Technology", name="P4_GhostNode_XYZ")
         assert result["matched"] is False
 
-    def test_forget_by_name_title_keyed(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_forget_by_name_title_keyed(self, engine: EngramaEngine, neo4j_session) -> None:
         """Forget correctly archives title-keyed nodes (Problem)."""
         neo4j_session.run(
             "MERGE (p:Problem {title: $title}) SET p.test = true, "
@@ -434,9 +402,7 @@ class TestForgetSkill:
         )
 
         skill = ForgetSkill()
-        result = skill.forget_by_name(
-            engine, label="Problem", name="P4_ForgetProblem"
-        )
+        result = skill.forget_by_name(engine, label="Problem", name="P4_ForgetProblem")
         assert result["matched"] is True
 
         rec = neo4j_session.run(
@@ -449,9 +415,7 @@ class TestForgetSkill:
     ) -> None:
         """Forget by TTL archives nodes older than threshold."""
         skill = ForgetSkill()
-        result = skill.forget_by_ttl(
-            engine, label="Technology", days=365
-        )
+        result = skill.forget_by_ttl(engine, label="Technology", days=365)
         assert result["action"] == "archived"
         assert result["count"] >= 1
 
@@ -467,9 +431,7 @@ class TestForgetSkill:
     ) -> None:
         """Forget by TTL with purge permanently deletes old nodes."""
         skill = ForgetSkill()
-        result = skill.forget_by_ttl(
-            engine, label="Technology", days=365, purge=True
-        )
+        result = skill.forget_by_ttl(engine, label="Technology", days=365, purge=True)
         assert result["action"] == "deleted"
         assert result["count"] >= 1
 

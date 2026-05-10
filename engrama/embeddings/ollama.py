@@ -21,8 +21,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import Any
 
 try:
@@ -52,17 +52,10 @@ class OllamaProvider:
         base_url: str | None = None,
         timeout: int = 30,
     ) -> None:
-        self.model: str = (
-            model
-            or os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
-        )
-        self.dimensions: int = (
-            dimensions
-            or int(os.getenv("EMBEDDING_DIMENSIONS", "768"))
-        )
+        self.model: str = model or os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+        self.dimensions: int = dimensions or int(os.getenv("EMBEDDING_DIMENSIONS", "768"))
         self._base_url: str = (
-            base_url
-            or os.getenv("OLLAMA_URL", "http://localhost:11434")
+            base_url or os.getenv("OLLAMA_URL", "http://localhost:11434")
         ).rstrip("/")
         self._timeout: int = timeout
         self._embed_url: str = f"{self._base_url}/api/embed"
@@ -85,9 +78,7 @@ class OllamaProvider:
         result = self._call_api(text)
         embeddings = result.get("embeddings")
         if not embeddings or not embeddings[0]:
-            raise RuntimeError(
-                f"Ollama returned no embeddings for model {self.model!r}"
-            )
+            raise RuntimeError(f"Ollama returned no embeddings for model {self.model!r}")
         return embeddings[0]
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
@@ -106,9 +97,7 @@ class OllamaProvider:
         embeddings = result.get("embeddings", [])
 
         if len(embeddings) != len(texts):
-            raise RuntimeError(
-                f"Expected {len(texts)} embeddings, got {len(embeddings)}"
-            )
+            raise RuntimeError(f"Expected {len(texts)} embeddings, got {len(embeddings)}")
         return embeddings
 
     def health_check(self) -> bool:
@@ -123,14 +112,10 @@ class OllamaProvider:
                 data = json.loads(resp.read())
                 models = [m.get("name", "") for m in data.get("models", [])]
                 # Check if our model is available (with or without :latest tag)
-                available = any(
-                    m == self.model or m.startswith(f"{self.model}:")
-                    for m in models
-                )
+                available = any(m == self.model or m.startswith(f"{self.model}:") for m in models)
                 if not available:
                     logger.warning(
-                        "Ollama is running but model %r not found. "
-                        "Available: %s",
+                        "Ollama is running but model %r not found. Available: %s",
                         self.model,
                         ", ".join(models[:10]),
                     )
@@ -152,10 +137,12 @@ class OllamaProvider:
         Returns:
             The parsed JSON response.
         """
-        payload = json.dumps({
-            "model": self.model,
-            "input": input_,
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "model": self.model,
+                "input": input_,
+            }
+        ).encode("utf-8")
 
         req = urllib.request.Request(
             self._embed_url,
@@ -169,13 +156,9 @@ class OllamaProvider:
                 return json.loads(resp.read())
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"Ollama API error {e.code}: {body}"
-            ) from e
+            raise RuntimeError(f"Ollama API error {e.code}: {body}") from e
         except urllib.error.URLError as e:
-            raise ConnectionError(
-                f"Cannot reach Ollama at {self._base_url}: {e.reason}"
-            ) from e
+            raise ConnectionError(f"Cannot reach Ollama at {self._base_url}: {e.reason}") from e
 
     def __repr__(self) -> str:
         return (
@@ -200,9 +183,7 @@ class OllamaProvider:
         data = response.json()
         embeddings = data.get("embeddings")
         if not embeddings or not embeddings[0]:
-            raise RuntimeError(
-                f"Ollama returned no embeddings for model {self.model!r}"
-            )
+            raise RuntimeError(f"Ollama returned no embeddings for model {self.model!r}")
         return embeddings[0]
 
     async def aembed_batch(self, texts: list[str]) -> list[list[float]]:
@@ -219,9 +200,7 @@ class OllamaProvider:
         data = response.json()
         embeddings = data.get("embeddings", [])
         if len(embeddings) != len(texts):
-            raise RuntimeError(
-                f"Expected {len(texts)} embeddings, got {len(embeddings)}"
-            )
+            raise RuntimeError(f"Expected {len(texts)} embeddings, got {len(embeddings)}")
         return embeddings
 
     async def ahealth_check(self) -> bool:
@@ -229,16 +208,14 @@ class OllamaProvider:
         try:
             client = self._get_async_client()
             response = await client.get(
-                f"{self._base_url}/api/tags", timeout=5.0,
+                f"{self._base_url}/api/tags",
+                timeout=5.0,
             )
             if response.status_code != 200:
                 return False
             data = response.json()
             models = [m.get("name", "") for m in data.get("models", [])]
-            available = any(
-                m == self.model or m.startswith(f"{self.model}:")
-                for m in models
-            )
+            available = any(m == self.model or m.startswith(f"{self.model}:") for m in models)
             if not available:
                 logger.warning(
                     "Ollama is running but model %r not found. Available: %s",
@@ -261,8 +238,7 @@ class OllamaProvider:
         if self._async_client is None:
             if httpx is None:
                 raise ImportError(
-                    "httpx is required for async embedding. "
-                    "Install it: pip install httpx"
+                    "httpx is required for async embedding. Install it: pip install httpx"
                 )
             self._async_client = httpx.AsyncClient()
         return self._async_client

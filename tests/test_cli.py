@@ -9,8 +9,6 @@ from __future__ import annotations
 import subprocess
 import sys
 
-import pytest
-
 
 def run_cli(*args: str) -> subprocess.CompletedProcess:
     """Run `python -m engrama.cli <args>` and capture output."""

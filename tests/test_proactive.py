@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import pytest
 
+from engrama.adapters.obsidian import ObsidianAdapter
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
-from engrama.adapters.obsidian import ObsidianAdapter
 from engrama.skills.proactive import ProactiveSkill
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -211,13 +210,13 @@ class TestWriteToVault:
     """Tests for ProactiveSkill.write_to_vault()."""
 
     def test_write_approved_insight(
-        self, engine: EngramaEngine, neo4j_session,
-        seed_approved_insight, tmp_vault
+        self, engine: EngramaEngine, neo4j_session, seed_approved_insight, tmp_vault
     ) -> None:
         """Write appends approved Insight as markdown section."""
         skill = ProactiveSkill()
         result = skill.write_to_vault(
-            engine, tmp_vault,
+            engine,
+            tmp_vault,
             title="P6_ApprovedInsight_Training",
             target_note="00-inbox/test-project.md",
         )
@@ -239,13 +238,13 @@ class TestWriteToVault:
         assert rec["path"] == "00-inbox/test-project.md"
 
     def test_write_rejects_pending_insight(
-        self, engine: EngramaEngine, neo4j_session,
-        seed_pending_insights, tmp_vault
+        self, engine: EngramaEngine, neo4j_session, seed_pending_insights, tmp_vault
     ) -> None:
         """Write refuses to write a pending (unapproved) Insight."""
         skill = ProactiveSkill()
         result = skill.write_to_vault(
-            engine, tmp_vault,
+            engine,
+            tmp_vault,
             title="P6_TestInsight_CrossProject",
             target_note="00-inbox/test-project.md",
         )
@@ -258,7 +257,8 @@ class TestWriteToVault:
         """Write returns written=False for nonexistent Insight."""
         skill = ProactiveSkill()
         result = skill.write_to_vault(
-            engine, tmp_vault,
+            engine,
+            tmp_vault,
             title="P6_GhostInsight_XYZ",
             target_note="00-inbox/test-project.md",
         )
@@ -266,13 +266,13 @@ class TestWriteToVault:
         assert "not found" in result["reason"]
 
     def test_write_nonexistent_note(
-        self, engine: EngramaEngine, neo4j_session,
-        seed_approved_insight, tmp_vault
+        self, engine: EngramaEngine, neo4j_session, seed_approved_insight, tmp_vault
     ) -> None:
         """Write returns written=False for nonexistent target note."""
         skill = ProactiveSkill()
         result = skill.write_to_vault(
-            engine, tmp_vault,
+            engine,
+            tmp_vault,
             title="P6_ApprovedInsight_Training",
             target_note="00-inbox/no-such-note.md",
         )

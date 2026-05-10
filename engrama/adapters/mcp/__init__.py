@@ -85,15 +85,15 @@ def main() -> None:
     config: dict[str, str] = {"GRAPH_BACKEND": args.backend}
     if args.backend == "neo4j":
         if not args.password:
-            parser.error(
-                "--password (or $NEO4J_PASSWORD) is required when --backend=neo4j."
-            )
-        config.update({
-            "NEO4J_URI": args.db_url,
-            "NEO4J_USERNAME": args.username,
-            "NEO4J_PASSWORD": args.password,
-            "NEO4J_DATABASE": args.database,
-        })
+            parser.error("--password (or $NEO4J_PASSWORD) is required when --backend=neo4j.")
+        config.update(
+            {
+                "NEO4J_URI": args.db_url,
+                "NEO4J_USERNAME": args.username,
+                "NEO4J_PASSWORD": args.password,
+                "NEO4J_DATABASE": args.database,
+            }
+        )
     elif args.backend == "sqlite" and args.db_path:
         config["ENGRAMA_DB_PATH"] = args.db_path
 

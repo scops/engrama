@@ -36,6 +36,7 @@ import argparse
 import os
 import subprocess
 import sys
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +119,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     backend = os.getenv("GRAPH_BACKEND", "sqlite")
     try:
         from engrama.backends import create_stores
+
         store, _ = create_stores()
     except Exception as e:
         print(f"Warning: could not open {backend} backend: {e}", file=sys.stderr)
@@ -133,7 +135,8 @@ def cmd_init(args: argparse.Namespace) -> int:
                 statements: list[str] = []
                 for chunk in raw_chunks:
                     lines = [
-                        line for line in chunk.splitlines()
+                        line
+                        for line in chunk.splitlines()
                         if line.strip() and not line.strip().startswith("//")
                     ]
                     cleaned = "\n".join(lines).strip()
@@ -235,6 +238,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     """Check the configured backend is reachable."""
     try:
         from engrama.backends import create_stores
+
         store, _ = create_stores()
         health = store.health_check()
         backend = os.getenv("GRAPH_BACKEND", "sqlite")
@@ -251,6 +255,7 @@ def cmd_reflect(args: argparse.Namespace) -> int:
     """Run reflect and print insights."""
     try:
         from engrama.adapters.sdk import Engrama
+
         with Engrama() as eng:
             insights = eng.reflect()
             if not insights:
@@ -326,23 +331,25 @@ def cmd_reindex(args: argparse.Namespace) -> int:
                 labels = r["labels"]
                 props = dict(r["props"])
                 # Pick primary label (skip system labels)
-                primary = next(
-                    (l for l in labels if l != "Embedded"), labels[0]
-                )
+                primary = next((lbl for lbl in labels if lbl != "Embedded"), labels[0])
                 text = node_to_text(primary, props)
                 texts.append(text)
-                metas.append({
-                    "eid": r["eid"],
-                    "label": primary,
-                    "name": props.get("name") or props.get("title", "?"),
-                })
+                metas.append(
+                    {
+                        "eid": r["eid"],
+                        "label": primary,
+                        "name": props.get("name") or props.get("title", "?"),
+                    }
+                )
 
             try:
                 embeddings = embedder.embed_batch(texts)
-                items = list(zip(
-                    [m["eid"] for m in metas],
-                    embeddings,
-                ))
+                items = list(
+                    zip(
+                        [m["eid"] for m in metas],
+                        embeddings,
+                    )
+                )
                 stored = vector_store.store_vectors(items)
                 embedded += stored
             except Exception as e:
@@ -373,6 +380,7 @@ def cmd_decay(args: argparse.Namespace) -> int:
     """
     try:
         from engrama.adapters.sdk import Engrama
+
         with Engrama() as eng:
             rate = args.rate
             min_conf = args.min_confidence
@@ -381,12 +389,16 @@ def cmd_decay(args: argparse.Namespace) -> int:
 
             if args.dry_run:
                 print("[DRY RUN] No changes will be written.\n")
-                print(f"  rate={rate}, min_confidence={min_conf}, "
-                      f"max_age_days={max_age}, label={label or 'all'}\n")
+                print(
+                    f"  rate={rate}, min_confidence={min_conf}, "
+                    f"max_age_days={max_age}, label={label or 'all'}\n"
+                )
                 # Show a preview of what would be decayed
                 try:
                     preview = eng._store.query_at_date(
-                        "2099-12-31", label=label, limit=20,
+                        "2099-12-31",
+                        label=label,
+                        limit=20,
                     )
                 except Exception:
                     preview = []
@@ -394,10 +406,11 @@ def cmd_decay(args: argparse.Namespace) -> int:
                     print("  No nodes with confidence data found.")
                     return 0
                 import math
-                from datetime import datetime, timezone
+                from datetime import datetime
+
                 print(f"  {'Name':<30} {'Label':<12} {'Conf':>6} {'→ New':>6} {'Days':>5}")
                 print(f"  {'─' * 30} {'─' * 12} {'─' * 6} {'─' * 6} {'─' * 5}")
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 for r in preview:
                     old_c = r.get("confidence") or 1.0
                     vf = r.get("valid_from")
@@ -405,10 +418,11 @@ def cmd_decay(args: argparse.Namespace) -> int:
                         vf = vf.to_native()
                     days = 0.0
                     if vf and hasattr(vf, "timestamp"):
-                        days = max(0.0, (now - vf.replace(tzinfo=timezone.utc)).total_seconds() / 86400)
+                        days = max(0.0, (now - vf.replace(tzinfo=UTC)).total_seconds() / 86400)
                     new_c = old_c * math.exp(-rate * days)
                     name = (r.get("name") or "?")[:30]
-                    print(f"  {name:<30} {r.get('label', '?'):<12} {old_c:>6.3f} {new_c:>6.3f} {days:>5.0f}")
+                    label = r.get("label", "?")
+                    print(f"  {name:<30} {label:<12} {old_c:>6.3f} {new_c:>6.3f} {days:>5.0f}")
                 return 0
 
             result = eng.decay_scores(
@@ -417,8 +431,10 @@ def cmd_decay(args: argparse.Namespace) -> int:
                 max_age_days=max_age,
                 label=label,
             )
-            print(f"Decay applied: {result['decayed']} nodes updated, "
-                  f"{result['archived']} nodes archived.")
+            print(
+                f"Decay applied: {result['decayed']} nodes updated, "
+                f"{result['archived']} nodes archived."
+            )
         return 0
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -429,6 +445,7 @@ def cmd_search(args: argparse.Namespace) -> int:
     """Fulltext search."""
     try:
         from engrama.adapters.sdk import Engrama
+
         with Engrama() as eng:
             results = eng.search(args.query, limit=args.limit)
             if not results:
@@ -456,19 +473,26 @@ def main() -> None:
         help="Generate schema from profile and apply it to the configured backend",
     )
     p_init.add_argument(
-        "--profile", "-p", required=True,
+        "--profile",
+        "-p",
+        required=True,
         help="Profile name (e.g. 'developer') or path to YAML file",
     )
     p_init.add_argument(
-        "--modules", "-m", nargs="*", default=[],
+        "--modules",
+        "-m",
+        nargs="*",
+        default=[],
         help="Domain modules to compose (e.g. hacking teaching photography ai)",
     )
     p_init.add_argument(
-        "--no-apply", action="store_true",
+        "--no-apply",
+        action="store_true",
         help="Generate files only, don't apply to the backend",
     )
     p_init.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Print generated content to stdout without writing files",
     )
 
@@ -482,45 +506,67 @@ def main() -> None:
     p_search = sub.add_parser("search", help="Fulltext search")
     p_search.add_argument("query", help="Search query")
     p_search.add_argument(
-        "--limit", "-l", type=int, default=10,
+        "--limit",
+        "-l",
+        type=int,
+        default=10,
         help="Max results (default: 10)",
     )
 
     # --- reindex ---
     p_reindex = sub.add_parser(
-        "reindex", help="Batch re-embed all nodes and store vectors",
+        "reindex",
+        help="Batch re-embed all nodes and store vectors",
     )
     p_reindex.add_argument(
-        "--batch-size", "-b", type=int, default=50,
+        "--batch-size",
+        "-b",
+        type=int,
+        default=50,
         help="Batch size for embedding (default: 50)",
     )
     p_reindex.add_argument(
-        "--force", "-f", action="store_true",
+        "--force",
+        "-f",
+        action="store_true",
         help="Re-embed nodes that already have embeddings",
     )
 
     # --- decay ---
     p_decay = sub.add_parser(
-        "decay", help="Apply confidence decay to nodes (DDR-003 Phase D)",
+        "decay",
+        help="Apply confidence decay to nodes (DDR-003 Phase D)",
     )
     p_decay.add_argument(
-        "--rate", "-r", type=float, default=0.01,
+        "--rate",
+        "-r",
+        type=float,
+        default=0.01,
         help="Exponential decay rate (default: 0.01)",
     )
     p_decay.add_argument(
-        "--min-confidence", "-c", type=float, default=0.0,
+        "--min-confidence",
+        "-c",
+        type=float,
+        default=0.0,
         help="Archive nodes below this confidence after decay (default: 0, no archive)",
     )
     p_decay.add_argument(
-        "--max-age", "-a", type=int, default=0,
+        "--max-age",
+        "-a",
+        type=int,
+        default=0,
         help="Archive nodes older than N days (default: 0, no age limit)",
     )
     p_decay.add_argument(
-        "--label", type=str, default=None,
+        "--label",
+        type=str,
+        default=None,
         help="Restrict to a specific label (default: all labels)",
     )
     p_decay.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Show what would happen without making changes",
     )
 

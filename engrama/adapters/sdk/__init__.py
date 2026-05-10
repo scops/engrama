@@ -46,13 +46,12 @@ from pathlib import Path
 from typing import Any
 
 from engrama.core.engine import EngramaEngine
-from engrama.core.schema import TITLE_KEYED_LABELS
-from engrama.skills.remember import RememberSkill
-from engrama.skills.recall import RecallSkill, RecallResult
 from engrama.skills.associate import AssociateSkill
 from engrama.skills.forget import ForgetSkill
-from engrama.skills.reflect import ReflectSkill
 from engrama.skills.proactive import ProactiveSkill, SurfacedInsight
+from engrama.skills.recall import RecallResult, RecallSkill
+from engrama.skills.reflect import ReflectSkill
+from engrama.skills.remember import RememberSkill
 
 
 class Engrama:
@@ -133,6 +132,7 @@ class Engrama:
         self._obsidian = None
         try:
             from engrama.adapters.obsidian import ObsidianAdapter
+
             self._obsidian = ObsidianAdapter(vault_path=vault_path)
         except (FileNotFoundError, ImportError):
             pass
@@ -141,7 +141,7 @@ class Engrama:
     # Context manager
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "Engrama":
+    def __enter__(self) -> Engrama:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -208,9 +208,7 @@ class Engrama:
         Returns:
             List of :class:`RecallResult` with properties and neighbours.
         """
-        return self._recall.run(
-            self._engine, query=query, limit=limit, hops=hops
-        )
+        return self._recall.run(self._engine, query=query, limit=limit, hops=hops)
 
     # ------------------------------------------------------------------
     # Search (raw fulltext, no expansion)
@@ -227,10 +225,7 @@ class Engrama:
             List of dicts with ``type``, ``name``, ``score``.
         """
         records = self._engine.search(query, limit=limit)
-        return [
-            {"type": r["type"], "name": r["name"], "score": r["score"]}
-            for r in records
-        ]
+        return [{"type": r["type"], "name": r["name"], "score": r["score"]} for r in records]
 
     def hybrid_search(self, query: str, *, limit: int = 10) -> list[dict]:
         """Run a hybrid search combining fulltext and vector similarity.
@@ -316,9 +311,7 @@ class Engrama:
         Returns:
             Dict with ``action`` and ``matched``.
         """
-        return self._forget.forget_by_name(
-            self._engine, label=label, name=name, purge=purge
-        )
+        return self._forget.forget_by_name(self._engine, label=label, name=name, purge=purge)
 
     def forget_by_ttl(
         self,
@@ -337,9 +330,7 @@ class Engrama:
         Returns:
             Dict with ``action`` and ``count``.
         """
-        return self._forget.forget_by_ttl(
-            self._engine, label=label, days=days, purge=purge
-        )
+        return self._forget.forget_by_ttl(self._engine, label=label, days=days, purge=purge)
 
     # ------------------------------------------------------------------
     # Decay (DDR-003 Phase D)
@@ -415,8 +406,10 @@ class Engrama:
                 "vault_path to the Engrama constructor."
             )
         return self._proactive.write_to_vault(
-            self._engine, self._obsidian,
-            title=title, target_note=target_note,
+            self._engine,
+            self._obsidian,
+            title=title,
+            target_note=target_note,
         )
 
     # ------------------------------------------------------------------

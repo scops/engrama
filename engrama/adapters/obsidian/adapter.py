@@ -18,6 +18,7 @@ from typing import Any
 
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -28,8 +29,7 @@ class ObsidianAdapter:
 
     def __init__(self, vault_path: str | Path | None = None) -> None:
         self.vault_path = Path(
-            vault_path
-            or os.environ.get("VAULT_PATH", Path.home() / "Documents/vault")
+            vault_path or os.environ.get("VAULT_PATH", Path.home() / "Documents/vault")
         ).resolve()
         if not self.vault_path.exists():
             raise FileNotFoundError(f"Vault not found: {self.vault_path}")
@@ -72,12 +72,14 @@ class ObsidianAdapter:
                 start = max(0, matches[0].start() - 60)
                 end = min(len(content), matches[0].end() + 60)
                 excerpt = "..." + content[start:end].replace("\n", " ").strip() + "..."
-                results.append({
-                    "path": str(f.relative_to(self.vault_path)),
-                    "name": f.stem,
-                    "matches": len(matches),
-                    "excerpt": excerpt,
-                })
+                results.append(
+                    {
+                        "path": str(f.relative_to(self.vault_path)),
+                        "name": f.stem,
+                        "matches": len(matches),
+                        "excerpt": excerpt,
+                    }
+                )
         return results
 
     # ------------------------------------------------------------------
@@ -118,7 +120,7 @@ class ObsidianAdapter:
                 )
             else:
                 fm_body = fm_body.rstrip("\n") + f"\nengrama_id: {engrama_id}\n"
-            new_content = "---" + fm_body + "---" + content[end_idx + 3:]
+            new_content = "---" + fm_body + "---" + content[end_idx + 3 :]
         else:
             new_content = f"---\nengrama_id: {engrama_id}\n---\n\n" + content
 
@@ -227,9 +229,7 @@ class ObsidianAdapter:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _write_frontmatter_field(
-        self, path: str, content: str, key: str, value: Any
-    ) -> bool:
+    def _write_frontmatter_field(self, path: str, content: str, key: str, value: Any) -> bool:
         """Write or update a single field in a note's YAML frontmatter.
 
         Requires PyYAML for complex values (dicts, nested lists).
@@ -238,9 +238,7 @@ class ObsidianAdapter:
         target = self._resolve(path)
 
         if not _HAS_YAML:
-            raise RuntimeError(
-                "PyYAML is required for writing complex frontmatter values"
-            )
+            raise RuntimeError("PyYAML is required for writing complex frontmatter values")
 
         fm = self._parse_frontmatter(content)
         fm[key] = value
@@ -250,7 +248,7 @@ class ObsidianAdapter:
 
         if content.startswith("---"):
             end_idx = content.index("---", 3)
-            body = content[end_idx + 3:]
+            body = content[end_idx + 3 :]
             # body already starts with \n from the original "---\n"
         else:
             body = "\n\n" + content
@@ -259,9 +257,7 @@ class ObsidianAdapter:
         target.write_text(new_content, encoding="utf-8")
         return True
 
-    def _remove_frontmatter_field(
-        self, path: str, content: str, key: str
-    ) -> bool:
+    def _remove_frontmatter_field(self, path: str, content: str, key: str) -> bool:
         """Remove a field from a note's YAML frontmatter.
 
         Returns True if the file was modified, False if the field was not found.
@@ -274,15 +270,13 @@ class ObsidianAdapter:
         del fm[key]
 
         if not _HAS_YAML:
-            raise RuntimeError(
-                "PyYAML is required for writing complex frontmatter values"
-            )
+            raise RuntimeError("PyYAML is required for writing complex frontmatter values")
 
         fm_yaml = yaml.dump(fm, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
         if content.startswith("---"):
             end_idx = content.index("---", 3)
-            body = content[end_idx + 3:]
+            body = content[end_idx + 3 :]
         else:
             body = "\n\n" + content
 

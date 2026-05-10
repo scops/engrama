@@ -37,21 +37,17 @@ def create_provider(config=None):
     if config is None:
         config = {}
 
-    provider = (
-        config.get("EMBEDDING_PROVIDER")
-        or os.getenv("EMBEDDING_PROVIDER", "none")
-    )
+    provider = config.get("EMBEDDING_PROVIDER") or os.getenv("EMBEDDING_PROVIDER", "none")
 
     if provider == "openai":
         from engrama.embeddings.openai_compat import OpenAICompatibleProvider
+
         return OpenAICompatibleProvider(
             base_url=config.get("OPENAI_BASE_URL"),
             model=config.get("EMBEDDING_MODEL"),
             api_key=config.get("OPENAI_API_KEY"),
             dimensions=(
-                int(config["EMBEDDING_DIMENSIONS"])
-                if "EMBEDDING_DIMENSIONS" in config
-                else None
+                int(config["EMBEDDING_DIMENSIONS"]) if "EMBEDDING_DIMENSIONS" in config else None
             ),
         )
 
@@ -61,12 +57,11 @@ def create_provider(config=None):
         # with OPENAI_BASE_URL=http://localhost:11434/v1 so the same
         # code path works against any compatible server.
         from engrama.embeddings.ollama import OllamaProvider
+
         return OllamaProvider(
             model=config.get("EMBEDDING_MODEL"),
             dimensions=(
-                int(config["EMBEDDING_DIMENSIONS"])
-                if "EMBEDDING_DIMENSIONS" in config
-                else None
+                int(config["EMBEDDING_DIMENSIONS"]) if "EMBEDDING_DIMENSIONS" in config else None
             ),
             base_url=config.get("OLLAMA_URL"),
         )
@@ -75,6 +70,5 @@ def create_provider(config=None):
         return NullProvider()
 
     raise ValueError(
-        "Unknown embedding provider: " + repr(provider) + ". "
-        "Supported: openai, ollama, none."
+        "Unknown embedding provider: " + repr(provider) + ". Supported: openai, ollama, none."
     )

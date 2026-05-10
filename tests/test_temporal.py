@@ -14,11 +14,10 @@ from __future__ import annotations
 
 import math
 import os
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # 1. Pure helper tests (no DB needed)
@@ -123,21 +122,21 @@ class TestDaysSince:
     def test_datetime_object(self):
         from engrama.core.temporal import days_since
 
-        dt = datetime.now(timezone.utc) - timedelta(days=10)
+        dt = datetime.now(UTC) - timedelta(days=10)
         result = days_since(dt)
         assert abs(result - 10.0) < 0.1
 
     def test_iso_string(self):
         from engrama.core.temporal import days_since
 
-        dt = datetime.now(timezone.utc) - timedelta(days=5)
+        dt = datetime.now(UTC) - timedelta(days=5)
         result = days_since(dt.isoformat())
         assert abs(result - 5.0) < 0.1
 
     def test_naive_datetime_treated_as_utc(self):
         from engrama.core.temporal import days_since
 
-        dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=3)
+        dt = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=3)
         result = days_since(dt)
         assert abs(result - 3.0) < 0.1
 
@@ -153,13 +152,13 @@ class TestDetectConflict:
     def test_future_valid_to_no_conflict(self):
         from engrama.core.temporal import detect_conflict
 
-        future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        future = (datetime.now(UTC) + timedelta(days=30)).isoformat()
         assert detect_conflict({"valid_to": future}) is None
 
     def test_past_valid_to_is_conflict(self):
         from engrama.core.temporal import detect_conflict
 
-        past = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        past = (datetime.now(UTC) - timedelta(days=10)).isoformat()
         result = detect_conflict({"valid_to": past})
         assert result is not None
         assert result["conflict"] == "revived"
@@ -174,17 +173,15 @@ class TestDetectConflict:
 @pytest.fixture(scope="module")
 def backend():
     """Create a real Neo4j backend for integration tests."""
-    from engrama.core.client import EngramaClient
     from engrama.backends.neo4j.backend import Neo4jGraphStore
+    from engrama.core.client import EngramaClient
 
     client = EngramaClient()
     client.verify()
     store = Neo4jGraphStore(client)
     yield store
     # Clean up test nodes
-    client.run(
-        "MATCH (n) WHERE n._test_phase_d = true DETACH DELETE n"
-    )
+    client.run("MATCH (n) WHERE n._test_phase_d = true DETACH DELETE n")
     client.close()
 
 
@@ -195,7 +192,8 @@ class TestBackendTemporalFields:
         """New node gets valid_from=now, confidence=1.0."""
         result = backend.merge_node(
             "Technology",
-            "name", "_test_temporal_1",
+            "name",
+            "_test_temporal_1",
             {"description": "Test node", "_test_phase_d": True},
         )
         assert len(result) == 1
@@ -207,7 +205,8 @@ class TestBackendTemporalFields:
         """Caller can override confidence."""
         result = backend.merge_node(
             "Technology",
-            "name", "_test_temporal_2",
+            "name",
+            "_test_temporal_2",
             {
                 "description": "Custom conf",
                 "confidence": 0.7,
@@ -222,7 +221,8 @@ class TestBackendTemporalFields:
         # Create node
         backend.merge_node(
             "Technology",
-            "name", "_test_temporal_3",
+            "name",
+            "_test_temporal_3",
             {"description": "Will expire", "_test_phase_d": True},
         )
         # Expire it
@@ -234,7 +234,8 @@ class TestBackendTemporalFields:
         # Re-merge — should clear valid_to
         backend.merge_node(
             "Technology",
-            "name", "_test_temporal_3",
+            "name",
+            "_test_temporal_3",
             {"description": "Revived", "_test_phase_d": True},
         )
         node_data = backend.get_node("Technology", "name", "_test_temporal_3")
@@ -247,7 +248,8 @@ class TestExpireNode:
     def test_expire_sets_valid_to(self, backend):
         backend.merge_node(
             "Technology",
-            "name", "_test_expire_1",
+            "name",
+            "_test_expire_1",
             {"description": "To expire", "_test_phase_d": True},
         )
         result = backend.expire_node("Technology", "name", "_test_expire_1")
@@ -268,7 +270,8 @@ class TestDecayScores:
         # Create a node (confidence defaults to 1.0)
         backend.merge_node(
             "Concept",
-            "name", "_test_decay_1",
+            "name",
+            "_test_decay_1",
             {"description": "Decay test", "_test_phase_d": True},
         )
         # Apply decay with a high rate — even 0 days old, the query
@@ -281,7 +284,8 @@ class TestDecayScores:
     def test_decay_with_label_filter(self, backend):
         backend.merge_node(
             "Concept",
-            "name", "_test_decay_2",
+            "name",
+            "_test_decay_2",
             {"description": "Filtered decay", "_test_phase_d": True},
         )
         result = backend.decay_scores(rate=0.01, label="Concept")
@@ -292,7 +296,8 @@ class TestDecayScores:
         # Create a node with very low confidence
         backend.merge_node(
             "Concept",
-            "name", "_test_decay_archive",
+            "name",
+            "_test_decay_archive",
             {
                 "description": "Should archive",
                 "confidence": 0.001,
@@ -333,7 +338,10 @@ class TestEngineDecay:
         result = engine.decay_scores(rate=0.02, min_confidence=0.05)
         assert result == {"decayed": 42, "archived": 3}
         mock_store.decay_scores.assert_called_once_with(
-            rate=0.02, min_confidence=0.05, max_age_days=0, label=None,
+            rate=0.02,
+            min_confidence=0.05,
+            max_age_days=0,
+            label=None,
         )
 
     def test_graceful_when_backend_lacks_decay(self):
@@ -356,7 +364,7 @@ class TestHybridTemporalScoring:
     """Test that HybridSearchEngine factors temporal_score into results."""
 
     def test_temporal_score_included_in_final(self):
-        from engrama.core.search import HybridSearchEngine, HybridConfig
+        from engrama.core.search import HybridConfig, HybridSearchEngine
 
         # Create mocks
         mock_graph = MagicMock()
@@ -366,15 +374,25 @@ class TestHybridTemporalScoring:
         mock_vector.dimensions = 0
 
         # Fulltext returns two results, one older
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         old_date = (now - timedelta(days=90)).isoformat()
         recent_date = (now - timedelta(hours=1)).isoformat()
 
         mock_graph.fulltext_search.return_value = [
-            {"type": "Concept", "name": "Old", "score": 5.0,
-             "confidence": 0.3, "updated_at": old_date},
-            {"type": "Concept", "name": "Recent", "score": 4.0,
-             "confidence": 1.0, "updated_at": recent_date},
+            {
+                "type": "Concept",
+                "name": "Old",
+                "score": 5.0,
+                "confidence": 0.3,
+                "updated_at": old_date,
+            },
+            {
+                "type": "Concept",
+                "name": "Recent",
+                "score": 4.0,
+                "confidence": 1.0,
+                "updated_at": recent_date,
+            },
         ]
 
         config = HybridConfig(temporal_gamma=0.2, recency_half_life=30.0)
@@ -386,7 +404,7 @@ class TestHybridTemporalScoring:
         assert by_name["Recent"].temporal_score > by_name["Old"].temporal_score
 
     def test_temporal_disabled_when_gamma_zero(self):
-        from engrama.core.search import HybridSearchEngine, HybridConfig
+        from engrama.core.search import HybridConfig, HybridSearchEngine
 
         mock_graph = MagicMock()
         mock_vector = MagicMock()
@@ -416,24 +434,27 @@ class TestCLIDecay:
 
     def test_decay_argparse(self):
         """Verify the decay subparser accepts expected arguments."""
-        import argparse
-        from engrama.cli import main
 
         # Just test that the parser recognises the decay command
         # We can't easily call main() without DB, so check argparse setup
         # by importing and inspecting
         from engrama import cli
+
         # Access the module to ensure it imports cleanly
         assert hasattr(cli, "cmd_decay")
 
     def test_cmd_decay_dry_run(self):
         """cmd_decay with --dry-run should not touch the DB."""
-        from engrama.cli import cmd_decay
         import argparse
 
+        from engrama.cli import cmd_decay
+
         args = argparse.Namespace(
-            rate=0.01, min_confidence=0.0, max_age=0,
-            label=None, dry_run=True,
+            rate=0.01,
+            min_confidence=0.0,
+            max_age=0,
+            label=None,
+            dry_run=True,
         )
         # Dry run should succeed without DB
         result = cmd_decay(args)
@@ -448,6 +469,7 @@ class TestCLIDecay:
 def _unique(prefix: str) -> str:
     """Generate a unique name for test isolation."""
     import uuid
+
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
@@ -455,6 +477,7 @@ def _unique(prefix: str) -> str:
 async def async_store():
     """Create an async store backed by the test Neo4j instance."""
     from neo4j import AsyncGraphDatabase
+
     from engrama.backends.neo4j.async_store import Neo4jAsyncStore
 
     uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
@@ -551,7 +574,9 @@ class TestAsyncDecayConfidence:
         acleanup("Technology", "name", name)
 
         await async_store.merge_node(
-            "Technology", "name", name,
+            "Technology",
+            "name",
+            name,
             {"_test_phase_d": True, "status": "archived"},
         )
         await async_store.run_pattern(
@@ -571,7 +596,9 @@ class TestAsyncDecayConfidence:
         acleanup("Technology", "name", name)
 
         await async_store.merge_node(
-            "Technology", "name", name,
+            "Technology",
+            "name",
+            name,
             {"_test_phase_d": True, "confidence": 0.03},
         )
         await async_store.run_pattern(
@@ -595,7 +622,9 @@ class TestAsyncValidTo:
         acleanup("Technology", "name", name)
 
         result = await async_store.merge_node(
-            "Technology", "name", name,
+            "Technology",
+            "name",
+            name,
             {"_test_phase_d": True, "valid_to": "2026-01-01T00:00:00Z"},
         )
         node = result["node"]
@@ -609,12 +638,16 @@ class TestAsyncValidTo:
         acleanup("Technology", "name", name)
 
         await async_store.merge_node(
-            "Technology", "name", name,
+            "Technology",
+            "name",
+            name,
             {"_test_phase_d": True, "valid_to": "2025-12-31T00:00:00Z"},
         )
 
         result = await async_store.merge_node(
-            "Technology", "name", name,
+            "Technology",
+            "name",
+            name,
             {"_test_phase_d": True, "description": "revived"},
         )
         assert "warning" in result, "Expected conflict warning on revival"
@@ -627,7 +660,9 @@ class TestAsyncValidTo:
         acleanup("Technology", "name", name)
 
         result = await async_store.merge_node(
-            "Technology", "name", name,
+            "Technology",
+            "name",
+            name,
             {"_test_phase_d": True, "valid_to": "2026-06-01", "confidence": 0.8},
         )
         node = result["node"]
@@ -665,7 +700,9 @@ class TestAsyncQueryAtDate:
         acleanup("Technology", "name", name)
 
         await async_store.merge_node(
-            "Technology", "name", name,
+            "Technology",
+            "name",
+            name,
             {"_test_phase_d": True, "valid_to": "2026-02-28T23:59:59Z"},
         )
         await async_store.run_pattern(
