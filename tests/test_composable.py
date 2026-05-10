@@ -8,24 +8,21 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 # Import codegen functions directly
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from generate_from_profile import (
+    generate_cypher,
+    generate_schema,
+    generate_summary,
     load_module,
     load_profile,
     merge_profiles,
-    generate_schema,
-    generate_cypher,
-    generate_summary,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -126,9 +123,7 @@ def module_bad_ref() -> dict[str, Any]:
 class TestMergeProfiles:
     """Tests for merge_profiles()."""
 
-    def test_merge_adds_new_nodes(
-        self, base_profile: dict, module_a: dict
-    ) -> None:
+    def test_merge_adds_new_nodes(self, base_profile: dict, module_a: dict) -> None:
         """Modules add new node types to the merged result."""
         merged = merge_profiles(base_profile, [module_a])
         labels = [n["label"] for n in merged["nodes"]]
@@ -136,29 +131,24 @@ class TestMergeProfiles:
         assert "Concept" in labels
         assert "Target" in labels  # from module_a
 
-    def test_merge_preserves_base_relations(
-        self, base_profile: dict, module_a: dict
-    ) -> None:
+    def test_merge_preserves_base_relations(self, base_profile: dict, module_a: dict) -> None:
         """Base relations are preserved in the merge."""
         merged = merge_profiles(base_profile, [module_a])
         rel_types = [r["type"] for r in merged["relations"]]
         assert "APPLIES" in rel_types
         assert "SCANS" in rel_types
 
-    def test_merge_deduplicates_relations(
-        self, base_profile: dict, module_a: dict
-    ) -> None:
+    def test_merge_deduplicates_relations(self, base_profile: dict, module_a: dict) -> None:
         """Identical (type, from, to) tuples appear only once."""
         merged = merge_profiles(base_profile, [module_a])
         applies_rels = [
-            r for r in merged["relations"]
+            r
+            for r in merged["relations"]
             if r["type"] == "APPLIES" and r["from"] == "Project" and r["to"] == "Concept"
         ]
         assert len(applies_rels) == 1
 
-    def test_merge_properties_union(
-        self, base_profile: dict, module_b: dict
-    ) -> None:
+    def test_merge_properties_union(self, base_profile: dict, module_b: dict) -> None:
         """When two sources define the same node, properties are merged."""
         merged = merge_profiles(base_profile, [module_b])
         project = next(n for n in merged["nodes"] if n["label"] == "Project")
@@ -171,9 +161,7 @@ class TestMergeProfiles:
         assert "budget" in props
         assert "deadline" in props
 
-    def test_merge_keeps_longer_description(
-        self, base_profile: dict, module_b: dict
-    ) -> None:
+    def test_merge_keeps_longer_description(self, base_profile: dict, module_b: dict) -> None:
         """The longer description wins on merge."""
         merged = merge_profiles(base_profile, [module_b])
         project = next(n for n in merged["nodes"] if n["label"] == "Project")
@@ -191,9 +179,7 @@ class TestMergeProfiles:
         assert "Course" in labels
         assert len(labels) == 4
 
-    def test_merge_composed_name(
-        self, base_profile: dict, module_a: dict, module_b: dict
-    ) -> None:
+    def test_merge_composed_name(self, base_profile: dict, module_a: dict, module_b: dict) -> None:
         """Composed profile name includes all component names."""
         merged = merge_profiles(base_profile, [module_a, module_b])
         assert merged["name"] == "base+alpha+beta"
@@ -215,9 +201,7 @@ class TestMergeProfiles:
 class TestMergeCodegen:
     """Tests that merged profiles produce valid codegen output."""
 
-    def test_merged_schema_has_all_enums(
-        self, base_profile: dict, module_a: dict
-    ) -> None:
+    def test_merged_schema_has_all_enums(self, base_profile: dict, module_a: dict) -> None:
         """Generated schema.py includes enum members for all merged nodes."""
         merged = merge_profiles(base_profile, [module_a])
         schema = generate_schema(merged)
@@ -227,9 +211,7 @@ class TestMergeCodegen:
         assert "INSIGHT" in schema  # always auto-added
         assert "SCANS" in schema
 
-    def test_merged_cypher_has_constraints(
-        self, base_profile: dict, module_a: dict
-    ) -> None:
+    def test_merged_cypher_has_constraints(self, base_profile: dict, module_a: dict) -> None:
         """Generated cypher includes constraints for all merged nodes."""
         merged = merge_profiles(base_profile, [module_a])
         cypher = generate_cypher(merged)
@@ -288,17 +270,16 @@ class TestRealProfiles:
         base = load_profile(project_root / "profiles" / "base.yaml")
         modules_dir = project_root / "profiles" / "modules"
         modules = [
-            load_module(m, modules_dir)
-            for m in ["hacking", "teaching", "photography", "ai"]
+            load_module(m, modules_dir) for m in ["hacking", "teaching", "photography", "ai"]
         ]
         merged = merge_profiles(base, modules)
         labels = [n["label"] for n in merged["nodes"]]
         # Should have base nodes + all module-specific nodes
         assert "Project" in labels
-        assert "Target" in labels      # hacking
-        assert "Course" in labels      # teaching
-        assert "Photo" in labels       # photography
-        assert "Model" in labels       # ai
+        assert "Target" in labels  # hacking
+        assert "Course" in labels  # teaching
+        assert "Photo" in labels  # photography
+        assert "Model" in labels  # ai
         # No duplicates
         assert len(labels) == len(set(labels))
 
@@ -334,8 +315,12 @@ class TestCliComposable:
     def test_cli_init_base_plus_modules_dry_run(self) -> None:
         """CLI dry-run with base + modules produces valid output."""
         result = run_cli(
-            "init", "--profile", "base",
-            "--modules", "hacking", "teaching",
+            "init",
+            "--profile",
+            "base",
+            "--modules",
+            "hacking",
+            "teaching",
             "--dry-run",
         )
         assert result.returncode == 0
@@ -346,8 +331,11 @@ class TestCliComposable:
     def test_cli_init_missing_module(self) -> None:
         """CLI fails cleanly when a module doesn't exist."""
         result = run_cli(
-            "init", "--profile", "base",
-            "--modules", "nonexistent_module_xyz",
+            "init",
+            "--profile",
+            "base",
+            "--modules",
+            "nonexistent_module_xyz",
             "--dry-run",
         )
         assert result.returncode != 0

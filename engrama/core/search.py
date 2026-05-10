@@ -118,8 +118,7 @@ class HybridSearchEngine:
 
         # Auto-detect when vector search is unavailable
         self._vector_enabled: bool = (
-            getattr(embedder, "dimensions", 0) > 0
-            and getattr(vector_store, "dimensions", 0) > 0
+            getattr(embedder, "dimensions", 0) > 0 and getattr(vector_store, "dimensions", 0) > 0
         )
 
     # ------------------------------------------------------------------
@@ -145,7 +144,8 @@ class HybridSearchEngine:
                 query_vec = self.embedder.embed(query)
                 if query_vec:
                     v_results = self.vector.search_vectors(
-                        query_vec, limit=self.config.vector_k,
+                        query_vec,
+                        limit=self.config.vector_k,
                     )
             except (ConnectionError, RuntimeError) as e:
                 logger.warning("Vector search failed, falling back to fulltext: %s", e)
@@ -178,7 +178,8 @@ class HybridSearchEngine:
                 query_vec = await self.embedder.aembed(query)
                 if query_vec:
                     v_results = await self.vector.search_similar(
-                        query_vec, limit=self.config.vector_k,
+                        query_vec,
+                        limit=self.config.vector_k,
                     )
             except (ConnectionError, RuntimeError, Exception) as e:
                 logger.warning("Async vector search failed, falling back: %s", e)
@@ -283,7 +284,7 @@ class HybridSearchEngine:
         # --- Temporal scoring (Phase D) ---
         gamma = self.config.temporal_gamma
         if gamma > 0:
-            from engrama.core.temporal import temporal_score, days_since
+            from engrama.core.temporal import days_since, temporal_score
 
             for sr in by_name.values():
                 confidence = sr.properties.get("confidence", 1.0)
@@ -317,7 +318,4 @@ class HybridSearchEngine:
         return self._vector_enabled
 
     def __repr__(self) -> str:
-        return (
-            f"HybridSearchEngine(vector={self._vector_enabled}, "
-            f"alpha={self.config.alpha})"
-        )
+        return f"HybridSearchEngine(vector={self._vector_enabled}, alpha={self.config.alpha})"

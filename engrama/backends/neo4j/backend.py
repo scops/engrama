@@ -18,7 +18,6 @@ from neo4j.time import Date, DateTime, Duration, Time
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
 
-
 _NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 
 
@@ -128,8 +127,8 @@ class Neo4jGraphStore:
         set_clauses_create: list[str] = [
             "n.created_at = datetime()",
             "n.updated_at = datetime()",
-            f"n.valid_from = $valid_from",
-            f"n.confidence = $confidence_val",
+            "n.valid_from = $valid_from",
+            "n.confidence = $confidence_val",
         ]
         set_clauses_match: list[str] = [
             "n.updated_at = datetime()",
@@ -180,10 +179,7 @@ class Neo4jGraphStore:
         key_value: str,
     ) -> dict[str, Any] | None:
         """Retrieve a single node by its unique key."""
-        query = (
-            f"MATCH (n:{label} {{{key_field}: $key_value}}) "
-            "RETURN n"
-        )
+        query = f"MATCH (n:{label} {{{key_field}: $key_value}}) RETURN n"
         records = self._client.run(query, {"key_value": key_value})
         if records:
             return dict(records[0]["n"])
@@ -582,7 +578,8 @@ class Neo4jGraphStore:
             "RETURN i.title AS title"
         )
         records = self._client.run(
-            query, {"title": title, "new_status": new_status},
+            query,
+            {"title": title, "new_status": new_status},
         )
         return len(records) > 0
 
@@ -663,7 +660,8 @@ class Neo4jGraphStore:
             "d.title AS decision, pA.name AS source_project, c.name AS concept"
         )
         records = self._client.run(
-            cypher, {"open_status": "open", "resolved_status": "resolved"},
+            cypher,
+            {"open_status": "open", "resolved_status": "resolved"},
         )
         return [dict(r) for r in records]
 
@@ -766,8 +764,7 @@ class Neo4jGraphStore:
         """
         merge_key = "title" if label in TITLE_KEYED_LABELS else "name"
         records = self._client.run(
-            f"MATCH (n:{label} {{{merge_key}: $name}}) "
-            "RETURN n.obsidian_path AS path",
+            f"MATCH (n:{label} {{{merge_key}: $name}}) RETURN n.obsidian_path AS path",
             {"name": name},
         )
         if records and records[0]["path"]:
@@ -879,7 +876,8 @@ class Neo4jGraphStore:
     # ------------------------------------------------------------------
 
     def apply_schema_statements(
-        self, statements: list[str],
+        self,
+        statements: list[str],
     ) -> list[tuple[str, Exception]]:
         """Execute schema statements one at a time.
 
@@ -907,7 +905,9 @@ class Neo4jGraphStore:
         self.merge_node("Domain", "name", name, {"description": description})
 
     def seed_concept_in_domain(
-        self, concept_name: str, domain_name: str,
+        self,
+        concept_name: str,
+        domain_name: str,
     ) -> None:
         """``MERGE`` a Concept and link it ``IN_DOMAIN`` to a Domain.
 
@@ -917,13 +917,18 @@ class Neo4jGraphStore:
         """
         self.merge_node("Concept", "name", concept_name, {})
         self.merge_relation(
-            "Concept", "name", concept_name,
+            "Concept",
+            "name",
+            concept_name,
             "IN_DOMAIN",
-            "Domain", "name", domain_name,
+            "Domain",
+            "name",
+            domain_name,
         )
 
     def list_nodes_for_embedding(
-        self, force: bool = False,
+        self,
+        force: bool = False,
     ) -> list[dict[str, Any]]:
         """List nodes for re-embedding.
 

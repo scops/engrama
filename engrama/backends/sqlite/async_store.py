@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 
 from engrama.backends.sqlite.store import SqliteGraphStore
 from engrama.backends.sqlite.vector import SqliteVecStore
@@ -96,7 +97,10 @@ class SqliteAsyncStore:
         """
         rows = await self._run(
             self._sync.merge_node,
-            label, key_field, key_value, properties,
+            label,
+            key_field,
+            key_value,
+            properties,
         )
         if not rows:
             return {"node": {}, "created": False}
@@ -111,7 +115,10 @@ class SqliteAsyncStore:
         key_value: str,
     ) -> dict[str, Any] | None:
         return await self._run(
-            self._sync.get_node, label, key_field, key_value,
+            self._sync.get_node,
+            label,
+            key_field,
+            key_value,
         )
 
     async def delete_node(
@@ -122,7 +129,11 @@ class SqliteAsyncStore:
         soft: bool = True,
     ) -> bool:
         return await self._run(
-            self._sync.delete_node, label, key_field, key_value, soft,
+            self._sync.delete_node,
+            label,
+            key_field,
+            key_value,
+            soft,
         )
 
     async def list_existing_nodes(self, limit: int = 200) -> list[dict[str, str]]:
@@ -150,17 +161,27 @@ class SqliteAsyncStore:
         """
         rows = await self._run(
             self._sync.merge_relation,
-            from_label, from_key, from_value,
+            from_label,
+            from_key,
+            from_value,
             rel_type,
-            to_label, to_key, to_value,
+            to_label,
+            to_key,
+            to_value,
         )
         if not rows:
             return {}
         # The sync store doesn't echo the source obsidian_path, but the
         # MCP DDR-002 dual-write path needs it; cheap to fetch in-process.
-        from_node = await self._run(
-            self._sync.get_node, from_label, from_key, from_value,
-        ) or {}
+        from_node = (
+            await self._run(
+                self._sync.get_node,
+                from_label,
+                from_key,
+                from_value,
+            )
+            or {}
+        )
         return {
             "rel_type": rel_type,
             "from_name": from_value,
@@ -186,7 +207,11 @@ class SqliteAsyncStore:
         """
         rows = await self._run(
             self._sync.get_neighbours,
-            label, key_field, key_value, hops, limit,
+            label,
+            key_field,
+            key_value,
+            hops,
+            limit,
         )
         if not rows:
             return []
@@ -210,17 +235,19 @@ class SqliteAsyncStore:
                 continue
             seen.add(key)
             via = list(dict.fromkeys(r["_type"] for r in row["rel"]))
-            out.append({
-                "label": n_label,
-                "name": n_name,
-                "via": via,
-                "properties": {
-                    k: v
-                    for k, v in n.items()
-                    if not k.startswith("_")
-                    and k not in {"created_at", "updated_at", "details", "embedding"}
-                },
-            })
+            out.append(
+                {
+                    "label": n_label,
+                    "name": n_name,
+                    "via": via,
+                    "properties": {
+                        k: v
+                        for k, v in n.items()
+                        if not k.startswith("_")
+                        and k not in {"created_at", "updated_at", "details", "embedding"}
+                    },
+                }
+            )
         return out
 
     async def get_node_with_neighbours(
@@ -237,7 +264,10 @@ class SqliteAsyncStore:
         """
         return await self._run(
             self._sync.get_node_with_neighbours,
-            label, key_field, key_value, hops,
+            label,
+            key_field,
+            key_value,
+            hops,
         )
 
     async def fulltext_search(
@@ -283,22 +313,31 @@ class SqliteAsyncStore:
         return await self._run(self._sync.get_pending_insights, limit)
 
     async def get_insight_by_title(
-        self, title: str,
+        self,
+        title: str,
     ) -> dict[str, Any] | None:
         return await self._run(self._sync.get_insight_by_title, title)
 
     async def update_insight_status(
-        self, title: str, new_status: str,
+        self,
+        title: str,
+        new_status: str,
     ) -> bool:
         return await self._run(
-            self._sync.update_insight_status, title, new_status,
+            self._sync.update_insight_status,
+            title,
+            new_status,
         )
 
     async def mark_insight_synced(
-        self, title: str, obsidian_path: str,
+        self,
+        title: str,
+        obsidian_path: str,
     ) -> bool:
         return await self._run(
-            self._sync.mark_insight_synced, title, obsidian_path,
+            self._sync.mark_insight_synced,
+            title,
+            obsidian_path,
         )
 
     async def find_insight_by_source_query(
@@ -307,7 +346,9 @@ class SqliteAsyncStore:
         statuses: list[str] | None = None,
     ) -> dict[str, Any] | None:
         return await self._run(
-            self._sync.find_insight_by_source_query, source_query, statuses,
+            self._sync.find_insight_by_source_query,
+            source_query,
+            statuses,
         )
 
     # ------------------------------------------------------------------
@@ -348,7 +389,10 @@ class SqliteAsyncStore:
     ) -> bool:
         return await self._run(
             self._vector.store_vector_by_key,
-            label, key_field, key_value, embedding,
+            label,
+            key_field,
+            key_value,
+            embedding,
         )
 
     async def search_similar(
@@ -365,7 +409,9 @@ class SqliteAsyncStore:
         :meth:`Neo4jAsyncStore.search_similar`).
         """
         rows = await self._run(
-            self._vector.search_similar, query_embedding, limit,
+            self._vector.search_similar,
+            query_embedding,
+            limit,
         )
         return [
             {
@@ -399,7 +445,10 @@ class SqliteAsyncStore:
         limit: int = 20,
     ) -> list[dict[str, Any]]:
         return await self._run(
-            self._sync.query_at_date, date, label, limit,
+            self._sync.query_at_date,
+            date,
+            label,
+            limit,
         )
 
     # ------------------------------------------------------------------
@@ -407,7 +456,8 @@ class SqliteAsyncStore:
     # ------------------------------------------------------------------
 
     async def init_schema(
-        self, cypher_statements: list[str] | None = None,
+        self,
+        cypher_statements: list[str] | None = None,
     ) -> None:
         # SQLite's schema is applied at connection time by
         # ``SqliteGraphStore.__init__``; Cypher schema statements are

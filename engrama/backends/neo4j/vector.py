@@ -80,9 +80,7 @@ class Neo4jVectorStore:
                 if records:
                     stored += 1
             except Exception as e:
-                logger.warning(
-                    "Failed to store vector for %s: %s", element_id, e
-                )
+                logger.warning("Failed to store vector for %s: %s", element_id, e)
         return stored
 
     def store_vector_by_key(
@@ -176,9 +174,7 @@ class Neo4jVectorStore:
 
     def count(self) -> int:
         """Return the total number of nodes with embeddings."""
-        records = self._client.run(
-            "MATCH (n:Embedded) RETURN count(n) AS total"
-        )
+        records = self._client.run("MATCH (n:Embedded) RETURN count(n) AS total")
         return records[0]["total"] if records else 0
 
     # ------------------------------------------------------------------
@@ -214,7 +210,4 @@ class Neo4jVectorStore:
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
-        return (
-            f"Neo4jVectorStore(dimensions={self.dimensions}, "
-            f"index={self._index_name!r})"
-        )
+        return f"Neo4jVectorStore(dimensions={self.dimensions}, index={self._index_name!r})"

@@ -84,12 +84,14 @@ def create_stores(
 def _create_graph_store(backend: str, config: dict[str, Any]) -> Any:
     if backend == "sqlite":
         from engrama.backends.sqlite import SqliteGraphStore
+
         path = _resolve(config, "ENGRAMA_DB_PATH", _default_db_path())
         return SqliteGraphStore(path)
 
     if backend == "neo4j":
         from engrama.backends.neo4j.backend import Neo4jGraphStore
         from engrama.core.client import EngramaClient
+
         client = EngramaClient(
             uri=_resolve(config, "NEO4J_URI"),
             user=_resolve(config, "NEO4J_USERNAME"),
@@ -99,12 +101,10 @@ def _create_graph_store(backend: str, config: dict[str, Any]) -> Any:
 
     if backend == "null":
         from engrama.backends.null import NullGraphStore
+
         return NullGraphStore()
 
-    raise ValueError(
-        f"Unknown graph backend: {backend!r}. "
-        f"Supported: 'sqlite', 'neo4j', 'null'."
-    )
+    raise ValueError(f"Unknown graph backend: {backend!r}. Supported: 'sqlite', 'neo4j', 'null'.")
 
 
 def _create_vector_store(
@@ -114,13 +114,13 @@ def _create_vector_store(
 ) -> Any:
     if backend == "sqlite-vec":
         from engrama.backends.sqlite import SqliteVecStore
+
         # Reuse the connection from the SqliteGraphStore so vectors live
         # in the same database file as the nodes/edges.
         conn = getattr(graph_store, "_conn", None)
         if conn is None:
             raise ValueError(
-                "VECTOR_BACKEND=sqlite-vec requires a SqliteGraphStore "
-                "(set GRAPH_BACKEND=sqlite)."
+                "VECTOR_BACKEND=sqlite-vec requires a SqliteGraphStore (set GRAPH_BACKEND=sqlite)."
             )
         dims = int(_resolve(config, "EMBEDDING_DIMENSIONS", "0") or 0)
         store = SqliteVecStore(conn, dimensions=dims)
@@ -130,12 +130,10 @@ def _create_vector_store(
 
     if backend == "neo4j":
         from engrama.backends.neo4j.vector import Neo4jVectorStore
+
         client = getattr(graph_store, "_client", None)
         if client is None:
-            raise ValueError(
-                "VECTOR_BACKEND=neo4j requires GRAPH_BACKEND=neo4j "
-                "(shared client)."
-            )
+            raise ValueError("VECTOR_BACKEND=neo4j requires GRAPH_BACKEND=neo4j (shared client).")
         dims = int(_resolve(config, "EMBEDDING_DIMENSIONS", "768") or 768)
         store = Neo4jVectorStore(client, dimensions=dims)
         store.ensure_index()
@@ -143,11 +141,11 @@ def _create_vector_store(
 
     if backend in ("none", "null"):
         from engrama.backends.null import NullVectorStore
+
         return NullVectorStore()
 
     raise ValueError(
-        f"Unknown vector backend: {backend!r}. "
-        f"Supported: 'sqlite-vec', 'neo4j', 'none'."
+        f"Unknown vector backend: {backend!r}. Supported: 'sqlite-vec', 'neo4j', 'none'."
     )
 
 
@@ -174,6 +172,7 @@ def create_async_stores(
 
     if graph_backend == "sqlite":
         from engrama.backends.sqlite import SqliteAsyncStore
+
         path = _resolve(cfg, "ENGRAMA_DB_PATH", _default_db_path())
         # SqliteAsyncStore composes a SqliteVecStore internally, so the
         # same instance satisfies both protocols.
@@ -188,15 +187,16 @@ def create_async_stores(
 
     if graph_backend == "neo4j":
         from neo4j import AsyncGraphDatabase
+
         from engrama.backends.neo4j.async_store import Neo4jAsyncStore
+
         uri = _resolve(cfg, "NEO4J_URI", "bolt://localhost:7687")
         user = _resolve(cfg, "NEO4J_USERNAME", "neo4j")
         password = _resolve(cfg, "NEO4J_PASSWORD")
         database = _resolve(cfg, "NEO4J_DATABASE", "neo4j") or "neo4j"
         if not password:
             raise ValueError(
-                "GRAPH_BACKEND=neo4j requires NEO4J_PASSWORD (env var, "
-                ".env, or explicit config)."
+                "GRAPH_BACKEND=neo4j requires NEO4J_PASSWORD (env var, .env, or explicit config)."
             )
         driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
         dims = int(_resolve(cfg, "EMBEDDING_DIMENSIONS", "0") or 0)
@@ -211,12 +211,12 @@ def create_async_stores(
 
     if graph_backend == "null":
         from engrama.backends.null import NullGraphStore, NullVectorStore
+
         # Null stores are sync-only; wrap if we ever need async there.
         return NullGraphStore(), NullVectorStore()
 
     raise ValueError(
-        f"Unknown async graph backend: {graph_backend!r}. "
-        f"Supported: 'sqlite', 'neo4j', 'null'."
+        f"Unknown async graph backend: {graph_backend!r}. Supported: 'sqlite', 'neo4j', 'null'."
     )
 
 
@@ -235,6 +235,7 @@ def create_embedding_provider(
     embedding backend is configured.
     """
     from engrama.embeddings import create_provider
+
     return create_provider(config)
 
 
@@ -245,4 +246,4 @@ def create_embedding_provider(
 
 def _default_db_path() -> str:
     """Default SQLite database path under the user's home (~/.engrama/engrama.db)."""
-    return str((os.path.expanduser("~/.engrama/engrama.db")))
+    return str(os.path.expanduser("~/.engrama/engrama.db"))

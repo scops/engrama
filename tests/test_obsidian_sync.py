@@ -5,8 +5,6 @@ Integration tests for the Obsidian adapter, parser, and DDR-002 bidirectional
 sync (relations in frontmatter).
 """
 
-import os
-import tempfile
 import textwrap
 from pathlib import Path
 
@@ -15,8 +13,8 @@ import pytest
 from engrama.adapters.obsidian.adapter import ObsidianAdapter
 from engrama.adapters.obsidian.parser import NoteParser
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def tmp_vault(tmp_path: Path) -> Path:
@@ -96,6 +94,7 @@ def adapter(tmp_vault: Path) -> ObsidianAdapter:
 
 # ── Adapter tests ─────────────────────────────────────────────────────────────
 
+
 def test_read_note_success(adapter: ObsidianAdapter):
     result = adapter.read_note("10-projects/engrama.md")
     assert result["success"] is True
@@ -146,6 +145,7 @@ def test_inject_engrama_id_update(adapter: ObsidianAdapter):
 
 # ── Parser tests ──────────────────────────────────────────────────────────────
 
+
 def test_parse_project_note(adapter: ObsidianAdapter):
     parser = NoteParser()
     note = adapter.read_note("10-projects/engrama.md")
@@ -188,6 +188,7 @@ def test_parse_inbox_note_skipped(adapter: ObsidianAdapter):
 
 
 # ── DDR-002: Relations in frontmatter ─────────────────────────────────────────
+
 
 class TestParserRelations:
     """Parser should extract relations from frontmatter (DDR-002)."""
@@ -329,7 +330,6 @@ class TestAdapterRelations:
     def test_add_relation_preserves_content(self, adapter: ObsidianAdapter):
         """Adding a relation should not corrupt the note body."""
         path = "10-projects/engrama.md"
-        original = adapter.read_note(path)
         adapter.add_relation(path, "USES", "Python")
         updated = adapter.read_note(path)
 

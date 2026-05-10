@@ -162,8 +162,7 @@ class TestReflectSkill:
         # in the graph may produce additional shared_technology insights).
         matching = [i for i in shared if "FastAPI_ReflectTest" in i.title]
         assert len(matching) >= 1, (
-            f"Expected an insight about FastAPI_ReflectTest, got: "
-            f"{[i.title for i in shared]}"
+            f"Expected an insight about FastAPI_ReflectTest, got: {[i.title for i in shared]}"
         )
 
         insight = matching[0]
@@ -183,8 +182,7 @@ class TestReflectSkill:
 
         # Cleanup
         neo4j_session.run(
-            "MATCH (i:Insight) WHERE i.title CONTAINS 'FastAPI_ReflectTest' "
-            "DETACH DELETE i"
+            "MATCH (i:Insight) WHERE i.title CONTAINS 'FastAPI_ReflectTest' DETACH DELETE i"
         )
 
     def test_training_opportunity(
@@ -214,13 +212,10 @@ class TestReflectSkill:
 
         # Cleanup
         neo4j_session.run(
-            "MATCH (i:Insight) WHERE i.title CONTAINS 'Ethical Hacking' "
-            "DETACH DELETE i"
+            "MATCH (i:Insight) WHERE i.title CONTAINS 'Ethical Hacking' DETACH DELETE i"
         )
 
-    def test_no_insights_on_empty_graph(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_no_insights_on_empty_graph(self, engine: EngramaEngine, neo4j_session) -> None:
         """No insights generated when no matching patterns exist."""
         # With only test-flagged cleanup nodes, queries should return nothing
         # relevant (there may be pre-existing data, but unique test names

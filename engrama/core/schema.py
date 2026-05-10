@@ -13,8 +13,6 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
-
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -108,16 +106,16 @@ class Project:
     """A project, product, or major initiative."""
 
     name: str
-    status: Optional[str] = None
-    repo: Optional[str] = None
+    status: str | None = None
+    repo: str | None = None
     stack: list[str] = field(default_factory=list)
-    description: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    description: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -125,14 +123,14 @@ class Concept:
     """A concept, idea, or knowledge area. The bridge between domains."""
 
     name: str
-    domain: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    domain: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -140,16 +138,16 @@ class Decision:
     """A decision with rationale and alternatives considered."""
 
     title: str
-    rationale: Optional[str] = None
-    date: Optional[datetime.date] = None
-    status: Optional[str] = None
-    alternatives: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    rationale: str | None = None
+    date: datetime.date | None = None
+    status: str | None = None
+    alternatives: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -157,16 +155,16 @@ class Problem:
     """A problem, challenge, or blocker encountered."""
 
     title: str
-    solution: Optional[str] = None
-    status: Optional[str] = None
-    context: Optional[str] = None
-    severity: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    solution: str | None = None
+    status: str | None = None
+    context: str | None = None
+    severity: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -174,15 +172,15 @@ class Technology:
     """A language, framework, tool, or infrastructure component."""
 
     name: str
-    version: Optional[str] = None
-    type: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    version: str | None = None
+    type: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -190,16 +188,16 @@ class Person:
     """A person — colleague, client, collaborator, or contact."""
 
     name: str
-    role: Optional[str] = None
-    organisation: Optional[str] = None
-    contact: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    role: str | None = None
+    organisation: str | None = None
+    contact: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -207,13 +205,13 @@ class Domain:
     """A field of knowledge — web-development, cybersecurity, cooking, photography."""
 
     name: str
-    description: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    description: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -221,15 +219,15 @@ class Client:
     """An organisation that commissions work or training."""
 
     name: str
-    sector: Optional[str] = None
-    contact: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    sector: str | None = None
+    contact: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -237,17 +235,17 @@ class Target:
     """A machine, network, or service being assessed."""
 
     name: str
-    ip: Optional[str] = None
-    os: Optional[str] = None
-    status: Optional[str] = None
-    scope: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    ip: str | None = None
+    os: str | None = None
+    status: str | None = None
+    scope: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -255,16 +253,16 @@ class Vulnerability:
     """A vulnerability or misconfiguration found during assessment."""
 
     title: str
-    cve: Optional[str] = None
-    severity: Optional[str] = None
-    status: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    cve: str | None = None
+    severity: str | None = None
+    status: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -272,15 +270,15 @@ class Technique:
     """An attack technique — maps to MITRE ATT&CK where applicable."""
 
     name: str
-    mitre_id: Optional[str] = None
-    tactic: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    mitre_id: str | None = None
+    tactic: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -288,15 +286,15 @@ class Tool:
     """A security tool — scanner, exploit framework, utility."""
 
     name: str
-    version: Optional[str] = None
-    type: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    version: str | None = None
+    type: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -304,16 +302,16 @@ class CTF:
     """A CTF challenge or HackTheBox machine."""
 
     name: str
-    platform: Optional[str] = None
-    difficulty: Optional[str] = None
-    status: Optional[str] = None
-    writeup_path: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    platform: str | None = None
+    difficulty: str | None = None
+    status: str | None = None
+    writeup_path: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -321,17 +319,17 @@ class Course:
     """A training course or workshop delivered."""
 
     name: str
-    cohort: Optional[str] = None
-    date: Optional[datetime.date] = None
-    level: Optional[str] = None
-    status: Optional[str] = None
-    description: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    cohort: str | None = None
+    date: datetime.date | None = None
+    level: str | None = None
+    status: str | None = None
+    description: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -339,16 +337,16 @@ class Exercise:
     """A hands-on lab, exercise, or practical challenge."""
 
     title: str
-    difficulty: Optional[str] = None
-    duration: Optional[str] = None
-    status: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    difficulty: str | None = None
+    duration: str | None = None
+    status: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -356,16 +354,16 @@ class Material:
     """A teaching artifact: cheatsheet, slides, exercise sheet, or reference card."""
 
     name: str
-    type: Optional[str] = None
-    format: Optional[str] = None
-    status: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    type: str | None = None
+    format: str | None = None
+    status: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -373,19 +371,19 @@ class Photo:
     """A photograph or photo session."""
 
     title: str
-    date: Optional[datetime.date] = None
-    location: Optional[str] = None
-    species: Optional[str] = None
-    camera: Optional[str] = None
-    lens: Optional[str] = None
-    status: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    date: datetime.date | None = None
+    location: str | None = None
+    species: str | None = None
+    camera: str | None = None
+    lens: str | None = None
+    status: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -393,16 +391,16 @@ class Location:
     """A geographic location — birding spot, nature reserve, trail."""
 
     name: str
-    region: Optional[str] = None
-    coordinates: Optional[str] = None
-    habitat: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    region: str | None = None
+    coordinates: str | None = None
+    habitat: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -410,15 +408,15 @@ class Species:
     """A species of bird, mammal, insect, or plant."""
 
     name: str
-    family: Optional[str] = None
-    conservation_status: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    family: str | None = None
+    conservation_status: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -426,15 +424,15 @@ class Gear:
     """Camera body, lens, tripod, or other photography equipment."""
 
     name: str
-    type: Optional[str] = None
-    brand: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    type: str | None = None
+    brand: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -442,16 +440,16 @@ class Model:
     """An AI/ML model — LLM, classifier, embedding model, etc."""
 
     name: str
-    type: Optional[str] = None
-    provider: Optional[str] = None
-    version: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    type: str | None = None
+    provider: str | None = None
+    version: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -459,15 +457,15 @@ class Dataset:
     """A dataset used for training, evaluation, or analysis."""
 
     name: str
-    source: Optional[str] = None
-    size: Optional[str] = None
-    format: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    source: str | None = None
+    size: str | None = None
+    format: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -475,17 +473,17 @@ class Experiment:
     """An ML experiment or evaluation run."""
 
     title: str
-    status: Optional[str] = None
-    metric: Optional[str] = None
-    result: Optional[str] = None
-    date: Optional[datetime.date] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    status: str | None = None
+    metric: str | None = None
+    result: str | None = None
+    date: datetime.date | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -493,15 +491,15 @@ class Pipeline:
     """A data or ML pipeline — preprocessing, training, inference."""
 
     name: str
-    status: Optional[str] = None
-    steps: Optional[str] = None
-    notes: Optional[str] = None
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    status: str | None = None
+    steps: str | None = None
+    notes: str | None = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 @dataclass
@@ -513,12 +511,12 @@ class Insight:
     confidence: float = 0.8
     status: str = "pending"
     source_query: str = ""
-    summary: Optional[str] = None
-    details: Optional[str] = None
+    summary: str | None = None
+    details: str | None = None
     tags: list[str] = field(default_factory=list)
-    source: Optional[str] = None
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    source: str | None = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -555,5 +553,7 @@ NODE_DATACLASS_MAP: dict[NodeType, type] = {
 """Maps each ``NodeType`` enum member to its corresponding dataclass."""
 
 
-TITLE_KEYED_LABELS: frozenset[str] = frozenset({'Experiment', 'Vulnerability', 'Decision', 'Problem', 'Exercise', 'Photo'})
+TITLE_KEYED_LABELS: frozenset[str] = frozenset(
+    {"Experiment", "Vulnerability", "Decision", "Problem", "Exercise", "Photo"}
+)
 """Node labels that use ``title`` instead of ``name`` as merge key."""

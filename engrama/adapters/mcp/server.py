@@ -39,8 +39,8 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
-from engrama.core.schema import NodeType, RelationType, TITLE_KEYED_LABELS
-from engrama.adapters.obsidian import ObsidianAdapter, NoteParser
+from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
+from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -94,9 +94,7 @@ class RememberInput(BaseModel):
 
     label: str = Field(
         ...,
-        description=(
-            f"Node label — one of: {', '.join(sorted(_VALID_LABELS))}."
-        ),
+        description=(f"Node label — one of: {', '.join(sorted(_VALID_LABELS))}."),
     )
     properties: dict[str, Any] = Field(
         ...,
@@ -104,31 +102,32 @@ class RememberInput(BaseModel):
             "Node properties. Must include 'name' (or 'title' for Decision/Problem). "
             "For rich retrieval, include enrichment fields:\n"
             "  - 'summary': 2–3 sentence overview — what this is, why it matters\n"
-            "  - 'details': comprehensive context — techniques, decisions, approaches, "
-            "alternatives, key examples. The richer this field, the more useful the memory becomes.\n"
+            "  - 'details': comprehensive context — techniques, decisions, "
+            "approaches, alternatives, key examples. The richer this field, "
+            "the more useful the memory becomes.\n"
             "  - 'tags': freeform list for filtering, e.g. "
-            "[\"active-directory\", \"credential-access\", \"windows\"]\n"
+            '["active-directory", "credential-access", "windows"]\n'
             "  - 'source': how this knowledge was captured "
-            "(\"conversation\", \"ingest\", \"manual\", \"sync\")\n"
-            "  - 'status': current state (\"active\", \"resolved\", \"superseded\")\n"
+            '("conversation", "ingest", "manual", "sync")\n'
+            '  - \'status\': current state ("active", "resolved", "superseded")\n'
             "Example of a GOOD node:\n"
-            "{\"name\": \"kerberoasting-lab\", "
-            "\"summary\": \"Hands-on lab demonstrating Kerberoasting against AD service "
-            "accounts using Rubeus and Hashcat, with detection via Event 4769.\", "
-            "\"details\": \"Students request TGS tickets for SPNs with Rubeus kerberoast, "
+            '{"name": "kerberoasting-lab", '
+            '"summary": "Hands-on lab demonstrating Kerberoasting against AD service '
+            'accounts using Rubeus and Hashcat, with detection via Event 4769.", '
+            '"details": "Students request TGS tickets for SPNs with Rubeus kerberoast, '
             "crack offline with Hashcat. Covers RC4 vs AES crackability, detection via "
-            "Event 4769 anomalies. Defense: gMSA, AES-only policy, honey tokens.\", "
-            "\"tags\": [\"active-directory\", \"credential-access\", \"lab\"], "
-            "\"source\": \"conversation\"}\n"
+            'Event 4769 anomalies. Defense: gMSA, AES-only policy, honey tokens.", '
+            '"tags": ["active-directory", "credential-access", "lab"], '
+            '"source": "conversation"}\n'
             "Example of a BAD (too thin) node: "
-            "{\"name\": \"kerberoasting-lab\", \"description\": \"Lab about kerberoasting\"}"
+            '{"name": "kerberoasting-lab", "description": "Lab about kerberoasting"}'
         ),
     )
     relations: dict[str, list[str]] = Field(
         default_factory=dict,
         description=(
             "Optional relations to create in the same call. "
-            "Format: {\"REL_TYPE\": [\"target_name\", ...]}. "
+            'Format: {"REL_TYPE": ["target_name", ...]}. '
             'Example: {"TEACHES": ["Java"], "IN_DOMAIN": ["teaching"], "FOR": ["Accenture"]}. '
             "Target nodes are found by name; if missing, stub nodes are created."
         ),
@@ -194,7 +193,7 @@ class SyncVaultInput(BaseModel):
     folder: str = Field(
         default="",
         description="Optional folder to restrict the scan (vault-relative). "
-                    "Empty string scans the entire vault.",
+        "Empty string scans the entire vault.",
     )
 
 
@@ -228,6 +227,7 @@ class IngestInput(BaseModel):
 
 class SurfaceInput(BaseModel):
     """Input for engrama_surface_insights."""
+
     model_config = ConfigDict(extra="forbid")
     limit: int = Field(
         default=10,
@@ -237,6 +237,7 @@ class SurfaceInput(BaseModel):
 
 class ApproveInput(BaseModel):
     """Input for engrama_approve_insight."""
+
     model_config = ConfigDict(extra="forbid")
     title: str = Field(description="Exact title of the Insight.")
     action: str = Field(
@@ -247,6 +248,7 @@ class ApproveInput(BaseModel):
 
 class WriteInsightInput(BaseModel):
     """Input for engrama_write_insight_to_vault."""
+
     model_config = ConfigDict(extra="forbid")
     title: str = Field(description="Exact title of the approved Insight.")
     target_note: str = Field(
@@ -300,6 +302,7 @@ def create_engrama_mcp(
 
         # Create the backend-agnostic async store via the factory.
         from engrama.backends import create_async_stores, create_embedding_provider
+
         async_store = None
         embedder = None
         try:
@@ -307,7 +310,9 @@ def create_engrama_mcp(
             embedder = create_embedding_provider()
             logger.info(
                 "Async store: %r, embedder: %r (dims=%d)",
-                async_store, embedder, getattr(embedder, "dimensions", 0),
+                async_store,
+                embedder,
+                getattr(embedder, "dimensions", 0),
             )
         except Exception as e:
             logger.warning("Store factory failed (non-fatal): %s", e)
@@ -394,6 +399,7 @@ def create_engrama_mcp(
         if use_hybrid:
             try:
                 from engrama.core.search import HybridSearchEngine
+
                 # Use the async store as both graph and vector backend
                 hybrid = HybridSearchEngine(store, store, _embedder)
                 hybrid_results = await hybrid.asearch(params.query, limit=params.limit)
@@ -418,9 +424,7 @@ def create_engrama_mcp(
                     return f"No results found for '{params.query}'."
 
                 # --- Proactivity: check for pending Insights ---
-                response = await _build_search_response(
-                    results, params.query, store
-                )
+                response = await _build_search_response(results, params.query, store)
                 return json.dumps(response, default=str, indent=2)
             except Exception as e:
                 logger.warning("Hybrid search failed, falling back to fulltext: %s", e)
@@ -430,15 +434,13 @@ def create_engrama_mcp(
         if not results:
             return f"No results found for '{params.query}'."
 
-        response = await _build_search_response(
-            results, params.query, store
-        )
+        response = await _build_search_response(results, params.query, store)
         return json.dumps(response, default=str, indent=2)
 
     async def _build_search_response(
         results: list[dict[str, Any]],
         query: str,
-        store: Neo4jAsyncStore,
+        store: Any,
     ) -> dict[str, Any]:
         """Build the search response with optional proactivity hints."""
         # --- Proactivity: check for pending Insights related to search ---
@@ -520,7 +522,8 @@ def create_engrama_mcp(
             inline_relations = {}
 
         if label not in _VALID_LABELS:
-            return f"Error: Invalid label '{label}'. Must be one of: {', '.join(sorted(_VALID_LABELS))}."
+            valid = ", ".join(sorted(_VALID_LABELS))
+            return f"Error: Invalid label '{label}'. Must be one of: {valid}."
 
         # Determine merge key
         if "name" in props:
@@ -562,9 +565,12 @@ def create_engrama_mcp(
 
             try:
                 import yaml as _yaml
+
                 fm_yaml = _yaml.dump(
-                    fm, default_flow_style=False,
-                    allow_unicode=True, sort_keys=False,
+                    fm,
+                    default_flow_style=False,
+                    allow_unicode=True,
+                    sort_keys=False,
                 )
                 target = obsidian._resolve(vault_path)
 
@@ -573,16 +579,13 @@ def create_engrama_mcp(
                     content = note_data["content"]
                     if content.startswith("---"):
                         end_idx = content.index("---", 3)
-                        body = content[end_idx + 3:]
+                        body = content[end_idx + 3 :]
                     else:
                         body = "\n\n" + content
                     new_content = "---\n" + fm_yaml + "---" + body
                 else:
                     # Create new note
-                    new_content = (
-                        "---\n" + fm_yaml + "---\n\n"
-                        f"# {merge_value}\n"
-                    )
+                    new_content = "---\n" + fm_yaml + f"---\n\n# {merge_value}\n"
                     desc = props.get("notes") or props.get("description")
                     if desc:
                         new_content += f"\n> {desc}\n"
@@ -606,10 +609,7 @@ def create_engrama_mcp(
 
         # --- DDR-003 Phase C: Embed on write (async) ---
         _embedder = state.get("embedder")
-        if (
-            _embedder is not None
-            and getattr(_embedder, "dimensions", 0) > 0
-        ):
+        if _embedder is not None and getattr(_embedder, "dimensions", 0) > 0:
             try:
                 from engrama.embeddings.text import node_to_text
 
@@ -622,7 +622,10 @@ def create_engrama_mcp(
                 if embedding:
                     # Store via async store (preferred) or sync vector store
                     await store.store_embedding(
-                        label, merge_key, merge_value, embedding,
+                        label,
+                        merge_key,
+                        merge_value,
+                        embedding,
                     )
             except Exception as e:
                 logger.warning("Embed-on-write failed for %s/%s: %s", label, merge_value, e)
@@ -632,7 +635,7 @@ def create_engrama_mcp(
         for src in (params.relations, inline_relations):
             for rtype, targets in (src or {}).items():
                 merged = all_relations.setdefault(rtype, [])
-                for t in (targets if isinstance(targets, list) else [targets]):
+                for t in targets if isinstance(targets, list) else [targets]:
                     if t not in merged:
                         merged.append(t)
 
@@ -654,9 +657,14 @@ def create_engrama_mcp(
                         # Infer label from relation type and create stub
                         target_label = ObsidianSync._infer_stub_label(rel_type_upper)
                         try:
-                            await store.merge_node(target_label, "name", target_name, {
-                                "status": "stub",
-                            })
+                            await store.merge_node(
+                                target_label,
+                                "name",
+                                target_name,
+                                {
+                                    "status": "stub",
+                                },
+                            )
                         except Exception as e:
                             logger.warning("Could not create stub %s: %s", target_name, e)
                             continue
@@ -664,15 +672,22 @@ def create_engrama_mcp(
                     # Create the relationship
                     try:
                         await store.merge_relation(
-                            label, merge_key, merge_value,
+                            label,
+                            merge_key,
+                            merge_value,
                             rel_type_upper,
-                            target_label, "name", target_name
+                            target_label,
+                            "name",
+                            target_name,
                         )
                         relations_created += 1
                     except Exception as e:
                         logger.warning(
                             "Could not create relation %s -[%s]-> %s: %s",
-                            merge_value, rel_type_upper, target_name, e,
+                            merge_value,
+                            rel_type_upper,
+                            target_name,
+                            e,
                         )
 
                     # Write relation to vault frontmatter (DDR-002)
@@ -697,7 +712,9 @@ def create_engrama_mcp(
 
         if _proactive_state.get("enabled", True):
             _proactive_state["remember_count"] = _proactive_state.get("remember_count", 0) + 1
-            since_last = _proactive_state["remember_count"] - _proactive_state.get("last_reflect_at", 0)
+            since_last = _proactive_state["remember_count"] - _proactive_state.get(
+                "last_reflect_at", 0
+            )
             if since_last >= 10:
                 result_data["proactive_hint"] = (
                     f"You've stored {since_last} entities since the last reflect. "
@@ -733,7 +750,8 @@ def create_engrama_mcp(
         if params.to_label not in _VALID_LABELS:
             return f"Error: Invalid to_label '{params.to_label}'."
         if params.rel_type not in _VALID_RELATIONS:
-            return f"Error: Invalid rel_type '{params.rel_type}'. Must be one of: {', '.join(sorted(_VALID_RELATIONS))}."
+            valid = ", ".join(sorted(_VALID_RELATIONS))
+            return f"Error: Invalid rel_type '{params.rel_type}'. Must be one of: {valid}."
 
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
@@ -744,9 +762,13 @@ def create_engrama_mcp(
 
         # Use the async store to create the relationship
         r = await store.merge_relation(
-            params.from_label, from_key, params.from_name,
+            params.from_label,
+            from_key,
+            params.from_name,
             params.rel_type,
-            params.to_label, to_key, params.to_name
+            params.to_label,
+            to_key,
+            params.to_name,
         )
         if not r:
             return (
@@ -762,6 +784,7 @@ def create_engrama_mcp(
 
         if obsidian is not None:
             import re as _re
+
             # If the source node has no vault note yet, create one now
             if not from_path:
                 slug = _re.sub(r"[^\w\s-]", "", params.from_name.lower())
@@ -772,6 +795,7 @@ def create_engrama_mcp(
                     # Create a minimal vault note for this node
                     try:
                         import yaml as _yaml
+
                         _eid = str(uuid.uuid4())
                         fm = {
                             "engrama_id": _eid,
@@ -780,38 +804,49 @@ def create_engrama_mcp(
                             "relations": {},
                         }
                         fm_yaml = _yaml.dump(
-                            fm, default_flow_style=False,
-                            allow_unicode=True, sort_keys=False,
+                            fm,
+                            default_flow_style=False,
+                            allow_unicode=True,
+                            sort_keys=False,
                         )
                         target_file = obsidian._resolve(from_path)
                         target_file.write_text(
-                            "---\n" + fm_yaml + "---\n\n"
-                            f"# {params.from_name}\n",
+                            "---\n" + fm_yaml + f"---\n\n# {params.from_name}\n",
                             encoding="utf-8",
                         )
                         # Update the graph node with obsidian metadata
                         await store.merge_node(
-                            params.from_label, from_key, params.from_name,
-                            {"obsidian_path": from_path, "obsidian_id": _eid}
+                            params.from_label,
+                            from_key,
+                            params.from_name,
+                            {"obsidian_path": from_path, "obsidian_id": _eid},
                         )
                     except Exception as e:
-                        logger.warning("Could not create vault note for %s: %s", params.from_name, e)
+                        logger.warning(
+                            "Could not create vault note for %s: %s", params.from_name, e
+                        )
                         from_path = None
 
             if from_path:
                 try:
                     vault_written = obsidian.add_relation(
-                        from_path, params.rel_type, params.to_name,
+                        from_path,
+                        params.rel_type,
+                        params.to_name,
                     )
                 except Exception as e:
                     logger.warning(
                         "DDR-002 vault write failed for %s -[%s]-> %s: %s",
-                        params.from_name, params.rel_type, params.to_name, e,
+                        params.from_name,
+                        params.rel_type,
+                        params.to_name,
+                        e,
                     )
 
         return json.dumps(
             {"status": "ok", **r, "vault_written": vault_written},
-            default=str, indent=2,
+            default=str,
+            indent=2,
         )
 
     # -- Tool: engrama_context ---
@@ -881,18 +916,24 @@ def create_engrama_mcp(
         parser: NoteParser | None = state.get("parser")
 
         if obsidian is None or parser is None:
-            return json.dumps({
-                "status": "error",
-                "message": "Obsidian adapter not initialised — vault sync disabled."
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Obsidian adapter not initialised — vault sync disabled.",
+                },
+                indent=2,
+            )
 
         note_data = obsidian.read_note(params.path)
         if not note_data["success"]:
-            return json.dumps({
-                "status": "error",
-                "message": f"Could not read note: {params.path}",
-                "details": note_data.get("error", "Unknown error"),
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not read note: {params.path}",
+                    "details": note_data.get("error", "Unknown error"),
+                },
+                indent=2,
+            )
 
         frontmatter = note_data["frontmatter"]
         engrama_id = frontmatter.get("engrama_id")
@@ -943,7 +984,10 @@ def create_engrama_mcp(
                     embedding = _embedder.embed(text)
                 if embedding:
                     await store.store_embedding(
-                        node_label, merge_key, merge_value, embedding,
+                        node_label,
+                        merge_key,
+                        merge_value,
+                        embedding,
                     )
             except Exception as e:
                 logger.warning("Embed-on-sync failed for %s/%s: %s", node_label, merge_value, e)
@@ -952,16 +996,19 @@ def create_engrama_mcp(
         if not frontmatter.get("engrama_id"):
             try:
                 import yaml as _yaml
+
                 fm = dict(frontmatter)
                 fm["engrama_id"] = engrama_id
                 fm_yaml = _yaml.dump(
-                    fm, default_flow_style=False,
-                    allow_unicode=True, sort_keys=False,
+                    fm,
+                    default_flow_style=False,
+                    allow_unicode=True,
+                    sort_keys=False,
                 )
                 content = note_data["content"]
                 if content.startswith("---"):
                     end_idx = content.index("---", 3)
-                    body = content[end_idx + 3:]
+                    body = content[end_idx + 3 :]
                 else:
                     body = "\n\n" + content
                 new_content = "---\n" + fm_yaml + "---" + body
@@ -970,14 +1017,18 @@ def create_engrama_mcp(
             except Exception as e:
                 logger.warning("Could not update note frontmatter: %s", e)
 
-        return json.dumps({
-            "status": "ok",
-            "label": node_label,
-            "name": merge_value,
-            "engrama_id": engrama_id,
-            "created": created,
-            "node": node,
-        }, default=str, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "label": node_label,
+                "name": merge_value,
+                "engrama_id": engrama_id,
+                "created": created,
+                "node": node,
+            },
+            default=str,
+            indent=2,
+        )
 
     # -- Tool: engrama_sync_vault ---
 
@@ -1005,10 +1056,13 @@ def create_engrama_mcp(
         parser: NoteParser | None = state.get("parser")
 
         if obsidian is None or parser is None:
-            return json.dumps({
-                "status": "error",
-                "message": "Obsidian adapter not initialised — vault sync disabled."
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Obsidian adapter not initialised — vault sync disabled.",
+                },
+                indent=2,
+            )
 
         store = _store(ctx)
         created_count = 0
@@ -1053,7 +1107,11 @@ def create_engrama_mcp(
                     props["obsidian_path"] = note_path
                     props["obsidian_id"] = engrama_id
 
-                    extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
+                    extra = {
+                        k: v
+                        for k, v in props.items()
+                        if k not in {merge_key, "created_at", "updated_at"}
+                    }
                     result = await store.merge_node(node_label, merge_key, merge_value, extra)
                     if result["created"]:
                         created_count += 1
@@ -1064,16 +1122,19 @@ def create_engrama_mcp(
                     if not frontmatter.get("engrama_id"):
                         try:
                             import yaml as _yaml
+
                             fm = dict(frontmatter)
                             fm["engrama_id"] = engrama_id
                             fm_yaml = _yaml.dump(
-                                fm, default_flow_style=False,
-                                allow_unicode=True, sort_keys=False,
+                                fm,
+                                default_flow_style=False,
+                                allow_unicode=True,
+                                sort_keys=False,
                             )
                             content = note_data["content"]
                             if content.startswith("---"):
                                 end_idx = content.index("---", 3)
-                                body = content[end_idx + 3:]
+                                body = content[end_idx + 3 :]
                             else:
                                 body = "\n\n" + content
                             new_content = "---\n" + fm_yaml + "---" + body
@@ -1088,18 +1149,25 @@ def create_engrama_mcp(
                     skipped_count += 1
 
         except Exception as e:
-            return json.dumps({
-                "status": "error",
-                "message": f"Could not scan vault: {str(e)}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not scan vault: {str(e)}",
+                },
+                indent=2,
+            )
 
-        return json.dumps({
-            "status": "ok",
-            "created": created_count,
-            "updated": updated_count,
-            "skipped": skipped_count,
-            "errors": errors,
-        }, default=str, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "created": created_count,
+                "updated": updated_count,
+                "skipped": skipped_count,
+                "errors": errors,
+            },
+            default=str,
+            indent=2,
+        )
 
     # -- Tool: engrama_ingest ---
 
@@ -1123,24 +1191,29 @@ def create_engrama_mcp(
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
-        parser: NoteParser | None = state.get("parser")
 
         source_path = None
         content = ""
 
         if params.source_type == "note":
             if obsidian is None:
-                return json.dumps({
-                    "status": "error",
-                    "message": "Obsidian adapter not initialised — cannot read notes.",
-                }, indent=2)
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": "Obsidian adapter not initialised — cannot read notes.",
+                    },
+                    indent=2,
+                )
             note_data = obsidian.read_note(params.source)
             if not note_data["success"]:
-                return json.dumps({
-                    "status": "error",
-                    "message": f"Could not read note: {params.source}",
-                    "details": note_data.get("error"),
-                }, indent=2)
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"Could not read note: {params.source}",
+                        "details": note_data.get("error"),
+                    },
+                    indent=2,
+                )
             source_path = params.source
             content = note_data["content"]
         elif params.source_type == "text":
@@ -1148,10 +1221,13 @@ def create_engrama_mcp(
         elif params.source_type == "conversation":
             content = params.source
         else:
-            return json.dumps({
-                "status": "error",
-                "message": f"Unknown source_type: {params.source_type}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Unknown source_type: {params.source_type}",
+                },
+                indent=2,
+            )
 
         # Generate extraction guidance
         extraction_prompt = (
@@ -1182,14 +1258,18 @@ def create_engrama_mcp(
             f"Context hint: {params.context_hint if params.context_hint else '(none provided)'}\n"
         )
 
-        return json.dumps({
-            "status": "ok",
-            "source_type": params.source_type,
-            "source_path": source_path,
-            "content_length": len(content),
-            "content": content,
-            "extraction_prompt": extraction_prompt,
-        }, default=str, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "source_type": params.source_type,
+                "source_path": source_path,
+                "content_length": len(content),
+                "content": content,
+                "extraction_prompt": extraction_prompt,
+            },
+            default=str,
+            indent=2,
+        )
 
     # -- Tool: engrama_reflect ---
 
@@ -1255,13 +1335,13 @@ def create_engrama_mcp(
             builder_fn=None,
         ):
             # Check if ALL required labels have data
-            for label in (required_labels or []):
+            for label in required_labels or []:
                 if not profile.get(label):
                     queries_skipped.append(query_name)
                     return
             # Check any_labels: each entry is an OR-group — at least one must exist
-            for group in (any_labels or []):
-                if not any(profile.get(l) for l in group):
+            for group in any_labels or []:
+                if not any(profile.get(lbl) for lbl in group):
                     queries_skipped.append(query_name)
                     return
             if min_label_count:
@@ -1291,27 +1371,32 @@ def create_engrama_mcp(
                 if title in judged:
                     continue
                 body = (
-                    f"The open problem \"{r['open_problem']}\" in project "
-                    f"\"{r['target_project']}\" shares the concept "
-                    f"\"{r['concept']}\" with a resolved problem in project "
-                    f"\"{r['source_project']}\". The decision "
-                    f"\"{r['decision']}\" may apply here."
+                    f'The open problem "{r["open_problem"]}" in project '
+                    f'"{r["target_project"]}" shares the concept '
+                    f'"{r["concept"]}" with a resolved problem in project '
+                    f'"{r["source_project"]}". The decision '
+                    f'"{r["decision"]}" may apply here.'
                 )
-                await store.merge_node("Insight", "title", title, {
-                    "body": body, "confidence": 0.85,
-                    "status": "pending", "source_query": "cross_project_solution",
-                })
-                insights.append({"query": "cross_project_solution",
-                                 "title": title, "confidence": 0.85})
+                await store.merge_node(
+                    "Insight",
+                    "title",
+                    title,
+                    {
+                        "body": body,
+                        "confidence": 0.85,
+                        "status": "pending",
+                        "source_query": "cross_project_solution",
+                    },
+                )
+                insights.append(
+                    {"query": "cross_project_solution", "title": title, "confidence": 0.85}
+                )
 
         async def _build_shared_tech(records):
             for r in records:
                 a_desc = f"{r['type_a']}:{r['entity_a']}"
                 b_desc = f"{r['type_b']}:{r['entity_b']}"
-                title = (
-                    f"Shared technology: {r['technology']} "
-                    f"({a_desc} & {b_desc})"
-                )
+                title = f"Shared technology: {r['technology']} ({a_desc} & {b_desc})"
                 if title in judged:
                     continue
                 confidence = 0.75 if r["type_a"] != r["type_b"] else 0.6
@@ -1319,12 +1404,20 @@ def create_engrama_mcp(
                     f"{a_desc} and {b_desc} both use {r['technology']}. "
                     f"Consider sharing knowledge or materials between them."
                 )
-                await store.merge_node("Insight", "title", title, {
-                    "body": body, "confidence": confidence,
-                    "status": "pending", "source_query": "shared_technology",
-                })
-                insights.append({"query": "shared_technology",
-                                 "title": title, "confidence": confidence})
+                await store.merge_node(
+                    "Insight",
+                    "title",
+                    title,
+                    {
+                        "body": body,
+                        "confidence": confidence,
+                        "status": "pending",
+                        "source_query": "shared_technology",
+                    },
+                )
+                insights.append(
+                    {"query": "shared_technology", "title": title, "confidence": confidence}
+                )
 
         async def _build_training(records):
             for r in records:
@@ -1336,16 +1429,24 @@ def create_engrama_mcp(
                 if title in judged:
                     continue
                 body = (
-                    f"The {r['issue_type'].lower()} \"{r['issue']}\" involves "
-                    f"the concept \"{r['concept']}\", which is covered by the "
-                    f"course \"{r['course']}\". Reviewing this material may help."
+                    f'The {r["issue_type"].lower()} "{r["issue"]}" involves '
+                    f'the concept "{r["concept"]}", which is covered by the '
+                    f'course "{r["course"]}". Reviewing this material may help.'
                 )
-                await store.merge_node("Insight", "title", title, {
-                    "body": body, "confidence": 0.65,
-                    "status": "pending", "source_query": "training_opportunity",
-                })
-                insights.append({"query": "training_opportunity",
-                                 "title": title, "confidence": 0.65})
+                await store.merge_node(
+                    "Insight",
+                    "title",
+                    title,
+                    {
+                        "body": body,
+                        "confidence": 0.65,
+                        "status": "pending",
+                        "source_query": "training_opportunity",
+                    },
+                )
+                insights.append(
+                    {"query": "training_opportunity", "title": title, "confidence": 0.65}
+                )
 
         async def _build_technique_transfer(records):
             for r in records:
@@ -1358,18 +1459,26 @@ def create_engrama_mcp(
                 related = r["related_entities"]
                 confidence = min(0.5 + (related * 0.1), 0.9)
                 body = (
-                    f"The technique \"{r['technique']}\" is used in "
-                    f"\"{r['source_domain']}\" but not in "
-                    f"\"{r['target_domain']}\". There are {related} "
+                    f'The technique "{r["technique"]}" is used in '
+                    f'"{r["source_domain"]}" but not in '
+                    f'"{r["target_domain"]}". There are {related} '
                     f"entities in {r['target_domain']} sharing concepts "
                     f"with this technique."
                 )
-                await store.merge_node("Insight", "title", title, {
-                    "body": body, "confidence": confidence,
-                    "status": "pending", "source_query": "technique_transfer",
-                })
-                insights.append({"query": "technique_transfer",
-                                 "title": title, "confidence": confidence})
+                await store.merge_node(
+                    "Insight",
+                    "title",
+                    title,
+                    {
+                        "body": body,
+                        "confidence": confidence,
+                        "status": "pending",
+                        "source_query": "technique_transfer",
+                    },
+                )
+                insights.append(
+                    {"query": "technique_transfer", "title": title, "confidence": confidence}
+                )
 
         async def _build_concept_clustering(records):
             for r in records:
@@ -1379,44 +1488,53 @@ def create_engrama_mcp(
                 title = f"Concept cluster: {concept} ({count} entities)"
                 if title in judged:
                     continue
-                sample_desc = ", ".join(
-                    f"{s['label']}:{s['name']}" for s in (sample or [])[:5]
-                )
+                sample_desc = ", ".join(f"{s['label']}:{s['name']}" for s in (sample or [])[:5])
                 confidence = min(0.5 + (count * 0.05), 0.9)
                 body = (
-                    f"The concept \"{concept}\" connects {count} entities: "
+                    f'The concept "{concept}" connects {count} entities: '
                     f"{sample_desc}. This cluster may reveal a pattern."
                 )
-                await store.merge_node("Insight", "title", title, {
-                    "body": body, "confidence": confidence,
-                    "status": "pending", "source_query": "concept_clustering",
-                })
-                insights.append({"query": "concept_clustering",
-                                 "title": title, "confidence": confidence})
+                await store.merge_node(
+                    "Insight",
+                    "title",
+                    title,
+                    {
+                        "body": body,
+                        "confidence": confidence,
+                        "status": "pending",
+                        "source_query": "concept_clustering",
+                    },
+                )
+                insights.append(
+                    {"query": "concept_clustering", "title": title, "confidence": confidence}
+                )
 
         async def _build_stale(records):
             for r in records:
                 name = r["name"]
-                title = (
-                    f"Stale knowledge: {r['label']}:{name} "
-                    f"(linked to {r['project']})"
-                )
+                title = f"Stale knowledge: {r['label']}:{name} (linked to {r['project']})"
                 if title in judged:
                     continue
                 last_updated = r["last_updated"]
                 if hasattr(last_updated, "isoformat"):
                     last_updated = last_updated.isoformat()[:10]
                 body = (
-                    f"The {r['label']} \"{name}\" is connected to the active "
-                    f"project \"{r['project']}\" via {r['rel']}, but hasn't been "
+                    f'The {r["label"]} "{name}" is connected to the active '
+                    f'project "{r["project"]}" via {r["rel"]}, but hasn\'t been '
                     f"updated since {last_updated}. Consider reviewing or archiving."
                 )
-                await store.merge_node("Insight", "title", title, {
-                    "body": body, "confidence": 0.5,
-                    "status": "pending", "source_query": "stale_knowledge",
-                })
-                insights.append({"query": "stale_knowledge",
-                                 "title": title, "confidence": 0.5})
+                await store.merge_node(
+                    "Insight",
+                    "title",
+                    title,
+                    {
+                        "body": body,
+                        "confidence": 0.5,
+                        "status": "pending",
+                        "source_query": "stale_knowledge",
+                    },
+                )
+                insights.append({"query": "stale_knowledge", "title": title, "confidence": 0.5})
 
         async def _build_under_connected(records):
             if not records:
@@ -1430,7 +1548,8 @@ def create_engrama_mcp(
                 return
             try:
                 dismissed_sq = await store.find_insight_by_source_query(
-                    "under_connected", statuses=["dismissed"],
+                    "under_connected",
+                    statuses=["dismissed"],
                 )
                 if dismissed_sq:
                     return
@@ -1444,12 +1563,18 @@ def create_engrama_mcp(
                 f"Candidates for enrichment: {', '.join(names)}."
             )
             # MERGE on stable title — idempotent, updates body on repeat runs
-            await store.merge_node("Insight", "title", title, {
-                "body": body, "confidence": 0.4,
-                "status": "pending", "source_query": "under_connected",
-            })
-            insights.append({"query": "under_connected",
-                             "title": title, "confidence": 0.4})
+            await store.merge_node(
+                "Insight",
+                "title",
+                title,
+                {
+                    "body": body,
+                    "confidence": 0.4,
+                    "status": "pending",
+                    "source_query": "under_connected",
+                },
+            )
+            insights.append({"query": "under_connected", "title": title, "confidence": 0.4})
 
         # --- Step 3: Run applicable patterns ---
         await _run_pattern(
@@ -1505,16 +1630,20 @@ def create_engrama_mcp(
         # --- Proactivity: reset counter ---
         _proactive_state["last_reflect_at"] = _proactive_state.get("remember_count", 0)
 
-        return json.dumps({
-            "status": "ok",
-            "graph_profile": profile,
-            "queries_run": queries_run,
-            "queries_skipped": queries_skipped,
-            "dismissed_count": len(dismissed),
-            "approved_count": len(approved),
-            "insights_count": len(insights),
-            "insights": insights,
-        }, default=str, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "graph_profile": profile,
+                "queries_run": queries_run,
+                "queries_skipped": queries_skipped,
+                "dismissed_count": len(dismissed),
+                "approved_count": len(approved),
+                "insights_count": len(insights),
+                "insights": insights,
+            },
+            default=str,
+            indent=2,
+        )
 
     # -- Tool: engrama_surface_insights ---
 
@@ -1552,18 +1681,25 @@ def create_engrama_mcp(
             insights = []
 
         if not insights:
-            return json.dumps({
-                "status": "ok",
-                "message": "No pending Insights.",
-                "count": 0,
-                "insights": [],
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "message": "No pending Insights.",
+                    "count": 0,
+                    "insights": [],
+                },
+                indent=2,
+            )
 
-        return json.dumps({
-            "status": "ok",
-            "count": len(insights),
-            "insights": insights,
-        }, default=str, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "count": len(insights),
+                "insights": insights,
+            },
+            default=str,
+            indent=2,
+        )
 
     # -- Tool: engrama_approve_insight ---
 
@@ -1587,33 +1723,43 @@ def create_engrama_mcp(
         store = _store(ctx)
 
         if params.action not in ("approve", "dismiss"):
-            return json.dumps({
-                "status": "error",
-                "error": f"Invalid action '{params.action}'. Use 'approve' or 'dismiss'.",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"Invalid action '{params.action}'. Use 'approve' or 'dismiss'.",
+                }
+            )
 
         new_status = "approved" if params.action == "approve" else "dismissed"
 
         try:
             updated = await store.update_insight_status(params.title, new_status)
             if not updated:
-                return json.dumps({
-                    "status": "error",
-                    "error": f"Insight not found: {params.title}",
-                })
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"Insight not found: {params.title}",
+                    }
+                )
         except Exception as e:
             logger.warning("Could not update Insight status: %s", e)
-            return json.dumps({
-                "status": "error",
-                "message": f"Could not update Insight: {str(e)}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not update Insight: {str(e)}",
+                },
+                indent=2,
+            )
 
-        return json.dumps({
-            "status": "ok",
-            "title": params.title,
-            "action": params.action,
-            "new_status": new_status,
-        }, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "title": params.title,
+                "action": params.action,
+                "new_status": new_status,
+            },
+            indent=2,
+        )
 
     # -- Tool: engrama_write_insight_to_vault ---
 
@@ -1628,7 +1774,8 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_write_insight_to_vault(
-        params: WriteInsightInput, ctx: Context,
+        params: WriteInsightInput,
+        ctx: Context,
     ) -> str:
         """Append an approved Insight as a section in an Obsidian note.
 
@@ -1640,10 +1787,13 @@ def create_engrama_mcp(
         obsidian: ObsidianAdapter | None = state.get("obsidian")
 
         if obsidian is None:
-            return json.dumps({
-                "status": "error",
-                "message": "Obsidian adapter not initialised.",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": "Obsidian adapter not initialised.",
+                },
+                indent=2,
+            )
 
         store = _store(ctx)
 
@@ -1651,30 +1801,42 @@ def create_engrama_mcp(
         try:
             insight = await store.get_insight_by_title(params.title)
             if not insight:
-                return json.dumps({
-                    "status": "error",
-                    "message": f"Insight not found: {params.title}",
-                }, indent=2)
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"Insight not found: {params.title}",
+                    },
+                    indent=2,
+                )
         except Exception as e:
             logger.warning("Could not fetch Insight: %s", e)
-            return json.dumps({
-                "status": "error",
-                "message": f"Could not fetch Insight: {str(e)}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not fetch Insight: {str(e)}",
+                },
+                indent=2,
+            )
 
         if insight.get("status") != "approved":
-            return json.dumps({
-                "status": "error",
-                "message": f"Insight is not approved: {params.title}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Insight is not approved: {params.title}",
+                },
+                indent=2,
+            )
 
         # Read the target note
         note_data = obsidian.read_note(params.target_note)
         if not note_data["success"]:
-            return json.dumps({
-                "status": "error",
-                "message": f"Could not read target note: {params.target_note}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not read target note: {params.target_note}",
+                },
+                indent=2,
+            )
 
         # Append the Insight
         content = note_data["content"]
@@ -1695,10 +1857,13 @@ def create_engrama_mcp(
             logger.info("Insight written to vault: %s", params.target_note)
         except Exception as e:
             logger.warning("Could not write insight to vault: %s", e)
-            return json.dumps({
-                "status": "error",
-                "message": f"Could not write to vault: {str(e)}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not write to vault: {str(e)}",
+                },
+                indent=2,
+            )
 
         # Mark as synced in Neo4j
         try:
@@ -1706,12 +1871,15 @@ def create_engrama_mcp(
         except Exception as e:
             logger.warning("Could not mark insight as synced: %s", e)
 
-        return json.dumps({
-            "status": "ok",
-            "title": params.title,
-            "target_note": params.target_note,
-            "written": True,
-        }, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "title": params.title,
+                "target_note": params.target_note,
+                "written": True,
+            },
+            indent=2,
+        )
 
     # -- Prompt: engrama_session_guide ---
 

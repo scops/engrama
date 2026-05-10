@@ -7,13 +7,11 @@ Integration tests hit real Neo4j + Ollama (skipped if unavailable).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
 from engrama.core.search import HybridConfig, HybridSearchEngine, SearchResult
-
 
 # ---------------------------------------------------------------------------
 # Mock stores for unit tests
@@ -103,7 +101,10 @@ class _SyncMockVectorStore:
         self._results = results or []
 
     def search_vectors(
-        self, query_embedding: list[float], limit: int = 10, scope: Any = None,
+        self,
+        query_embedding: list[float],
+        limit: int = 10,
+        scope: Any = None,
     ) -> list[dict[str, Any]]:
         return self._results[:limit]
 
@@ -117,7 +118,9 @@ class _AsyncMockVectorStore:
         self._results = results or []
 
     async def search_similar(
-        self, query_embedding: list[float], limit: int = 10,
+        self,
+        query_embedding: list[float],
+        limit: int = 10,
     ) -> list[dict[str, Any]]:
         return self._results[:limit]
 
@@ -182,8 +185,10 @@ class TestSearchResultScoring:
 
     def test_hybrid_blend(self):
         r = SearchResult(
-            label="Tech", name="Neo4j",
-            vector_score=0.9, fulltext_score=0.3,
+            label="Tech",
+            name="Neo4j",
+            vector_score=0.9,
+            fulltext_score=0.3,
         )
         alpha = 0.6
         r.final_score = alpha * r.vector_score + (1 - alpha) * r.fulltext_score
@@ -192,8 +197,10 @@ class TestSearchResultScoring:
     def test_graph_boost_capped(self):
         cfg = HybridConfig(alpha=0.0, graph_beta=0.5, boost_cap=0.3)
         r = SearchResult(
-            label="Tech", name="Neo4j",
-            fulltext_score=0.5, graph_boost=1.0,
+            label="Tech",
+            name="Neo4j",
+            fulltext_score=0.5,
+            graph_boost=1.0,
         )
         r.final_score = (
             cfg.alpha * r.vector_score
@@ -214,10 +221,12 @@ class TestHybridSearchSync:
 
     def test_fulltext_only_when_no_embeddings(self):
         """When embedder has dimensions=0, vector is skipped."""
-        graph = _SyncMockGraphStore([
-            {"type": "Project", "name": "Engrama", "score": 1.5},
-            {"type": "Technology", "name": "Neo4j", "score": 1.2},
-        ])
+        graph = _SyncMockGraphStore(
+            [
+                {"type": "Project", "name": "Engrama", "score": 1.5},
+                {"type": "Technology", "name": "Neo4j", "score": 1.2},
+            ]
+        )
         vector = _SyncNullVectorStore()
         embedder = _NullEmbedder()
 
@@ -232,17 +241,23 @@ class TestHybridSearchSync:
 
     def test_hybrid_combines_both_sources(self):
         """When both stores return results, scores are blended."""
-        graph = _SyncMockGraphStore([
-            {"type": "Project", "name": "Engrama", "score": 1.0},
-        ])
-        vector = _SyncMockVectorStore([
-            {"label": "Project", "name": "Engrama", "score": 0.9},
-            {"label": "Technology", "name": "Neo4j", "score": 0.7},
-        ])
+        graph = _SyncMockGraphStore(
+            [
+                {"type": "Project", "name": "Engrama", "score": 1.0},
+            ]
+        )
+        vector = _SyncMockVectorStore(
+            [
+                {"label": "Project", "name": "Engrama", "score": 0.9},
+                {"label": "Technology", "name": "Neo4j", "score": 0.7},
+            ]
+        )
         embedder = _MockEmbedder()
 
         engine = HybridSearchEngine(
-            graph, vector, embedder,
+            graph,
+            vector,
+            embedder,
             config=HybridConfig(alpha=0.6),
         )
         assert engine.vector_enabled is True
@@ -266,10 +281,9 @@ class TestHybridSearchSync:
 
     def test_limit_respected(self):
         """Results are capped at the requested limit."""
-        graph = _SyncMockGraphStore([
-            {"type": "Tech", "name": f"Item{i}", "score": 10 - i}
-            for i in range(10)
-        ])
+        graph = _SyncMockGraphStore(
+            [{"type": "Tech", "name": f"Item{i}", "score": 10 - i} for i in range(10)]
+        )
         vector = _SyncNullVectorStore()
         embedder = _NullEmbedder()
 
@@ -289,9 +303,11 @@ class TestHybridSearchAsync:
     @pytest.mark.asyncio
     async def test_async_fulltext_only(self):
         """Async search falls back to fulltext when no embeddings."""
-        graph = _AsyncMockGraphStore([
-            {"type": "Project", "name": "Engrama", "score": 1.5},
-        ])
+        graph = _AsyncMockGraphStore(
+            [
+                {"type": "Project", "name": "Engrama", "score": 1.5},
+            ]
+        )
         vector = _AsyncNullVectorStore()
         embedder = _NullEmbedder()
 
@@ -303,12 +319,16 @@ class TestHybridSearchAsync:
     @pytest.mark.asyncio
     async def test_async_hybrid_combines_both(self):
         """Async search blends vector + fulltext scores."""
-        graph = _AsyncMockGraphStore([
-            {"type": "Project", "name": "Engrama", "score": 1.0},
-        ])
-        vector = _AsyncMockVectorStore([
-            {"label": "Project", "name": "Engrama", "score": 0.9},
-        ])
+        graph = _AsyncMockGraphStore(
+            [
+                {"type": "Project", "name": "Engrama", "score": 1.0},
+            ]
+        )
+        vector = _AsyncMockVectorStore(
+            [
+                {"label": "Project", "name": "Engrama", "score": 0.9},
+            ]
+        )
         embedder = _MockEmbedder()
 
         engine = HybridSearchEngine(graph, vector, embedder)
@@ -339,9 +359,11 @@ class TestHybridSearchAsync:
             async def search_similar(self, *a, **kw):
                 raise RuntimeError("Vector index not ready")
 
-        graph = _AsyncMockGraphStore([
-            {"type": "Project", "name": "Engrama", "score": 1.0},
-        ])
+        graph = _AsyncMockGraphStore(
+            [
+                {"type": "Project", "name": "Engrama", "score": 1.0},
+            ]
+        )
         vector = _FailingVectorStore()
         embedder = _MockEmbedder()
 
@@ -360,11 +382,13 @@ def _neo4j_and_ollama_available() -> bool:
     """Check if both Neo4j and Ollama are available."""
     try:
         from engrama.embeddings.ollama import OllamaProvider
+
         p = OllamaProvider()
         if not p.health_check():
             return False
 
         from engrama.core.client import EngramaClient
+
         client = EngramaClient()
         client.verify()
         client.close()
@@ -383,9 +407,9 @@ class TestHybridSearchIntegration:
     @pytest.fixture(autouse=True)
     def setup(self, neo4j_driver):
         """Create stores and seed test data."""
-        from engrama.core.client import EngramaClient
         from engrama.backends.neo4j.backend import Neo4jGraphStore
         from engrama.backends.neo4j.vector import Neo4jVectorStore
+        from engrama.core.client import EngramaClient
         from engrama.embeddings.ollama import OllamaProvider
         from engrama.embeddings.text import node_to_text
 
@@ -397,8 +421,18 @@ class TestHybridSearchIntegration:
 
         # Seed test nodes with embeddings
         test_nodes = [
-            ("Technology", "name", "TestHybridNeo4j", {"description": "Graph database", "test": True}),
-            ("Technology", "name", "TestHybridPython", {"description": "Programming language", "test": True}),
+            (
+                "Technology",
+                "name",
+                "TestHybridNeo4j",
+                {"description": "Graph database", "test": True},
+            ),
+            (
+                "Technology",
+                "name",
+                "TestHybridPython",
+                {"description": "Programming language", "test": True},
+            ),
         ]
         for label, key, value, props in test_nodes:
             self.graph.merge_node(label, key, value, props)
@@ -427,7 +461,9 @@ class TestHybridSearchIntegration:
         from engrama.embeddings.null import NullProvider
 
         engine = HybridSearchEngine(
-            self.graph, self.vector, NullProvider(),
+            self.graph,
+            self.vector,
+            NullProvider(),
         )
         results = engine.search("TestHybridNeo4j", limit=5)
         assert any(r.name == "TestHybridNeo4j" for r in results)

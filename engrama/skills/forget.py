@@ -28,7 +28,7 @@ class ForgetSkill:
 
     def forget_by_name(
         self,
-        engine: "EngramaEngine",
+        engine: EngramaEngine,
         *,
         label: str,
         name: str,
@@ -58,7 +58,7 @@ class ForgetSkill:
 
     def forget_by_ttl(
         self,
-        engine: "EngramaEngine",
+        engine: EngramaEngine,
         *,
         label: str,
         days: int,

@@ -45,7 +45,9 @@ def test_init_schema_is_idempotent(store):
 
 def test_merge_node_creates(store):
     result = store.merge_node(
-        "Project", "name", "test-proj",
+        "Project",
+        "name",
+        "test-proj",
         {"status": "active", "description": "demo"},
     )
     assert len(result) == 1
@@ -70,9 +72,9 @@ def test_merge_node_updates_preserves_created_at(store):
 def test_merge_node_merges_props_does_not_drop(store):
     store.merge_node("Project", "name", "p1", {"status": "active", "stack": ["python"]})
     n = store.merge_node("Project", "name", "p1", {"description": "added"})[0]["n"]
-    assert n["status"] == "active"          # preserved
-    assert n["stack"] == ["python"]         # preserved
-    assert n["description"] == "added"      # added
+    assert n["status"] == "active"  # preserved
+    assert n["stack"] == ["python"]  # preserved
+    assert n["description"] == "added"  # added
 
 
 def test_get_node(store):
@@ -172,8 +174,8 @@ def test_get_neighbours_two_hops_reaches_further(store):
     store.merge_node("Project", "name", "p", {})
     store.merge_node("Technology", "name", "python", {})
     store.merge_node("Concept", "name", "graphs", {})
-    store.merge_relation("Project",   "name", "p",      "USES",     "Technology", "name", "python")
-    store.merge_relation("Technology", "name", "python", "APPLIES", "Concept",    "name", "graphs")
+    store.merge_relation("Project", "name", "p", "USES", "Technology", "name", "python")
+    store.merge_relation("Technology", "name", "python", "APPLIES", "Concept", "name", "graphs")
     one_hop = store.get_neighbours("Project", "name", "p", hops=1)
     two_hop = store.get_neighbours("Project", "name", "p", hops=2)
     one_hop_names = {r["neighbour"]["name"] for r in one_hop}
@@ -185,7 +187,7 @@ def test_get_neighbours_two_hops_reaches_further(store):
 def test_get_neighbours_traverses_undirected(store):
     """Edges walked in both directions, mirroring Neo4j ``-[r*1..N]-``."""
     store.merge_node("Project", "name", "p", {})
-    store.merge_node("Person",  "name", "alice", {})
+    store.merge_node("Person", "name", "alice", {})
     # Edge points alice -> p; querying from p must still find alice.
     store.merge_relation("Person", "name", "alice", "BELONGS_TO", "Project", "name", "p")
     rows = store.get_neighbours("Project", "name", "p", hops=1)
@@ -213,7 +215,7 @@ def test_get_node_with_neighbours_returns_none_for_missing(store):
 
 
 def test_lookup_node_label_finds_by_name_or_title(store):
-    store.merge_node("Project",  "name",  "alpha", {})
+    store.merge_node("Project", "name", "alpha", {})
     store.merge_node("Decision", "title", "go-rest", {})
     assert store.lookup_node_label("alpha") == "Project"
     assert store.lookup_node_label("go-rest") == "Decision"
@@ -240,17 +242,16 @@ def test_count_labels_excludes_insights(store):
 
 
 def test_fulltext_search_matches_description(store):
-    store.merge_node("Project", "name", "alpha",
-                     {"description": "graph database memory engine"})
+    store.merge_node("Project", "name", "alpha", {"description": "graph database memory engine"})
     out = store.fulltext_search("memory")
     assert any(r["name"] == "alpha" for r in out)
 
 
 def test_fulltext_search_returns_summary_or_description(store):
-    store.merge_node("Project", "name", "alpha",
-                     {"description": "the description", "summary": "the summary"})
-    store.merge_node("Project", "name", "beta",
-                     {"description": "only a description here"})
+    store.merge_node(
+        "Project", "name", "alpha", {"description": "the description", "summary": "the summary"}
+    )
+    store.merge_node("Project", "name", "beta", {"description": "only a description here"})
     out = store.fulltext_search("description")
     by_name = {r["name"]: r for r in out}
     assert by_name["alpha"]["summary"] == "the summary"
@@ -291,12 +292,17 @@ def test_run_cypher_is_not_supported(store):
 
 
 def test_insight_lifecycle_pending_to_approved(store):
-    store.merge_node("Insight", "title", "i1", {
-        "body": "an insight",
-        "confidence": 0.9,
-        "status": "pending",
-        "source_query": "q1",
-    })
+    store.merge_node(
+        "Insight",
+        "title",
+        "i1",
+        {
+            "body": "an insight",
+            "confidence": 0.9,
+            "status": "pending",
+            "source_query": "q1",
+        },
+    )
     pending = store.get_pending_insights()
     assert any(p["title"] == "i1" and p["confidence"] == 0.9 for p in pending)
     assert store.update_insight_status("i1", "approved") is True
@@ -306,9 +312,9 @@ def test_insight_lifecycle_pending_to_approved(store):
 
 
 def test_get_pending_insights_orders_by_confidence(store):
-    store.merge_node("Insight", "title", "low",  {"confidence": 0.3, "status": "pending"})
+    store.merge_node("Insight", "title", "low", {"confidence": 0.3, "status": "pending"})
     store.merge_node("Insight", "title", "high", {"confidence": 0.9, "status": "pending"})
-    store.merge_node("Insight", "title", "mid",  {"confidence": 0.6, "status": "pending"})
+    store.merge_node("Insight", "title", "mid", {"confidence": 0.6, "status": "pending"})
     titles = [p["title"] for p in store.get_pending_insights()]
     assert titles == ["high", "mid", "low"]
 
@@ -328,9 +334,9 @@ def test_approved_insight_titles_separate_from_dismissed(store):
     status='pending'.
     """
     store.merge_node("Insight", "title", "yes", {"confidence": 0.5, "status": "pending"})
-    store.merge_node("Insight", "title", "no",  {"confidence": 0.5, "status": "pending"})
+    store.merge_node("Insight", "title", "no", {"confidence": 0.5, "status": "pending"})
     store.update_insight_status("yes", "approved")
-    store.update_insight_status("no",  "dismissed")
+    store.update_insight_status("no", "dismissed")
     assert store.get_approved_insight_titles() == {"yes"}
     assert store.get_dismissed_insight_titles() == {"no"}
 
@@ -348,9 +354,16 @@ def test_mark_insight_synced(store):
 
 
 def test_find_insight_by_source_query(store):
-    store.merge_node("Insight", "title", "i1", {
-        "confidence": 0.5, "status": "pending", "source_query": "qX",
-    })
+    store.merge_node(
+        "Insight",
+        "title",
+        "i1",
+        {
+            "confidence": 0.5,
+            "status": "pending",
+            "source_query": "qX",
+        },
+    )
     found = store.find_insight_by_source_query("qX")
     assert found["title"] == "i1"
     assert store.find_insight_by_source_query("nope") is None
@@ -378,7 +391,7 @@ def test_expire_then_remerge_revives(store):
 def test_decay_scores_reduces_old_confidence(store):
     """Decay applies when updated_at is in the past."""
     import datetime as dt
-    import json as _json
+
     # Backdate a node manually so decay has something to chew on.
     store.merge_node("Project", "name", "p", {"description": "x"})
     old = (dt.datetime.now(dt.UTC) - dt.timedelta(days=30)).isoformat()
@@ -396,6 +409,7 @@ def test_decay_scores_reduces_old_confidence(store):
 
 def test_decay_scores_archives_below_threshold(store):
     import datetime as dt
+
     store.merge_node("Project", "name", "p", {})
     old = (dt.datetime.now(dt.UTC) - dt.timedelta(days=365 * 5)).isoformat()
     store._conn.execute(
@@ -411,13 +425,23 @@ def test_decay_scores_archives_below_threshold(store):
 
 
 def test_query_at_date_filters_validity_window(store):
-    store.merge_node("Project", "name", "old", {
-        "valid_from": "2026-01-01T00:00:00+00:00",
-        "valid_to":   "2026-02-01T00:00:00+00:00",
-    })
-    store.merge_node("Project", "name", "current", {
-        "valid_from": "2026-01-01T00:00:00+00:00",
-    })
+    store.merge_node(
+        "Project",
+        "name",
+        "old",
+        {
+            "valid_from": "2026-01-01T00:00:00+00:00",
+            "valid_to": "2026-02-01T00:00:00+00:00",
+        },
+    )
+    store.merge_node(
+        "Project",
+        "name",
+        "current",
+        {
+            "valid_from": "2026-01-01T00:00:00+00:00",
+        },
+    )
     on_jan = {r["name"] for r in store.query_at_date("2026-01-15T00:00:00+00:00")}
     on_mar = {r["name"] for r in store.query_at_date("2026-03-15T00:00:00+00:00")}
     assert "old" in on_jan and "current" in on_jan
@@ -426,11 +450,13 @@ def test_query_at_date_filters_validity_window(store):
 
 def test_archive_nodes_older_than(store):
     import datetime as dt
+
     store.merge_node("Project", "name", "stale", {})
     store.merge_node("Project", "name", "fresh", {})
     old = (dt.datetime.now(dt.UTC) - dt.timedelta(days=400)).isoformat()
     store._conn.execute(
-        "UPDATE nodes SET updated_at = ? WHERE key_value = 'stale'", (old,),
+        "UPDATE nodes SET updated_at = ? WHERE key_value = 'stale'",
+        (old,),
     )
     store._conn.commit()
     out = store.archive_nodes_older_than("Project", days=180)
@@ -479,7 +505,9 @@ def test_merge_wiki_link_by_target_name_resolves_label(store):
     store.merge_node("Project", "name", "a", {})
     store.merge_node("Concept", "name", "B", {})
     n = store.merge_wiki_link_by_target_name(
-        from_label="Project", from_name="a", target_name="b",
+        from_label="Project",
+        from_name="a",
+        target_name="b",
     )
     assert n == 1
     rows = store.get_neighbours("Project", "name", "a", hops=1)
@@ -525,19 +553,21 @@ def _build_cross_project_scenario(store):
     Problem involving the same Concept. Expected: pattern matches.
     """
     # Source side
-    store.merge_node("Project",  "name",  "alpha", {})
-    store.merge_node("Problem",  "title", "leak",  {"status": "resolved"})
+    store.merge_node("Project", "name", "alpha", {})
+    store.merge_node("Problem", "title", "leak", {"status": "resolved"})
     store.merge_node("Decision", "title", "use-tls", {})
-    store.merge_node("Concept",  "name",  "encryption", {})
-    store.merge_relation("Project", "name", "alpha", "HAS",          "Problem", "title", "leak")
+    store.merge_node("Concept", "name", "encryption", {})
+    store.merge_relation("Project", "name", "alpha", "HAS", "Problem", "title", "leak")
     store.merge_relation("Problem", "title", "leak", "INSTANCE_OF", "Concept", "name", "encryption")
-    store.merge_relation("Problem", "title", "leak", "SOLVED_BY",   "Decision", "title", "use-tls")
+    store.merge_relation("Problem", "title", "leak", "SOLVED_BY", "Decision", "title", "use-tls")
     store.merge_relation("Project", "name", "alpha", "INFORMED_BY", "Decision", "title", "use-tls")
     # Target side — open problem on a different project
-    store.merge_node("Project", "name",  "beta", {})
+    store.merge_node("Project", "name", "beta", {})
     store.merge_node("Problem", "title", "exposed-creds", {"status": "open"})
-    store.merge_relation("Project", "name", "beta", "HAS",          "Problem", "title", "exposed-creds")
-    store.merge_relation("Problem", "title", "exposed-creds", "APPLIES", "Concept", "name", "encryption")
+    store.merge_relation("Project", "name", "beta", "HAS", "Problem", "title", "exposed-creds")
+    store.merge_relation(
+        "Problem", "title", "exposed-creds", "APPLIES", "Concept", "name", "encryption"
+    )
 
 
 def test_detect_cross_project_solutions_finds_match(store):
@@ -555,26 +585,26 @@ def test_detect_cross_project_solutions_finds_match(store):
 
 def test_detect_cross_project_solutions_excludes_self(store):
     """Same project on both sides must NOT match (pA != pB)."""
-    store.merge_node("Project",  "name",  "alpha", {})
-    store.merge_node("Problem",  "title", "leak",   {"status": "resolved"})
-    store.merge_node("Problem",  "title", "open",   {"status": "open"})
-    store.merge_node("Decision", "title", "fix",    {})
-    store.merge_node("Concept",  "name",  "auth",   {})
-    store.merge_relation("Project", "name", "alpha", "HAS",         "Problem", "title", "open")
-    store.merge_relation("Problem", "title", "open",  "INSTANCE_OF", "Concept", "name", "auth")
-    store.merge_relation("Problem", "title", "leak",  "INSTANCE_OF", "Concept", "name", "auth")
-    store.merge_relation("Problem", "title", "leak",  "SOLVED_BY",   "Decision", "title", "fix")
+    store.merge_node("Project", "name", "alpha", {})
+    store.merge_node("Problem", "title", "leak", {"status": "resolved"})
+    store.merge_node("Problem", "title", "open", {"status": "open"})
+    store.merge_node("Decision", "title", "fix", {})
+    store.merge_node("Concept", "name", "auth", {})
+    store.merge_relation("Project", "name", "alpha", "HAS", "Problem", "title", "open")
+    store.merge_relation("Problem", "title", "open", "INSTANCE_OF", "Concept", "name", "auth")
+    store.merge_relation("Problem", "title", "leak", "INSTANCE_OF", "Concept", "name", "auth")
+    store.merge_relation("Problem", "title", "leak", "SOLVED_BY", "Decision", "title", "fix")
     store.merge_relation("Project", "name", "alpha", "INFORMED_BY", "Decision", "title", "fix")
     rows = store.detect_cross_project_solutions()
     assert rows == []
 
 
 def test_detect_shared_technology(store):
-    store.merge_node("Project",    "name", "alpha", {})
-    store.merge_node("Project",    "name", "beta",  {})
+    store.merge_node("Project", "name", "alpha", {})
+    store.merge_node("Project", "name", "beta", {})
     store.merge_node("Technology", "name", "python", {})
     store.merge_relation("Project", "name", "alpha", "USES", "Technology", "name", "python")
-    store.merge_relation("Project", "name", "beta",  "USES", "Technology", "name", "python")
+    store.merge_relation("Project", "name", "beta", "USES", "Technology", "name", "python")
     rows = store.detect_shared_technology()
     assert any(
         {r["entity_a"], r["entity_b"]} == {"alpha", "beta"} and r["technology"] == "python"
@@ -583,7 +613,7 @@ def test_detect_shared_technology(store):
 
 
 def test_detect_shared_technology_no_self_pair(store):
-    store.merge_node("Project",    "name", "alpha",  {})
+    store.merge_node("Project", "name", "alpha", {})
     store.merge_node("Technology", "name", "python", {})
     store.merge_relation("Project", "name", "alpha", "USES", "Technology", "name", "python")
     assert store.detect_shared_technology() == []
@@ -591,33 +621,45 @@ def test_detect_shared_technology_no_self_pair(store):
 
 def test_detect_training_opportunities_picks_vuln_and_open_problem(store):
     store.merge_node("Vulnerability", "title", "sqli", {})
-    store.merge_node("Problem",       "title", "auth-bypass", {"status": "open"})
-    store.merge_node("Problem",       "title", "old-issue",   {"status": "resolved"})
-    store.merge_node("Concept",       "name",  "input-validation", {})
-    store.merge_node("Course",        "name",  "secure-coding", {})
-    store.merge_relation("Vulnerability", "title", "sqli",        "APPLIES",     "Concept", "name", "input-validation")
-    store.merge_relation("Problem",       "title", "auth-bypass", "APPLIES",     "Concept", "name", "input-validation")
-    store.merge_relation("Problem",       "title", "old-issue",   "APPLIES",     "Concept", "name", "input-validation")
-    store.merge_relation("Course",        "name",  "secure-coding", "COVERS",    "Concept", "name", "input-validation")
+    store.merge_node("Problem", "title", "auth-bypass", {"status": "open"})
+    store.merge_node("Problem", "title", "old-issue", {"status": "resolved"})
+    store.merge_node("Concept", "name", "input-validation", {})
+    store.merge_node("Course", "name", "secure-coding", {})
+    store.merge_relation(
+        "Vulnerability", "title", "sqli", "APPLIES", "Concept", "name", "input-validation"
+    )
+    store.merge_relation(
+        "Problem", "title", "auth-bypass", "APPLIES", "Concept", "name", "input-validation"
+    )
+    store.merge_relation(
+        "Problem", "title", "old-issue", "APPLIES", "Concept", "name", "input-validation"
+    )
+    store.merge_relation(
+        "Course", "name", "secure-coding", "COVERS", "Concept", "name", "input-validation"
+    )
     out = store.detect_training_opportunities()
     issues = {r["issue"] for r in out}
     assert "sqli" in issues and "auth-bypass" in issues
-    assert "old-issue" not in issues   # resolved problems excluded
+    assert "old-issue" not in issues  # resolved problems excluded
 
 
 def test_detect_technique_transfer(store):
     """Technique IN_DOMAIN appsec applies to a Concept also covered by
     something IN_DOMAIN ml — suggests transfer.
     """
-    store.merge_node("Domain",    "name", "appsec", {})
-    store.merge_node("Domain",    "name", "ml",     {})
+    store.merge_node("Domain", "name", "appsec", {})
+    store.merge_node("Domain", "name", "ml", {})
     store.merge_node("Technique", "name", "fuzzing", {})
-    store.merge_node("Concept",   "name", "input-perturbation", {})
-    store.merge_node("Tool",      "name", "ml-fuzzer", {})
-    store.merge_relation("Technique", "name", "fuzzing",     "IN_DOMAIN",   "Domain",  "name", "appsec")
-    store.merge_relation("Tool",      "name", "ml-fuzzer",   "IN_DOMAIN",   "Domain",  "name", "ml")
-    store.merge_relation("Technique", "name", "fuzzing",     "APPLIES",     "Concept", "name", "input-perturbation")
-    store.merge_relation("Tool",      "name", "ml-fuzzer",   "APPLIES",     "Concept", "name", "input-perturbation")
+    store.merge_node("Concept", "name", "input-perturbation", {})
+    store.merge_node("Tool", "name", "ml-fuzzer", {})
+    store.merge_relation("Technique", "name", "fuzzing", "IN_DOMAIN", "Domain", "name", "appsec")
+    store.merge_relation("Tool", "name", "ml-fuzzer", "IN_DOMAIN", "Domain", "name", "ml")
+    store.merge_relation(
+        "Technique", "name", "fuzzing", "APPLIES", "Concept", "name", "input-perturbation"
+    )
+    store.merge_relation(
+        "Tool", "name", "ml-fuzzer", "APPLIES", "Concept", "name", "input-perturbation"
+    )
     out = store.detect_technique_transfer()
     assert any(
         r["technique"] == "fuzzing"
@@ -650,15 +692,17 @@ def test_detect_concept_clusters_skips_low_count(store):
 
 def test_detect_stale_knowledge_picks_old_or_low_conf(store):
     import datetime as dt
-    store.merge_node("Project",    "name",  "alpha", {"status": "active"})
-    store.merge_node("Technology", "name",  "rusty", {"confidence": 1.0})
-    store.merge_node("Technology", "name",  "wobbly", {"confidence": 0.1})  # low confidence
+
+    store.merge_node("Project", "name", "alpha", {"status": "active"})
+    store.merge_node("Technology", "name", "rusty", {"confidence": 1.0})
+    store.merge_node("Technology", "name", "wobbly", {"confidence": 0.1})  # low confidence
     store.merge_relation("Project", "name", "alpha", "USES", "Technology", "name", "rusty")
     store.merge_relation("Project", "name", "alpha", "USES", "Technology", "name", "wobbly")
     # Age the rusty node
     old = (dt.datetime.now(dt.UTC) - dt.timedelta(days=180)).isoformat()
     store._conn.execute(
-        "UPDATE nodes SET updated_at = ? WHERE key_value = 'rusty'", (old,),
+        "UPDATE nodes SET updated_at = ? WHERE key_value = 'rusty'",
+        (old,),
     )
     store._conn.commit()
     out = store.detect_stale_knowledge()
@@ -667,8 +711,8 @@ def test_detect_stale_knowledge_picks_old_or_low_conf(store):
 
 
 def test_detect_under_connected_nodes(store):
-    store.merge_node("Project",    "name", "lonely", {})  # 0 edges
-    store.merge_node("Project",    "name", "popular", {})
+    store.merge_node("Project", "name", "lonely", {})  # 0 edges
+    store.merge_node("Project", "name", "popular", {})
     store.merge_node("Technology", "name", "x", {})
     store.merge_node("Technology", "name", "y", {})
     store.merge_relation("Project", "name", "popular", "USES", "Technology", "name", "x")

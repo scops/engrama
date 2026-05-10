@@ -59,27 +59,23 @@ class TestRememberAndSearch:
         assert "SDK_TestTech" in names
 
         # Cleanup
-        neo4j_session.run(
-            "MATCH (n:Technology {name: 'SDK_TestTech'}) DETACH DELETE n"
-        )
+        neo4j_session.run("MATCH (n:Technology {name: 'SDK_TestTech'}) DETACH DELETE n")
 
     def test_remember_with_extra_kwargs(self, eng: Engrama, neo4j_session) -> None:
         """Remember passes kwargs as extra properties."""
-        eng.remember("Project", "SDK_TestProject", "Test project",
-                     status="active", repo="github.com/test")
+        eng.remember(
+            "Project", "SDK_TestProject", "Test project", status="active", repo="github.com/test"
+        )
 
         rec = neo4j_session.run(
-            "MATCH (n:Project {name: $name}) "
-            "RETURN n.status AS status, n.repo AS repo",
+            "MATCH (n:Project {name: $name}) RETURN n.status AS status, n.repo AS repo",
             {"name": "SDK_TestProject"},
         ).single()
         assert rec["status"] == "active"
         assert rec["repo"] == "github.com/test"
 
         # Cleanup
-        neo4j_session.run(
-            "MATCH (n:Project {name: 'SDK_TestProject'}) DETACH DELETE n"
-        )
+        neo4j_session.run("MATCH (n:Project {name: 'SDK_TestProject'}) DETACH DELETE n")
 
 
 # ===========================================================================
@@ -134,9 +130,7 @@ class TestAssociate:
             {"proj": "SDK_AssocProj", "tech": "SDK_AssocTech"},
         )
 
-        result = eng.associate(
-            "SDK_AssocProj", "Project", "USES", "SDK_AssocTech", "Technology"
-        )
+        result = eng.associate("SDK_AssocProj", "Project", "USES", "SDK_AssocTech", "Technology")
         assert result["matched"] is True
 
     def test_associate_validation(self, eng: Engrama) -> None:
@@ -190,9 +184,7 @@ class TestReflectAndProactive:
         insights = eng.reflect()
         assert isinstance(insights, list)
 
-    def test_surface_and_approve_cycle(
-        self, eng: Engrama, neo4j_session
-    ) -> None:
+    def test_surface_and_approve_cycle(self, eng: Engrama, neo4j_session) -> None:
         """Full lifecycle: seed pending Insight → surface → approve."""
         neo4j_session.run(
             "MERGE (i:Insight {title: $title}) "

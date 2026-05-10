@@ -11,17 +11,17 @@ Tests are grouped as:
 from __future__ import annotations
 
 import os
-import pytest
 from unittest.mock import MagicMock, patch
 
-from engrama.core.client import EngramaClient
-from engrama.core.engine import EngramaEngine
-from engrama.core.search import HybridSearchEngine, HybridConfig, SearchResult
+import pytest
+
 from engrama.backends.neo4j.backend import Neo4jGraphStore
 from engrama.backends.neo4j.vector import Neo4jVectorStore
-from engrama.backends.null import NullGraphStore, NullVectorStore
+from engrama.backends.null import NullVectorStore
+from engrama.core.client import EngramaClient
+from engrama.core.engine import EngramaEngine
+from engrama.core.search import HybridConfig, HybridSearchEngine
 from engrama.embeddings.null import NullProvider
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -138,7 +138,10 @@ class TestNeo4jVectorStore:
         embedding = embedder.embed("Project: test_vec_proj_1")
 
         result = vector_store.store_vector_by_key(
-            "Project", "name", "test_vec_proj_1", embedding,
+            "Project",
+            "name",
+            "test_vec_proj_1",
+            embedding,
         )
         assert result is True
 
@@ -152,7 +155,10 @@ class TestNeo4jVectorStore:
     def test_store_vector_by_key_not_found(self, vector_store):
         """store_vector_by_key returns False for non-existent node."""
         result = vector_store.store_vector_by_key(
-            "Project", "name", "nonexistent_node_xyz", [0.1] * 768,
+            "Project",
+            "name",
+            "nonexistent_node_xyz",
+            [0.1] * 768,
         )
         assert result is False
 
@@ -171,6 +177,7 @@ class TestNeo4jVectorStore:
 
         # Wait a moment for the index to update
         import time
+
         time.sleep(1)
 
         # Search with the embedding of node "a" — should find it
@@ -368,7 +375,10 @@ class TestEngineEmbedOnWrite:
 
         embedder.embed.assert_called_once()
         vector.store_vector_by_key.assert_called_once_with(
-            "Technology", "name", "Python", [0.1] * 768,
+            "Technology",
+            "name",
+            "Python",
+            [0.1] * 768,
         )
 
     def test_no_embed_when_null_provider(self):
@@ -453,12 +463,14 @@ class TestBackendFactory:
     def test_none_vector_backend(self):
         """VECTOR_BACKEND=none returns NullVectorStore."""
         from engrama.backends import _create_vector_store
+
         vs = _create_vector_store("none", {}, None)
         assert isinstance(vs, NullVectorStore)
 
     def test_neo4j_without_graph_raises(self):
         """VECTOR_BACKEND=neo4j without a graph store raises ValueError."""
         from engrama.backends import _create_vector_store
+
         graph = MagicMock()
         graph._client = None
         del graph._client

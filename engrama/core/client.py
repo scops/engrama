@@ -16,8 +16,7 @@ import os
 from typing import Any
 
 from dotenv import load_dotenv
-from neo4j import GraphDatabase, Driver, Record
-
+from neo4j import Driver, GraphDatabase, Record
 
 # Load .env so credentials are available even when the caller does not
 # set environment variables explicitly.
@@ -107,7 +106,7 @@ class EngramaClient:
     # Context-manager support
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "EngramaClient":
+    def __enter__(self) -> EngramaClient:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:

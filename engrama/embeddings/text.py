@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # Properties that carry meaningful free-text content, in priority order.
 _TEXT_PROPERTIES: tuple[str, ...] = (
     "description",

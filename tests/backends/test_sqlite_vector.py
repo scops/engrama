@@ -51,11 +51,13 @@ def test_ensure_index_is_idempotent(store_pair):
 def test_store_and_search_vectors(store_pair):
     graph, vec = store_pair
     a = graph.merge_node("Project", "name", "alpha", {})[0]["n"]
-    b = graph.merge_node("Project", "name", "beta",  {})[0]["n"]
-    vec.store_vectors([
-        (a["_id"], [1.0, 0.0, 0.0, 0.0]),
-        (b["_id"], [0.0, 1.0, 0.0, 0.0]),
-    ])
+    b = graph.merge_node("Project", "name", "beta", {})[0]["n"]
+    vec.store_vectors(
+        [
+            (a["_id"], [1.0, 0.0, 0.0, 0.0]),
+            (b["_id"], [0.0, 1.0, 0.0, 0.0]),
+        ]
+    )
     assert vec.count() == 2
     out = vec.search_vectors([1.0, 0.0, 0.0, 0.0], limit=1)
     assert len(out) == 1
@@ -102,11 +104,13 @@ def test_count_embeddings_alias(store_pair):
 def test_search_vectors_orders_by_similarity(store_pair):
     """Closest match comes first."""
     graph, vec = store_pair
-    a = graph.merge_node("Project", "name", "match",  {})[0]["n"]
-    b = graph.merge_node("Project", "name", "far",    {})[0]["n"]
-    vec.store_vectors([
-        (a["_id"], [1.0, 0.0, 0.0, 0.0]),
-        (b["_id"], [-1.0, 0.0, 0.0, 0.0]),
-    ])
+    a = graph.merge_node("Project", "name", "match", {})[0]["n"]
+    b = graph.merge_node("Project", "name", "far", {})[0]["n"]
+    vec.store_vectors(
+        [
+            (a["_id"], [1.0, 0.0, 0.0, 0.0]),
+            (b["_id"], [-1.0, 0.0, 0.0, 0.0]),
+        ]
+    )
     out = vec.search_vectors([1.0, 0.0, 0.0, 0.0], limit=2)
     assert [r["key"] for r in out] == ["match", "far"]

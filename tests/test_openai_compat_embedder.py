@@ -6,12 +6,11 @@ deterministic, and runs without any external service.
 
 from __future__ import annotations
 
-import pytest
 import httpx
+import pytest
 
 from engrama.embeddings import create_provider
 from engrama.embeddings.openai_compat import OpenAICompatibleProvider
-
 
 # ----------------------------------------------------------------------
 # Fixtures
@@ -20,16 +19,20 @@ from engrama.embeddings.openai_compat import OpenAICompatibleProvider
 
 def _make_handler(captured: list[dict] | None = None, dims: int = 4):
     """Build a callable that fakes the OpenAI /v1/embeddings endpoint."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/embeddings"):
             payload = request.read()
             import json as _json
+
             body = _json.loads(payload)
             if captured is not None:
-                captured.append({
-                    "headers": dict(request.headers),
-                    "body": body,
-                })
+                captured.append(
+                    {
+                        "headers": dict(request.headers),
+                        "body": body,
+                    }
+                )
             input_ = body["input"]
             if isinstance(input_, str):
                 inputs = [input_]
@@ -51,9 +54,11 @@ def _make_handler(captured: list[dict] | None = None, dims: int = 4):
             )
         if request.url.path.endswith("/models"):
             return httpx.Response(
-                200, json={"data": [{"id": "demo-model"}]},
+                200,
+                json={"data": [{"id": "demo-model"}]},
             )
         return httpx.Response(404, json={"error": "not found"})
+
     return handler
 
 
@@ -111,6 +116,7 @@ def test_health_check_pings_models_endpoint():
 def test_health_check_returns_false_on_unreachable():
     def boom(request):
         raise httpx.ConnectError("nope")
+
     transport = httpx.MockTransport(boom)
     p = _make_provider(transport)
     assert p.health_check() is False
@@ -145,6 +151,7 @@ def test_explicit_dimensions_not_overwritten_by_response():
 def test_empty_response_raises():
     def empty(request):
         return httpx.Response(200, json={"object": "list", "data": []})
+
     transport = httpx.MockTransport(empty)
     p = _make_provider(transport)
     with pytest.raises(RuntimeError, match="No embeddings"):
@@ -153,9 +160,16 @@ def test_empty_response_raises():
 
 def test_batch_count_mismatch_raises():
     def short(request):
-        return httpx.Response(200, json={"object": "list", "data": [
-            {"embedding": [1.0, 2.0]},
-        ]})
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {"embedding": [1.0, 2.0]},
+                ],
+            },
+        )
+
     transport = httpx.MockTransport(short)
     p = _make_provider(transport)
     with pytest.raises(RuntimeError, match="Expected 3"):
@@ -213,12 +227,14 @@ async def test_aclose_releases_clients():
 def test_create_provider_openai(monkeypatch):
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("EMBEDDING_DIMENSIONS", raising=False)
-    p = create_provider({
-        "EMBEDDING_PROVIDER": "openai",
-        "OPENAI_BASE_URL": "http://localhost:11434/v1",
-        "EMBEDDING_MODEL": "nomic-embed-text",
-        "OPENAI_API_KEY": None,
-    })
+    p = create_provider(
+        {
+            "EMBEDDING_PROVIDER": "openai",
+            "OPENAI_BASE_URL": "http://localhost:11434/v1",
+            "EMBEDDING_MODEL": "nomic-embed-text",
+            "OPENAI_API_KEY": None,
+        }
+    )
     assert isinstance(p, OpenAICompatibleProvider)
     assert p.base_url == "http://localhost:11434/v1"
     assert p.model == "nomic-embed-text"
@@ -226,10 +242,12 @@ def test_create_provider_openai(monkeypatch):
 
 def test_create_provider_passes_dimensions(monkeypatch):
     monkeypatch.delenv("EMBEDDING_DIMENSIONS", raising=False)
-    p = create_provider({
-        "EMBEDDING_PROVIDER": "openai",
-        "EMBEDDING_DIMENSIONS": "768",
-    })
+    p = create_provider(
+        {
+            "EMBEDDING_PROVIDER": "openai",
+            "EMBEDDING_DIMENSIONS": "768",
+        }
+    )
     assert p.dimensions == 768
 
 

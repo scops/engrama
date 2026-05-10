@@ -26,6 +26,7 @@ def neo4j_driver():
     if not NEO4J_AVAILABLE:
         pytest.skip("Neo4j not configured (set NEO4J_PASSWORD to run)")
     from neo4j import GraphDatabase
+
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
     driver.verify_connectivity()
     yield driver

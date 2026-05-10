@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class ObsidianSync:
     """Reconciles Obsidian vault notes with Neo4j graph nodes."""
 
-    def __init__(self, engine: "EngramaEngine", adapter: ObsidianAdapter) -> None:
+    def __init__(self, engine: EngramaEngine, adapter: ObsidianAdapter) -> None:
         self.engine = engine
         self.adapter = adapter
         self.parser = NoteParser()
@@ -121,7 +121,8 @@ class ObsidianSync:
             note = self.adapter.read_note(record["path"])
             if not note["success"]:
                 self.engine._store.archive_node_for_missing_note(
-                    record["label"], record["name"],
+                    record["label"],
+                    record["name"],
                 )
                 archived += 1
         return archived
@@ -222,9 +223,7 @@ class ObsidianSync:
     # DDR-002: frontmatter relation sync (vault → graph)
     # ------------------------------------------------------------------
 
-    def _merge_frontmatter_relations(
-        self, parsed_notes: list[ParsedNote]
-    ) -> tuple[int, int]:
+    def _merge_frontmatter_relations(self, parsed_notes: list[ParsedNote]) -> tuple[int, int]:
         """Merge all frontmatter ``relations`` into Neo4j.
 
         For each note with a ``relations`` map in its frontmatter, creates
@@ -259,20 +258,27 @@ class ObsidianSync:
                         # Create stub node (DDR-002: stub creation)
                         target_label = self._infer_stub_label(rel_type)
                         try:
-                            self.engine.merge_node(target_label, {
-                                "name": target_name,
-                                "status": "stub",
-                            })
+                            self.engine.merge_node(
+                                target_label,
+                                {
+                                    "name": target_name,
+                                    "status": "stub",
+                                },
+                            )
                             stubs_created += 1
                             known_nodes[target_lower] = target_label
                             logger.info(
                                 "Created stub %s:%s (target of %s from %s)",
-                                target_label, target_name, rel_type, pn.name,
+                                target_label,
+                                target_name,
+                                rel_type,
+                                pn.name,
                             )
                         except Exception as e:
                             logger.warning(
                                 "Could not create stub for %s: %s",
-                                target_name, e,
+                                target_name,
+                                e,
                             )
                             continue
 
@@ -289,7 +295,10 @@ class ObsidianSync:
                     except Exception as e:
                         logger.debug(
                             "Could not merge relation %s -[%s]-> %s: %s",
-                            pn.name, rel_type, target_name, e,
+                            pn.name,
+                            rel_type,
+                            target_name,
+                            e,
                         )
 
         return relations_merged, stubs_created
@@ -308,18 +317,25 @@ class ObsidianSync:
                 if target_label is None:
                     target_label = self._infer_stub_label(rel_type)
                     try:
-                        self.engine.merge_node(target_label, {
-                            "name": target_name,
-                            "status": "stub",
-                        })
+                        self.engine.merge_node(
+                            target_label,
+                            {
+                                "name": target_name,
+                                "status": "stub",
+                            },
+                        )
                         logger.info(
                             "Created stub %s:%s (target of %s from %s)",
-                            target_label, target_name, rel_type, parsed.name,
+                            target_label,
+                            target_name,
+                            rel_type,
+                            parsed.name,
                         )
                     except Exception as e:
                         logger.warning(
                             "Could not create stub for %s: %s",
-                            target_name, e,
+                            target_name,
+                            e,
                         )
                         continue
 
@@ -335,7 +351,10 @@ class ObsidianSync:
                 except Exception as e:
                     logger.debug(
                         "Could not merge relation %s -[%s]-> %s: %s",
-                        parsed.name, rel_type, target_name, e,
+                        parsed.name,
+                        rel_type,
+                        target_name,
+                        e,
                     )
         return merged
 

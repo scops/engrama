@@ -19,7 +19,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-
 # ---------------------------------------------------------------------------
 # Schema definition (passed to GraphStore.init_schema)
 # ---------------------------------------------------------------------------
@@ -42,10 +41,18 @@ class SchemaDefinition:
     title_keyed_labels: frozenset[str] = field(default_factory=frozenset)
     """Labels that use ``title`` instead of ``name`` as merge key."""
 
-    fulltext_properties: list[str] = field(default_factory=lambda: [
-        "name", "title", "description", "notes", "rationale",
-        "solution", "context", "body",
-    ])
+    fulltext_properties: list[str] = field(
+        default_factory=lambda: [
+            "name",
+            "title",
+            "description",
+            "notes",
+            "rationale",
+            "solution",
+            "context",
+            "body",
+        ]
+    )
     """Properties indexed by the fulltext search index."""
 
 

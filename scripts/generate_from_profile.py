@@ -27,13 +27,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-import textwrap
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # Profile loader
@@ -270,7 +268,7 @@ def _default_value(prop_name: str, is_required: bool) -> str:
     if prop_name in ("confidence",):
         return " = 0.8"
     if prop_name in ("status",):
-        return ' = None'
+        return " = None"
     return " = None"
 
 
@@ -286,10 +284,12 @@ def generate_schema(profile: dict[str, Any]) -> str:
     lines: list[str] = []
 
     # Header
-    lines.append(_SCHEMA_HEADER.format(
-        profile_name=profile["name"],
-        timestamp=datetime.now().isoformat(timespec="seconds"),
-    ))
+    lines.append(
+        _SCHEMA_HEADER.format(
+            profile_name=profile["name"],
+            timestamp=datetime.now().isoformat(timespec="seconds"),
+        )
+    )
 
     # NodeType enum
     lines.append("")
@@ -337,7 +337,6 @@ def generate_schema(profile: dict[str, Any]) -> str:
         label = node_def["label"]
         props = node_def["properties"]
         required = set(node_def.get("required", []))
-        merge_key = _merge_key(node_def)
         description = node_def.get("description", f"A {label} node in the memory graph.")
 
         lines.append("")
@@ -435,13 +434,15 @@ def generate_cypher(profile: dict[str, Any]) -> str:
         Cypher script as a string.
     """
     lines: list[str] = []
-    lines.append(f"// Engrama — schema initialisation script")
+    lines.append("// Engrama — schema initialisation script")
     lines.append(f"// Auto-generated from profile: {profile['name']}")
     lines.append(f"// Generated at: {datetime.now().isoformat(timespec='seconds')}")
     lines.append("//")
     lines.append("// Run once after Neo4j starts:")
-    lines.append("//   docker exec -i engrama-neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD "
-                  "< scripts/init-schema.cypher")
+    lines.append(
+        "//   docker exec -i engrama-neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD "
+        "< scripts/init-schema.cypher"
+    )
     lines.append("")
     lines.append("// === CONSTRAINTS ===")
     lines.append("")
@@ -583,7 +584,8 @@ def main() -> None:
     )
     parser.add_argument("profile", type=Path, help="Path to the profile YAML file.")
     parser.add_argument(
-        "--modules", "-m",
+        "--modules",
+        "-m",
         nargs="+",
         default=[],
         help=(
@@ -654,8 +656,10 @@ def main() -> None:
         print("Next steps:")
         print("  1. Review the generated files")
         print("  2. Drop and recreate the fulltext index in Neo4j:")
-        print("     docker exec -i engrama-neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD "
-              "< scripts/init-schema.cypher")
+        print(
+            "     docker exec -i engrama-neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD "
+            "< scripts/init-schema.cypher"
+        )
         print("  3. Run tests: uv run pytest tests/ -v")
 
 

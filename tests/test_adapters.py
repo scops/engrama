@@ -24,9 +24,7 @@ def engine() -> EngramaEngine:
 class TestRelateWithTitleKeyedNodes:
     """Verify that relate works correctly for Decision/Problem nodes (title key)."""
 
-    def test_relate_decision_to_project(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_relate_decision_to_project(self, engine: EngramaEngine, neo4j_session) -> None:
         """Create a Decision and a Project, relate them with INFORMED_BY,
         and verify the relationship is created.
         """
@@ -65,9 +63,7 @@ class TestRelateWithTitleKeyedNodes:
         )
         assert result.single()["rel"] == "INFORMED_BY"
 
-    def test_relate_problem_to_concept(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_relate_problem_to_concept(self, engine: EngramaEngine, neo4j_session) -> None:
         """Create a Problem and a Concept, relate them with APPLIES."""
         neo4j_session.run(
             "MERGE (p:Problem {title: $title}) "
@@ -93,9 +89,7 @@ class TestRelateWithTitleKeyedNodes:
         assert len(records) == 1
         assert records[0]["rel_type"] == "APPLIES"
 
-    def test_relate_between_name_keyed_nodes(
-        self, engine: EngramaEngine, neo4j_session
-    ) -> None:
+    def test_relate_between_name_keyed_nodes(self, engine: EngramaEngine, neo4j_session) -> None:
         """Standard name-keyed relate still works (regression test)."""
         neo4j_session.run(
             "MERGE (p:Project {name: $name}) "

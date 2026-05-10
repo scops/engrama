@@ -25,8 +25,8 @@ from typing import TYPE_CHECKING
 from engrama.core.schema import NodeType, RelationType
 
 if TYPE_CHECKING:
-    from engrama.core.engine import EngramaEngine
     from engrama.adapters.obsidian.adapter import ObsidianAdapter
+    from engrama.core.engine import EngramaEngine
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +47,14 @@ class AssociateSkill:
 
     def run(
         self,
-        engine: "EngramaEngine",
+        engine: EngramaEngine,
         *,
         from_name: str,
         from_label: str,
         rel_type: str,
         to_name: str,
         to_label: str,
-        obsidian: "ObsidianAdapter | None" = None,
+        obsidian: ObsidianAdapter | None = None,
     ) -> dict:
         """Create or update a relationship between two nodes.
 
@@ -80,18 +80,15 @@ class AssociateSkill:
         # --- Validation ---
         if from_label not in self._VALID_LABELS:
             raise ValueError(
-                f"Unknown source label {from_label!r}. "
-                f"Valid: {sorted(self._VALID_LABELS)}"
+                f"Unknown source label {from_label!r}. Valid: {sorted(self._VALID_LABELS)}"
             )
         if to_label not in self._VALID_LABELS:
             raise ValueError(
-                f"Unknown target label {to_label!r}. "
-                f"Valid: {sorted(self._VALID_LABELS)}"
+                f"Unknown target label {to_label!r}. Valid: {sorted(self._VALID_LABELS)}"
             )
         if rel_type not in self._VALID_RELS:
             raise ValueError(
-                f"Unknown relationship type {rel_type!r}. "
-                f"Valid: {sorted(self._VALID_RELS)}"
+                f"Unknown relationship type {rel_type!r}. Valid: {sorted(self._VALID_RELS)}"
             )
 
         # --- Execute: graph write ---
@@ -109,7 +106,8 @@ class AssociateSkill:
         vault_written = False
         if matched and obsidian is not None:
             vault_written = self._write_relation_to_vault(
-                engine, obsidian,
+                engine,
+                obsidian,
                 from_name=from_name,
                 from_label=from_label,
                 rel_type=rel_type,
@@ -128,8 +126,8 @@ class AssociateSkill:
 
     @staticmethod
     def _write_relation_to_vault(
-        engine: "EngramaEngine",
-        obsidian: "ObsidianAdapter",
+        engine: EngramaEngine,
+        obsidian: ObsidianAdapter,
         *,
         from_name: str,
         from_label: str,
@@ -151,6 +149,9 @@ class AssociateSkill:
         except Exception as e:
             logger.warning(
                 "DDR-002 vault write failed for %s -[%s]-> %s: %s",
-                from_name, rel_type, to_name, e,
+                from_name,
+                rel_type,
+                to_name,
+                e,
             )
             return False

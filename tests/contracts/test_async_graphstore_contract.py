@@ -55,7 +55,11 @@ async def store(request, tmp_path):
             tagged = dict(properties)
             tagged.setdefault("test", True)
             return await original_merge(
-                label, key_field, key_value, tagged, embedding=embedding,
+                label,
+                key_field,
+                key_value,
+                tagged,
+                embedding=embedding,
             )
 
         s.merge_node = _tagged_merge  # type: ignore[method-assign]
@@ -120,7 +124,13 @@ async def test_merge_relation_returns_rich_dict(store):
     await store.merge_node("Project", "name", a, {})
     await store.merge_node("Technology", "name", b, {})
     out = await store.merge_relation(
-        "Project", "name", a, "USES", "Technology", "name", b,
+        "Project",
+        "name",
+        a,
+        "USES",
+        "Technology",
+        "name",
+        b,
     )
     assert isinstance(out, dict)
     assert out["rel_type"] == "USES"
@@ -132,9 +142,13 @@ async def test_merge_relation_returns_rich_dict(store):
 
 async def test_merge_relation_empty_dict_when_endpoint_missing(store):
     out = await store.merge_relation(
-        "Project", "name", _unique("ghost"),
+        "Project",
+        "name",
+        _unique("ghost"),
         "USES",
-        "Technology", "name", _unique("ghost"),
+        "Technology",
+        "name",
+        _unique("ghost"),
     )
     assert out == {}
 
@@ -149,7 +163,13 @@ async def test_get_neighbours_uses_label_name_via_properties(store):
     await store.merge_node("Project", "name", a, {})
     await store.merge_node("Technology", "name", b, {"summary": "lang"})
     await store.merge_relation(
-        "Project", "name", a, "USES", "Technology", "name", b,
+        "Project",
+        "name",
+        a,
+        "USES",
+        "Technology",
+        "name",
+        b,
     )
     out = await store.get_neighbours("Project", "name", a, hops=1)
     matches = [n for n in out if n["name"] == b]
@@ -168,7 +188,13 @@ async def test_get_node_with_neighbours_shape(store):
     await store.merge_node("Project", "name", a, {"description": "root"})
     await store.merge_node("Technology", "name", b, {})
     await store.merge_relation(
-        "Project", "name", a, "USES", "Technology", "name", b,
+        "Project",
+        "name",
+        a,
+        "USES",
+        "Technology",
+        "name",
+        b,
     )
     out = await store.get_node_with_neighbours("Project", "name", a, hops=1)
     assert out is not None
@@ -188,7 +214,10 @@ async def test_fulltext_search_matches_description(store):
     name = _unique("ftsdesc")
     needle = f"asyncneedle{uuid.uuid4().hex[:6]}"
     await store.merge_node(
-        "Project", "name", name, {"description": f"a {needle} marker"},
+        "Project",
+        "name",
+        name,
+        {"description": f"a {needle} marker"},
     )
     out = await store.fulltext_search(needle)
     assert any(r["name"] == name for r in out)
@@ -201,9 +230,16 @@ async def test_fulltext_search_matches_description(store):
 
 async def test_insight_lifecycle_and_dismissed_titles_alias(store):
     title = _unique("ins")
-    await store.merge_node("Insight", "title", title, {
-        "body": "x", "confidence": 0.9, "status": "pending",
-    })
+    await store.merge_node(
+        "Insight",
+        "title",
+        title,
+        {
+            "body": "x",
+            "confidence": 0.9,
+            "status": "pending",
+        },
+    )
     pending = await store.get_pending_insights()
     assert any(p["title"] == title for p in pending)
     assert await store.update_insight_status(title, "dismissed") is True
@@ -217,9 +253,16 @@ async def test_get_approved_titles(store):
     re-run.
     """
     title = _unique("appins")
-    await store.merge_node("Insight", "title", title, {
-        "body": "x", "confidence": 0.9, "status": "pending",
-    })
+    await store.merge_node(
+        "Insight",
+        "title",
+        title,
+        {
+            "body": "x",
+            "confidence": 0.9,
+            "status": "pending",
+        },
+    )
     assert title not in await store.get_approved_titles()
     await store.update_insight_status(title, "approved")
     assert title in await store.get_approved_titles()

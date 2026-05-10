@@ -20,8 +20,6 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
-from engrama.core.schema import TITLE_KEYED_LABELS
-
 logger = logging.getLogger("engrama.backends.neo4j.async_store")
 
 
@@ -115,8 +113,7 @@ class Neo4jAsyncStore:
         else:
             # On MATCH without valid_to: revive expired nodes by clearing it
             set_match.append(
-                "n.valid_to = CASE WHEN n.valid_to IS NOT NULL "
-                "THEN null ELSE n.valid_to END"
+                "n.valid_to = CASE WHEN n.valid_to IS NOT NULL THEN null ELSE n.valid_to END"
             )
 
         if confidence is not None:
@@ -146,7 +143,8 @@ class Neo4jAsyncStore:
                 "RETURN n.valid_to AS old_valid_to LIMIT 1"
             )
             pre_records, _, _ = await self._driver.execute_query(
-                pre_check, parameters_={"merge_value": key_value},
+                pre_check,
+                parameters_={"merge_value": key_value},
                 database_=self._database,
             )
             if pre_records:
@@ -169,7 +167,9 @@ class Neo4jAsyncStore:
         )
 
         records, _, _ = await self._driver.execute_query(
-            cypher, parameters_=params, database_=self._database,
+            cypher,
+            parameters_=params,
+            database_=self._database,
         )
         if records:
             result: dict[str, Any] = {
@@ -188,12 +188,10 @@ class Neo4jAsyncStore:
         key_value: str,
     ) -> dict[str, Any] | None:
         """Retrieve a single node by its unique key."""
-        cypher = (
-            f"MATCH (n:{label} {{{key_field}: $key_value}}) "
-            "RETURN n"
-        )
+        cypher = f"MATCH (n:{label} {{{key_field}: $key_value}}) RETURN n"
         records, _, _ = await self._driver.execute_query(
-            cypher, parameters_={"key_value": key_value},
+            cypher,
+            parameters_={"key_value": key_value},
             database_=self._database,
         )
         if records:
@@ -226,7 +224,8 @@ class Neo4jAsyncStore:
                 "RETURN true AS deleted"
             )
         records, _, _ = await self._driver.execute_query(
-            cypher, parameters_={"key_value": key_value},
+            cypher,
+            parameters_={"key_value": key_value},
             database_=self._database,
         )
         return len(records) > 0
@@ -299,7 +298,8 @@ class Neo4jAsyncStore:
             "  properties(neighbour) AS neighbour_props"
         )
         records, _, _ = await self._driver.execute_query(
-            cypher, parameters_={"key_value": key_value},
+            cypher,
+            parameters_={"key_value": key_value},
             database_=self._database,
         )
         if not records:
@@ -316,16 +316,19 @@ class Neo4jAsyncStore:
             nlabel = r["neighbour_label"]
             if nname and (nlabel, nname) not in seen and (nlabel, nname) != root_key:
                 seen.add((nlabel, nname))
-                neighbours.append({
-                    "label": nlabel,
-                    "name": nname,
-                    # BUG-008: deduplicate via array
-                    "via": list(dict.fromkeys(r["rel_types"])),
-                    "properties": {
-                        k: v for k, v in (r["neighbour_props"] or {}).items()
-                        if k not in {"created_at", "updated_at", "details", "embedding"}
-                    },
-                })
+                neighbours.append(
+                    {
+                        "label": nlabel,
+                        "name": nname,
+                        # BUG-008: deduplicate via array
+                        "via": list(dict.fromkeys(r["rel_types"])),
+                        "properties": {
+                            k: v
+                            for k, v in (r["neighbour_props"] or {}).items()
+                            if k not in {"created_at", "updated_at", "details", "embedding"}
+                        },
+                    }
+                )
 
         return neighbours
 
@@ -359,7 +362,8 @@ class Neo4jAsyncStore:
             "  properties(neighbour) AS neighbour_props"
         )
         records, _, _ = await self._driver.execute_query(
-            cypher, parameters_={"key_value": key_value},
+            cypher,
+            parameters_={"key_value": key_value},
             database_=self._database,
         )
         if not records:
@@ -379,15 +383,18 @@ class Neo4jAsyncStore:
             nlabel = r["neighbour_label"]
             if nname and (nlabel, nname) not in seen and (nlabel, nname) != root_key:
                 seen.add((nlabel, nname))
-                neighbours.append({
-                    "label": nlabel,
-                    "name": nname,
-                    "via": list(dict.fromkeys(r["rel_types"])),
-                    "properties": {
-                        k: v for k, v in (r["neighbour_props"] or {}).items()
-                        if k not in {"created_at", "updated_at", "details", "embedding"}
-                    },
-                })
+                neighbours.append(
+                    {
+                        "label": nlabel,
+                        "name": nname,
+                        "via": list(dict.fromkeys(r["rel_types"])),
+                        "properties": {
+                            k: v
+                            for k, v in (r["neighbour_props"] or {}).items()
+                            if k not in {"created_at", "updated_at", "details", "embedding"}
+                        },
+                    }
+                )
 
         return {"node": start_node, "neighbours": neighbours}
 
@@ -478,8 +485,7 @@ class Neo4jAsyncStore:
     async def get_dismissed_titles(self) -> set[str]:
         """Return titles of all dismissed Insights."""
         records, _, _ = await self._driver.execute_query(
-            "MATCH (i:Insight {status: 'dismissed'}) "
-            "RETURN i.title AS title",
+            "MATCH (i:Insight {status: 'dismissed'}) RETURN i.title AS title",
             database_=self._database,
         )
         return {r["title"] for r in records}
@@ -492,8 +498,7 @@ class Neo4jAsyncStore:
         default applied by ``MERGE``).
         """
         records, _, _ = await self._driver.execute_query(
-            "MATCH (i:Insight {status: 'approved'}) "
-            "RETURN i.title AS title",
+            "MATCH (i:Insight {status: 'approved'}) RETURN i.title AS title",
             database_=self._database,
         )
         return {r["title"] for r in records}
@@ -626,7 +631,8 @@ class Neo4jAsyncStore:
             "t.name AS technology"
         )
         records, _, _ = await self._driver.execute_query(
-            cypher, database_=self._database,
+            cypher,
+            database_=self._database,
         )
         return [dict(r) for r in records]
 
@@ -658,7 +664,8 @@ class Neo4jAsyncStore:
             "ORDER BY related_entities DESC LIMIT 10"
         )
         records, _, _ = await self._driver.execute_query(
-            cypher, database_=self._database,
+            cypher,
+            database_=self._database,
         )
         return [dict(r) for r in records]
 
@@ -673,7 +680,8 @@ class Neo4jAsyncStore:
             "ORDER BY cnt DESC LIMIT 10"
         )
         records, _, _ = await self._driver.execute_query(
-            cypher, database_=self._database,
+            cypher,
+            database_=self._database,
         )
         return [dict(r) for r in records]
 
@@ -715,7 +723,8 @@ class Neo4jAsyncStore:
             "ORDER BY n.created_at DESC LIMIT 15"
         )
         records, _, _ = await self._driver.execute_query(
-            cypher, database_=self._database,
+            cypher,
+            database_=self._database,
         )
         return [dict(r) for r in records]
 
@@ -964,7 +973,8 @@ class Neo4jAsyncStore:
         for stmt in cypher_statements:
             try:
                 await self._driver.execute_query(
-                    stmt, database_=self._database,
+                    stmt,
+                    database_=self._database,
                 )
             except Exception as e:
                 logger.warning("Schema statement failed: %s — %s", stmt, e)
@@ -991,6 +1001,5 @@ class Neo4jAsyncStore:
 
     def __repr__(self) -> str:
         return (
-            f"Neo4jAsyncStore(database={self._database!r}, "
-            f"vector_dims={self._vector_dimensions})"
+            f"Neo4jAsyncStore(database={self._database!r}, vector_dims={self._vector_dimensions})"
         )
