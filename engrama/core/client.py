@@ -8,15 +8,22 @@ and parameterised Cypher execution.  Credentials are resolved in order:
 1. Explicit constructor arguments.
 2. Environment variables (``NEO4J_URI``, ``NEO4J_USERNAME``, ``NEO4J_PASSWORD``).
 3. Values loaded from a ``.env`` file via *python-dotenv*.
+
+The ``neo4j`` driver is imported **lazily** inside :meth:`__init__` so
+that ``import engrama`` works on a base install (DDR-004 portable
+storage) where the ``neo4j`` extra is not present.  Instantiating
+:class:`EngramaClient` requires the extra; importing it does not.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
-from neo4j import Driver, GraphDatabase, Record
+
+if TYPE_CHECKING:
+    from neo4j import Driver, Record
 
 # Load .env so credentials are available even when the caller does not
 # set environment variables explicitly.
@@ -44,6 +51,12 @@ class EngramaClient:
               ``NEO4J_USERNAME`` env var, then ``"neo4j"``.
         password: Authentication password.  Falls back to
                   ``NEO4J_PASSWORD`` env var.  Raises if not set.
+
+    Raises:
+        ImportError: If the ``neo4j`` extra is not installed
+            (``pip install engrama[neo4j]``).
+        ValueError: If no password is found in arguments, environment,
+            or a loaded ``.env`` file.
     """
 
     def __init__(
@@ -52,6 +65,15 @@ class EngramaClient:
         user: str | None = None,
         password: str | None = None,
     ) -> None:
+        # Lazy import — keeps `import engrama` working on a base install
+        # (no neo4j extra). The driver is only required at instantiation.
+        try:
+            from neo4j import GraphDatabase
+        except ImportError as e:
+            raise ImportError(
+                "EngramaClient requires the 'neo4j' extra. Install with: pip install engrama[neo4j]"
+            ) from e
+
         self._uri: str = uri or os.getenv("NEO4J_URI", _DEFAULT_URI)
         self._user: str = user or os.getenv("NEO4J_USERNAME", _DEFAULT_USER)
         resolved_password = password or os.getenv("NEO4J_PASSWORD")

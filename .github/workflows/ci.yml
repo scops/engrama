@@ -39,6 +39,44 @@ jobs:
       - name: ruff check
         run: uv run ruff check .
 
+  import-smoke:
+    name: Base install import smoke (DDR-004 promise)
+    runs-on: ubuntu-latest
+    # The whole point of DDR-004 is that `pip install engrama` works
+    # with NO extras — no Neo4j, no Docker, no Ollama. This job is the
+    # gate that catches accidental eager imports of optional deps in
+    # the engrama/__init__ chain. If it goes red, someone added a
+    # top-level `from neo4j import …` (or similar) somewhere it
+    # shouldn't.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Create a clean venv with base deps only
+        # `uv pip install .` installs only [project.dependencies] from
+        # pyproject.toml — no optional-dependencies, no dependency
+        # groups. That is exactly what `pip install engrama` does for
+        # an end user.
+        run: |
+          uv venv .venv-smoke
+          uv pip install --python .venv-smoke/bin/python .
+
+      - name: Import engrama with no extras
+        run: |
+          .venv-smoke/bin/python -c "import engrama; print('ok:', engrama.__version__)"
+
+      - name: Confirm SDK class is reachable
+        run: |
+          .venv-smoke/bin/python -c "from engrama import Engrama; print('SDK ok:', Engrama.__module__)"
+
   test-sqlite:
     name: Tests (SQLite, no Docker)
     runs-on: ubuntu-latest
