@@ -484,6 +484,20 @@ class Neo4jAsyncStore:
         )
         return {r["title"] for r in records}
 
+    async def get_approved_titles(self) -> set[str]:
+        """Return titles of all approved Insights.
+
+        Used by reflect to skip patterns the user has already approved,
+        so a re-run doesn't pin them back to ``status='pending'`` (the
+        default applied by ``MERGE``).
+        """
+        records, _, _ = await self._driver.execute_query(
+            "MATCH (i:Insight {status: 'approved'}) "
+            "RETURN i.title AS title",
+            database_=self._database,
+        )
+        return {r["title"] for r in records}
+
     async def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
         """Retrieve pending Insights ordered by confidence (highest first),
         breaking ties by ``created_at`` (newest first).

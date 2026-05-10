@@ -210,6 +210,22 @@ async def test_insight_lifecycle_and_dismissed_titles_alias(store):
     assert title in await store.get_dismissed_titles()
 
 
+async def test_get_approved_titles(store):
+    """Approved insights surface in ``get_approved_titles`` (NOT in
+    dismissed). Reflect uses this to skip patterns the user has already
+    accepted, avoiding silent re-pinning to ``status='pending'`` on a
+    re-run.
+    """
+    title = _unique("appins")
+    await store.merge_node("Insight", "title", title, {
+        "body": "x", "confidence": 0.9, "status": "pending",
+    })
+    assert title not in await store.get_approved_titles()
+    await store.update_insight_status(title, "approved")
+    assert title in await store.get_approved_titles()
+    assert title not in await store.get_dismissed_titles()
+
+
 # ----------------------------------------------------------------------
 # Lookup
 # ----------------------------------------------------------------------

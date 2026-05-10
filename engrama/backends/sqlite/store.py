@@ -838,6 +838,19 @@ class SqliteGraphStore:
         )
         return {r["key_value"] for r in cur.fetchall()}
 
+    def get_approved_insight_titles(self) -> set[str]:
+        """Return titles of approved Insights.
+
+        Used by reflect to skip patterns the user has already approved,
+        so a re-run doesn't pin them back to ``status='pending'`` (the
+        default applied by ``MERGE``).
+        """
+        cur = self._conn.execute(
+            "SELECT key_value FROM nodes WHERE label = 'Insight' "
+            "AND json_extract(props, '$.status') = 'approved'",
+        )
+        return {r["key_value"] for r in cur.fetchall()}
+
     def find_insight_by_source_query(
         self,
         source_query: str,

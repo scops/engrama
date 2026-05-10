@@ -275,6 +275,10 @@ class SqliteAsyncStore:
         # the async contract uses ``get_dismissed_titles`` to match Neo4j.
         return await self._run(self._sync.get_dismissed_insight_titles)
 
+    async def get_approved_titles(self) -> set[str]:
+        # Symmetric with get_dismissed_titles — sync has a longer name.
+        return await self._run(self._sync.get_approved_insight_titles)
+
     async def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
         return await self._run(self._sync.get_pending_insights, limit)
 

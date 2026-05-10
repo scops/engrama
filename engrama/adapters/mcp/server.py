@@ -1229,12 +1229,21 @@ def create_engrama_mcp(
         except Exception as e:
             logger.warning("Could not profile graph: %s", e)
 
-        # --- Step 2: Get dismissed titles ---
+        # --- Step 2: Get already-judged titles ---
+        # ``judged`` covers both dismissed AND approved insights so a
+        # re-run of reflect doesn't re-MERGE them back to status="pending"
+        # (which would silently undo the user's review).
         dismissed: set[str] = set()
+        approved: set[str] = set()
         try:
             dismissed = await store.get_dismissed_titles()
         except Exception:
             pass
+        try:
+            approved = await store.get_approved_titles()
+        except Exception:
+            pass
+        judged = dismissed | approved
 
         # --- Helper to run a query and create Insights ---
         async def _run_pattern(
@@ -1279,7 +1288,7 @@ def create_engrama_mcp(
                     f"Solution transfer: {r['decision']} "
                     f"({r['source_project']} → {r['target_project']})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 body = (
                     f"The open problem \"{r['open_problem']}\" in project "
@@ -1303,7 +1312,7 @@ def create_engrama_mcp(
                     f"Shared technology: {r['technology']} "
                     f"({a_desc} & {b_desc})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 confidence = 0.75 if r["type_a"] != r["type_b"] else 0.6
                 body = (
@@ -1324,7 +1333,7 @@ def create_engrama_mcp(
                     f"Training opportunity: {r['course']} "
                     f"covers {r['concept']} (relates to: {issue_desc})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 body = (
                     f"The {r['issue_type'].lower()} \"{r['issue']}\" involves "
@@ -1344,7 +1353,7 @@ def create_engrama_mcp(
                     f"Technique transfer: {r['technique']} "
                     f"({r['source_domain']} → {r['target_domain']})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 related = r["related_entities"]
                 confidence = min(0.5 + (related * 0.1), 0.9)
@@ -1368,7 +1377,7 @@ def create_engrama_mcp(
                 count = r["entity_count"]
                 sample = r["sample"]
                 title = f"Concept cluster: {concept} ({count} entities)"
-                if title in dismissed:
+                if title in judged:
                     continue
                 sample_desc = ", ".join(
                     f"{s['label']}:{s['name']}" for s in (sample or [])[:5]
@@ -1392,7 +1401,7 @@ def create_engrama_mcp(
                     f"Stale knowledge: {r['label']}:{name} "
                     f"(linked to {r['project']})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 last_updated = r["last_updated"]
                 if hasattr(last_updated, "isoformat"):
@@ -1417,7 +1426,7 @@ def create_engrama_mcp(
             title = "Under-connected nodes need more relationships"
 
             # Skip if already dismissed
-            if title in dismissed:
+            if title in judged:
                 return
             try:
                 dismissed_sq = await store.find_insight_by_source_query(
@@ -1502,6 +1511,7 @@ def create_engrama_mcp(
             "queries_run": queries_run,
             "queries_skipped": queries_skipped,
             "dismissed_count": len(dismissed),
+            "approved_count": len(approved),
             "insights_count": len(insights),
             "insights": insights,
         }, default=str, indent=2)

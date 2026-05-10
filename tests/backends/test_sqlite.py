@@ -322,6 +322,19 @@ def test_dismissed_insights_excluded_from_pending(store):
     assert store.get_dismissed_insight_titles() == {"drop"}
 
 
+def test_approved_insight_titles_separate_from_dismissed(store):
+    """Reflect re-runs must skip approved insights, not just dismissed
+    ones — otherwise the merge_node rebuild silently pins them back to
+    status='pending'.
+    """
+    store.merge_node("Insight", "title", "yes", {"confidence": 0.5, "status": "pending"})
+    store.merge_node("Insight", "title", "no",  {"confidence": 0.5, "status": "pending"})
+    store.update_insight_status("yes", "approved")
+    store.update_insight_status("no",  "dismissed")
+    assert store.get_approved_insight_titles() == {"yes"}
+    assert store.get_dismissed_insight_titles() == {"no"}
+
+
 def test_mark_insight_synced(store):
     store.merge_node("Insight", "title", "i1", {"confidence": 0.5, "status": "approved"})
     assert store.mark_insight_synced("i1", "vault/insights/i1.md") is True
