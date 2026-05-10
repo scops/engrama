@@ -37,6 +37,14 @@ updates:
       # Security advisories always get their own PR (one per CVE) so they
       # are visible and reviewable in isolation. Achieved by NOT including
       # security-updates in any group.
+    ignore:
+      # fastmcp v3 introduces breaking changes that fail our MCP test
+      # suite (verified on PR #10, closed without merge). Stop Dependabot
+      # from re-proposing major bumps until we deliberately migrate.
+      # Patch and minor updates within v2 are still welcome.
+      - dependency-name: "fastmcp"
+        update-types:
+          - "version-update:semver-major"
 
   # ---------------------------------------------------------------------------
   # GitHub Actions used in .github/workflows/*.yml — keep them pinned to a
