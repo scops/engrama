@@ -225,11 +225,21 @@ class HybridSearchEngine:
                 if not name:
                     continue
                 norm = 1.0 if v_all_equal else (r.get("score", 0.0) - v_min) / v_range
+                # Copy enrichment fields when the vector backend exposes
+                # them. Pure-semantic hits (no fulltext overlap) would
+                # otherwise carry an empty ``properties`` dict, which
+                # surfaces as ``summary=""`` / ``tags=[]`` in the MCP
+                # response and starves the caller of context.
+                vec_props: dict[str, Any] = {}
+                for k in ("confidence", "updated_at", "summary", "tags"):
+                    if k in r and r[k] is not None:
+                        vec_props[k] = r[k]
                 sr = SearchResult(
                     node_id=r.get("node_id", ""),
                     label=r.get("label", ""),
                     name=name,
                     vector_score=norm,
+                    properties=vec_props,
                 )
                 by_name[name] = sr
 

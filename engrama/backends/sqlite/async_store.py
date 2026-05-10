@@ -356,10 +356,13 @@ class SqliteAsyncStore:
         query_embedding: list[float],
         limit: int = 10,
     ) -> list[dict[str, Any]]:
-        """k-ANN search returning ``[{node_id, label, name, score}]``.
+        """k-ANN search returning ``[{node_id, label, name, score,
+        summary, tags, confidence, updated_at}]``.
 
-        Renames the sync vec store's ``key`` field to ``name`` so the
-        shape matches :meth:`Neo4jAsyncStore.search_similar`.
+        Renames the sync vec store's ``key`` field to ``name`` and
+        forwards the enrichment fields so the hybrid scorer can populate
+        ``summary``/``tags`` for pure-semantic hits (matches
+        :meth:`Neo4jAsyncStore.search_similar`).
         """
         rows = await self._run(
             self._vector.search_similar, query_embedding, limit,
@@ -370,6 +373,10 @@ class SqliteAsyncStore:
                 "label": r["label"],
                 "name": r["key"],
                 "score": r["score"],
+                "summary": r.get("summary", ""),
+                "tags": r.get("tags"),
+                "confidence": r.get("confidence"),
+                "updated_at": r.get("updated_at"),
             }
             for r in rows
         ]

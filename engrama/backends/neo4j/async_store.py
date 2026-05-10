@@ -774,7 +774,11 @@ class Neo4jAsyncStore:
                 "RETURN elementId(node) AS node_id, "
                 "primary_label AS label, "
                 "COALESCE(node.name, node.title) AS name, "
-                "score "
+                "score, "
+                "COALESCE(node.summary, node.description, '') AS summary, "
+                "node.tags AS tags, "
+                "node.confidence AS confidence, "
+                "toString(node.updated_at) AS updated_at "
                 "ORDER BY score DESC LIMIT $limit"
             )
             records, _, _ = await self._driver.execute_query(

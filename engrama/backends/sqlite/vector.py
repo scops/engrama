@@ -8,6 +8,7 @@ is created lazily because vec0 requires the dimension at CREATE time.
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import struct
@@ -151,10 +152,15 @@ class SqliteVecStore:
         try:
             cur = self._conn.execute(
                 f"""
-                SELECT v.node_id   AS node_id,
-                       1 - v.distance AS score,
-                       n.label     AS label,
-                       n.key_value AS key
+                SELECT v.node_id                                AS node_id,
+                       1 - v.distance                           AS score,
+                       n.label                                  AS label,
+                       n.key_value                              AS key,
+                       json_extract(n.props, '$.summary')       AS summary,
+                       json_extract(n.props, '$.description')   AS description,
+                       json_extract(n.props, '$.tags')          AS tags,
+                       json_extract(n.props, '$.confidence')    AS confidence,
+                       n.updated_at                             AS updated_at
                 FROM {self._index_name} v
                 JOIN nodes n ON n.id = v.node_id
                 WHERE v.embedding MATCH ?
@@ -166,15 +172,25 @@ class SqliteVecStore:
         except sqlite3.OperationalError as e:
             logger.warning("vec0 search failed: %s", e)
             return []
-        return [
-            {
+        results: list[dict[str, Any]] = []
+        for r in cur.fetchall():
+            tags = r["tags"]
+            if tags:
+                try:
+                    tags = json.loads(tags)
+                except (TypeError, ValueError):
+                    tags = None
+            results.append({
                 "node_id": str(r["node_id"]),
                 "score": r["score"],
                 "label": r["label"],
                 "key": r["key"],
-            }
-            for r in cur.fetchall()
-        ]
+                "summary": r["summary"] or r["description"] or "",
+                "tags": tags,
+                "confidence": r["confidence"],
+                "updated_at": r["updated_at"],
+            })
+        return results
 
     def search_similar(
         self,

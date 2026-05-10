@@ -125,7 +125,10 @@ async def test_pending_insight_lifecycle(store):
 
 
 async def test_store_embedding_and_search_similar(store):
-    await store.merge_node("Project", "name", "p", {})
+    await store.merge_node("Project", "name", "p", {
+        "summary": "demo summary",
+        "tags": ["demo", "vector"],
+    })
     assert await store.store_embedding(
         "Project", "name", "p", [1.0, 0.0, 0.0, 0.0],
     ) is True
@@ -136,6 +139,11 @@ async def test_store_embedding_and_search_similar(store):
     assert out[0]["name"] == "p"
     assert out[0]["label"] == "Project"
     assert "node_id" in out[0] and "score" in out[0]
+    # Enrichment fields must be projected so the hybrid scorer can
+    # populate summary/tags for pure-semantic hits without a second
+    # round trip.
+    assert out[0]["summary"] == "demo summary"
+    assert out[0]["tags"] == ["demo", "vector"]
 
 
 # ----------------------------------------------------------------------
