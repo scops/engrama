@@ -187,9 +187,9 @@
 - [ ] `adapters/langchain/` — LangChain Memory + Tool
 - [ ] `adapters/rest/` — FastAPI HTTP endpoints
 
-## Phase 11 · Vectors (v2)
+## Phase 11 · Vectors (v2) ✅
 
-> DDR-003 Phases A–C complete. Remaining: temporal reasoning, security, multi-scope, benchmarks.
+> DDR-003 Phases A–D complete.
 
 - [x] Protocol-based architecture — `GraphStore`, `VectorStore`, `EmbeddingProvider` (DDR-003 Phase A)
 - [x] Local embeddings — `OllamaProvider` with `nomic-embed-text` (DDR-003 Phase B)
@@ -203,7 +203,20 @@
 - [x] 18 new tests: vector store, hybrid search, engine embed, factory (DDR-003 Phase C)
 - [x] Temporal reasoning — confidence decay, valid_to, query_at_date, enhanced stale_knowledge (DDR-003 Phase D) ✅
 
-## Phase 12 · Security hardening
+## Phase 12 · Portable storage (DDR-004) ✅
+
+> Goal: zero-dependency install. Engrama runs on SQLite + sqlite-vec by default; Neo4j becomes an opt-in extra. The data model and the public API stay identical on both backends. Merged 2026-05-10 via PR #5.
+
+- [x] **Phase 1** — `Neo4jGraphStore` (sync) converts driver Records / Nodes / Relationships to plain Python dicts at the boundary. `EngramaEngine` and `recall.py` consume dicts.
+- [x] **Phase 2** — Full SQLite backend: `engrama/backends/sqlite/{store,async_store,vector,schema.sql}.py`. 36+ protocol methods, FTS5 fulltext, sqlite-vec vector search.
+- [x] **Phase 3** — `create_stores()` / `create_async_stores()` factory dispatches CLI, SDK and MCP server. Default `GRAPH_BACKEND=sqlite`. Neo4j moved to `[project.optional-dependencies]`.
+- [x] **Phase 4** — `OpenAICompatibleProvider` covers OpenAI, Ollama, LM Studio, vLLM, llama.cpp, Jina with one client. `httpx` promoted to base dep.
+- [x] **Async contract suite** — `tests/contracts/test_async_graphstore_contract.py` parameterised over both async backends. 421 tests passing total (was 393 before this phase).
+- [x] **Bugs surfaced & fixed pre-merge:** async-store contract drift on SQLite (commit `23d5537`), reflect re-pinning approved Insights to pending (`e1a0d4e`), hybrid search dropping enrichment on pure-vector hits (`156fbf5`).
+- [x] **Public-facing decision guide** — `BACKENDS.md` with FAQ and decision tree; `DDR-004.md` with the formal record.
+- [ ] **Follow-ups** (non-blocking): FTS5 query sanitization for queries containing `-` (SQLite default tokenizer treats it as an operator), first-class `engrama export` / `engrama import` cross-backend migration tool, README embedder matrix with worked examples per provider.
+
+## Phase 13 · Security hardening
 
 > DDR-003 Phase E — input sanitization, provenance tracking, trust-aware retrieval.
 
@@ -212,7 +225,7 @@
 - [ ] Trust-aware retrieval weighting
 - [ ] Scope isolation (Phase F)
 
-## Phase 13 · Multi-scope memory
+## Phase 14 · Multi-scope memory
 
 > DDR-003 Phase F — scope hierarchy: org_id → user_id → agent_id → session_id.
 
@@ -220,7 +233,7 @@
 - [ ] Scope-filtered queries
 - [ ] Cross-scope sharing policies
 
-## Phase 14 · Standard benchmarks
+## Phase 15 · Standard benchmarks
 
 > DDR-003 Phase G — LOCOMO (target 70–80%) and LongMemEval (target 75–85%).
 
@@ -229,17 +242,27 @@
 - [ ] Baseline measurements
 - [ ] Iterative improvement
 
+## Phase 16 · Backend ecosystem (post-DDR-004)
+
+> Now that the protocol layer is proven across two backends, additional backends can be added without touching the engine, skills, or MCP server. Each lands behind its own `[project.optional-dependencies]` extra.
+
+- [ ] `engrama[arcadedb]` — multi-model database (graph + document + vector)
+- [ ] `engrama[chroma]` — Chroma as a dedicated vector store while keeping SQLite or Neo4j for graph
+- [ ] `engrama[leann]` — LEANN for very large embedding indexes
+- [ ] `engrama[pgvector]` — Postgres + pgvector for teams already on Postgres
+- [ ] First-class `engrama export` / `engrama import` cross-backend migration tool
+
 
 ## Definition of done
 
 1. Code committed to repo
-2. Test passes against real Neo4j (or tmp vault for Obsidian tests)
-3. Documented in reference file
+2. Tests pass on both backends (the contract suite in `tests/contracts/` is parameterised over SQLite and Neo4j; Neo4j-only tests skip when `NEO4J_PASSWORD` is unset, but every behaviour they assert must also hold on SQLite via the contract suite)
+3. Documented in the relevant reference file (README, ARCHITECTURE, BACKENDS, or DDR depending on scope)
 4. Conventional commit message
 
 ## Test suite status
 
-280+ tests across 15 test files:
+421 passing / 1 skipped across 19 test files (post-DDR-004):
 
 - `test_core.py` — core engine integration tests
 - `test_adapters.py` — MCP server integration
@@ -254,5 +277,11 @@
 - `test_protocols.py` — protocol conformance
 - `test_neo4j_store.py` — async store integration
 - `test_hybrid_search.py` — HybridSearchEngine sync+async, scoring, degradation
-- `test_vector_store.py` — vector index operations
+- `test_vector_store.py` — Neo4j vector index operations
 - `test_temporal.py` — confidence decay, valid_to, temporal queries, CLI decay
+- `test_openai_compat_embedder.py` — OpenAI-compat embedder (DDR-004)
+- `backends/test_sqlite.py` — SqliteGraphStore behaviours (DDR-004)
+- `backends/test_sqlite_async.py` — SqliteAsyncStore rich-shape contract (DDR-004)
+- `backends/test_sqlite_vector.py` — sqlite-vec virtual table operations (DDR-004)
+- `contracts/test_graphstore_contract.py` — sync stores, parameterised SQLite + Neo4j
+- `contracts/test_async_graphstore_contract.py` — async stores, parameterised SQLite + Neo4j (DDR-004)

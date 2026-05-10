@@ -7,6 +7,97 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.9.0] — 2026-05-10
+
+Portable storage — SQLite + sqlite-vec as the default backend, Neo4j moved
+to an opt-in extra, single OpenAI-compatible embedder, full async contract
+parity (DDR-004, PR #5).
+
+### Added
+- **SQLite backend** (`engrama/backends/sqlite/`) — full implementation of
+  the `GraphStore` and `VectorStore` protocols on top of `sqlite3` and the
+  `sqlite-vec` extension. Modules: `store.py` (sync graph store, 36+
+  methods, FTS5 fulltext), `async_store.py` (async wrapper that mirrors
+  `Neo4jAsyncStore`'s rich return shapes), `vector.py` (`SqliteVecStore`
+  using the `vec0` virtual table), `schema.sql` (auto-applied on first
+  connect). Default DB path: `~/.engrama/engrama.db` (override via
+  `ENGRAMA_DB_PATH`).
+- **OpenAI-compatible embedding provider** (`engrama/embeddings/openai_compat.py`)
+  — single client speaking the OpenAI `/v1/embeddings` shape, drives
+  Ollama, OpenAI proper, LM Studio, vLLM, llama.cpp, Jina, and any
+  future compatible service. Sync (`embed`, `embed_batch`) and async
+  (`aembed`, `aembed_batch`) methods.
+- **Backend factory** (`engrama/backends/__init__.py`) — `create_stores()`
+  and `create_async_stores()` dispatch the engine, CLI, SDK, and MCP
+  server through a single entry point. `GRAPH_BACKEND` env var (or
+  explicit config dict) selects the implementation. Skills and tools no
+  longer hardcode any backend.
+- **`engrama-mcp` CLI flags** — `--backend {sqlite,neo4j}` (default
+  `sqlite`), `--db-path`, `--neo4j-uri`, `--neo4j-password`,
+  `--neo4j-database`, `--vault-path`. Defaults read from environment.
+- **Async GraphStore contract suite** (`tests/contracts/test_async_graphstore_contract.py`)
+  — parameterised over `sqlite-async` and `neo4j-async`. Pins the rich
+  response shapes the MCP server depends on (`merge_node` returns
+  `{"node": ..., "created": ...}`, neighbours come back as `{label,
+  name, via, properties}`, etc.). 12 tests × 2 backends.
+- **`get_approved_titles`** on every store layer (Neo4j async, SQLite
+  async, SQLite sync) — used by reflect to skip patterns the user has
+  already approved (see Fixed below).
+- **76 SQLite-only tests** (`tests/backends/test_sqlite*.py`,
+  `tests/contracts/test_graphstore_contract.py` SQLite branch) — pass on
+  a fresh checkout with no `.env` and no Docker. CI runs them by default.
+- **BACKENDS.md** — newcomer-facing decision guide: when to pick SQLite,
+  when to pick Neo4j, how to switch, FAQ. Linked from README and
+  ARCHITECTURE.
+- **DDR-004** — formal record of the portable storage decision, including
+  the three regressions found and fixed during e2e testing.
+
+### Changed
+- **Default `GRAPH_BACKEND` is now `sqlite`** (was `neo4j`). Existing
+  installs that rely on Neo4j must set `GRAPH_BACKEND=neo4j` explicitly.
+- **`neo4j` driver moves to an opt-in extra** (`pip install
+  engrama[neo4j]`). Base install ships with `sqlite-vec`, `httpx`,
+  `pydantic`, `python-dotenv`, `pyyaml` only.
+- **`Neo4jGraphStore` returns plain dicts** at the boundary (Phase 1 of
+  the spec). `EngramaEngine`, `recall.py` and other internal callers
+  consume Python `dict` rather than driver-specific types.
+- **`HybridSearchEngine`** copies enrichment fields (`summary`, `tags`,
+  `confidence`, `updated_at`) onto `SearchResult` for vector-only hits.
+  Both backends' `search_similar` now project these fields.
+- **`engrama init`** is a no-op on SQLite for Cypher schema statements
+  (the schema is in `backends/sqlite/schema.sql`, applied automatically)
+  but still seeds domain nodes from the active profile.
+- **Documentation overhaul** — README, README_ES, ARCHITECTURE, ROADMAP,
+  VISION, GRAPH-SCHEMA, CONTRIBUTING and GLOSARIO_ES all updated to
+  reflect the dual-backend reality. `.env.example` now defaults to the
+  zero-dep SQLite path with Neo4j commented as opt-in.
+
+### Fixed
+- **Async store contract drift on SQLite.** `SqliteAsyncStore` was
+  forwarding sync calls via `__getattr__`, leaking the legacy
+  `[{"n": ...}]` shape to the MCP server which expected the rich
+  `Neo4jAsyncStore`-style `{"node": ..., "created": ...}`. Crashed any
+  `engrama_remember` call against the SQLite backend. Replaced with
+  explicit method-by-method delegation that translates shapes; locked
+  in by the new async contract suite.
+- **Reflect overwriting approved Insights.** Each `_build_*` helper in
+  `engrama_reflect` called `merge_node` with `status="pending"`,
+  silently undoing user approvals on re-runs. Reflect now filters
+  candidates against `dismissed | approved`. The output payload also
+  exposes `approved_count` next to `dismissed_count`.
+- **Search dropping enrichment on pure-semantic hits.** The hybrid
+  scorer only copied `summary`/`tags` from fulltext results, so nodes
+  ranked solely by vector similarity surfaced with empty fields.
+  `search_similar` now projects the enrichment fields and the scorer
+  copies them on the vector path.
+
+### Removed
+- Implicit assumption that Neo4j is required to use Engrama. Neo4j is
+  still fully supported via the `neo4j` extra; nothing about its
+  feature surface has changed.
+
+---
+
 ## [0.8.0] — 2026-04-14
 
 Temporal reasoning — confidence decay, fact supersession, and time-travel queries (DDR-003 Phase D).
