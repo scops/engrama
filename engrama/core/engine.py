@@ -19,8 +19,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from neo4j import Record
-
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
 
@@ -75,7 +73,7 @@ class EngramaEngine:
     # Write operations
     # ------------------------------------------------------------------
 
-    def merge_node(self, label: str, properties: dict[str, Any]) -> list[Record]:
+    def merge_node(self, label: str, properties: dict[str, Any]) -> list[dict[str, Any]]:
         """Create or update a node using ``MERGE``.
 
         DDR-003 Phase D: temporal fields ``valid_from``, ``valid_to``,
@@ -133,7 +131,7 @@ class EngramaEngine:
         rel_type: str,
         to_name: str,
         to_label: str,
-    ) -> list[Record]:
+    ) -> list[dict[str, Any]]:
         """Create or update a relationship between two existing nodes."""
         from_key = "title" if from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if to_label in TITLE_KEYED_LABELS else "name"
@@ -144,7 +142,7 @@ class EngramaEngine:
             to_label, to_key, to_name,
         )
 
-    def run(self, query: str, params: dict[str, Any] | None = None) -> list[Record]:
+    def run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Execute a raw Cypher query (delegates to the backend)."""
         return self._store.run_cypher(query, params)
 
@@ -152,7 +150,7 @@ class EngramaEngine:
     # Read operations
     # ------------------------------------------------------------------
 
-    def search(self, query: str, limit: int = 10) -> list[Record]:
+    def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Run a fulltext search against the ``memory_search`` index."""
         return self._store.fulltext_search(query, limit=limit)
 
@@ -206,6 +204,6 @@ class EngramaEngine:
             label=label,
         )
 
-    def get_context(self, name: str, label: str, hops: int = 1) -> list[Record]:
+    def get_context(self, name: str, label: str, hops: int = 1) -> list[dict[str, Any]]:
         """Retrieve the local neighbourhood of a node."""
         return self._store.get_neighbours(label, "name", name, hops=hops)

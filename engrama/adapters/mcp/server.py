@@ -37,12 +37,10 @@ from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
-from neo4j import AsyncGraphDatabase, AsyncDriver
 from pydantic import BaseModel, ConfigDict, Field
 
 from engrama.core.schema import NodeType, RelationType, TITLE_KEYED_LABELS
 from engrama.adapters.obsidian import ObsidianAdapter, NoteParser
-from engrama.backends.neo4j.async_store import Neo4jAsyncStore
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -262,33 +260,32 @@ class WriteInsightInput(BaseModel):
 
 
 def create_engrama_mcp(
-    db_url: str = "bolt://localhost:7687",
-    username: str = "neo4j",
-    password: str = "",
-    database: str = "neo4j",
+    backend: str | None = None,
+    config: dict[str, Any] | None = None,
     vault_path: str | None = None,
 ) -> FastMCP:
     """Create and return a configured Engrama MCP server.
 
     Parameters:
-        db_url: Neo4j bolt URI.
-        username: Neo4j username.
-        password: Neo4j password.
-        database: Neo4j database name.
+        backend: Optional ``GRAPH_BACKEND`` override. Defaults to env
+            (``sqlite`` if unset).
+        config: Optional configuration dict forwarded to
+            :func:`engrama.backends.create_async_stores` (recognised
+            keys: ``ENGRAMA_DB_PATH``, ``NEO4J_URI``,
+            ``NEO4J_USERNAME``, ``NEO4J_PASSWORD``,
+            ``NEO4J_DATABASE``, ``EMBEDDING_DIMENSIONS``).
         vault_path: Absolute path to the Obsidian vault root.
-                    Falls back to ``VAULT_PATH`` env var.
+            Falls back to ``VAULT_PATH`` env var.
 
     Returns:
         A :class:`FastMCP` instance ready to run.
     """
-
-    # -- Lifespan: manage the async Neo4j driver + async store ------
+    cfg: dict[str, Any] = dict(config or {})
+    if backend is not None:
+        cfg["GRAPH_BACKEND"] = backend
 
     @asynccontextmanager
     async def lifespan(server: FastMCP):  # noqa: ARG001
-        driver: AsyncDriver = AsyncGraphDatabase.driver(
-            db_url, auth=(username, password)
-        )
         # Initialise Obsidian adapter (optional — sync tools disabled if no vault)
         resolved_vault = vault_path or os.environ.get("VAULT_PATH")
         obsidian: ObsidianAdapter | None = None
@@ -301,20 +298,12 @@ def create_engrama_mcp(
         else:
             logger.info("VAULT_PATH not set — Obsidian sync tools disabled")
 
-        # DDR-003: create async store + embedding provider
+        # Create the backend-agnostic async store via the factory.
+        from engrama.backends import create_async_stores, create_embedding_provider
         async_store = None
         embedder = None
         try:
-            from engrama.backends import create_async_store, create_embedding_provider
-            config = {
-                "GRAPH_BACKEND": "neo4j",
-                "NEO4J_URI": db_url,
-                "NEO4J_USERNAME": username,
-                "NEO4J_PASSWORD": password,
-            }
-            # Create async store for all MCP operations (graph + vector)
-            async_store = create_async_store(driver, database, config)
-            # Create embedding provider (sync+async methods)
+            async_store, _ = create_async_stores(cfg)
             embedder = create_embedding_provider()
             logger.info(
                 "Async store: %r, embedder: %r (dims=%d)",
@@ -325,32 +314,38 @@ def create_engrama_mcp(
             async_store = None
 
         try:
-            await driver.verify_connectivity()
-            logger.info("Engrama MCP connected to Neo4j at %s", db_url)
+            if async_store is not None:
+                health = await async_store.health_check()
+                logger.info("Engrama MCP backend ready: %s", health)
             yield {
-                "driver": driver,
-                "database": database,
                 "async_store": async_store,
                 "obsidian": obsidian,
                 "parser": NoteParser(),
                 "embedder": embedder,
             }
         finally:
-            # Close async embedding client if present
             if embedder is not None and hasattr(embedder, "aclose"):
                 try:
                     await embedder.aclose()
                 except Exception:
                     pass
-            await driver.close()
-            logger.info("Engrama MCP disconnected from Neo4j")
+            if async_store is not None and hasattr(async_store, "close"):
+                try:
+                    await async_store.close()
+                except Exception:
+                    pass
+            logger.info("Engrama MCP shut down cleanly")
 
     mcp = FastMCP("engrama_mcp", lifespan=lifespan)
 
     # -- Helper: get async store from context -----
 
-    def _store(ctx: Context) -> Neo4jAsyncStore:
-        """Extract the async store from the lifespan state."""
+    def _store(ctx: Context) -> Any:
+        """Extract the async store from the lifespan state.
+
+        Returned type is the protocol-shaped store; caller doesn't need
+        to know whether it's the SQLite or Neo4j implementation.
+        """
         state = ctx.request_context.lifespan_context
         store = state.get("async_store")
         if store is None:
@@ -1234,12 +1229,21 @@ def create_engrama_mcp(
         except Exception as e:
             logger.warning("Could not profile graph: %s", e)
 
-        # --- Step 2: Get dismissed titles ---
+        # --- Step 2: Get already-judged titles ---
+        # ``judged`` covers both dismissed AND approved insights so a
+        # re-run of reflect doesn't re-MERGE them back to status="pending"
+        # (which would silently undo the user's review).
         dismissed: set[str] = set()
+        approved: set[str] = set()
         try:
             dismissed = await store.get_dismissed_titles()
         except Exception:
             pass
+        try:
+            approved = await store.get_approved_titles()
+        except Exception:
+            pass
+        judged = dismissed | approved
 
         # --- Helper to run a query and create Insights ---
         async def _run_pattern(
@@ -1284,7 +1288,7 @@ def create_engrama_mcp(
                     f"Solution transfer: {r['decision']} "
                     f"({r['source_project']} → {r['target_project']})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 body = (
                     f"The open problem \"{r['open_problem']}\" in project "
@@ -1308,7 +1312,7 @@ def create_engrama_mcp(
                     f"Shared technology: {r['technology']} "
                     f"({a_desc} & {b_desc})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 confidence = 0.75 if r["type_a"] != r["type_b"] else 0.6
                 body = (
@@ -1329,7 +1333,7 @@ def create_engrama_mcp(
                     f"Training opportunity: {r['course']} "
                     f"covers {r['concept']} (relates to: {issue_desc})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 body = (
                     f"The {r['issue_type'].lower()} \"{r['issue']}\" involves "
@@ -1349,7 +1353,7 @@ def create_engrama_mcp(
                     f"Technique transfer: {r['technique']} "
                     f"({r['source_domain']} → {r['target_domain']})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 related = r["related_entities"]
                 confidence = min(0.5 + (related * 0.1), 0.9)
@@ -1373,7 +1377,7 @@ def create_engrama_mcp(
                 count = r["entity_count"]
                 sample = r["sample"]
                 title = f"Concept cluster: {concept} ({count} entities)"
-                if title in dismissed:
+                if title in judged:
                     continue
                 sample_desc = ", ".join(
                     f"{s['label']}:{s['name']}" for s in (sample or [])[:5]
@@ -1397,7 +1401,7 @@ def create_engrama_mcp(
                     f"Stale knowledge: {r['label']}:{name} "
                     f"(linked to {r['project']})"
                 )
-                if title in dismissed:
+                if title in judged:
                     continue
                 last_updated = r["last_updated"]
                 if hasattr(last_updated, "isoformat"):
@@ -1422,7 +1426,7 @@ def create_engrama_mcp(
             title = "Under-connected nodes need more relationships"
 
             # Skip if already dismissed
-            if title in dismissed:
+            if title in judged:
                 return
             try:
                 dismissed_sq = await store.find_insight_by_source_query(
@@ -1507,6 +1511,7 @@ def create_engrama_mcp(
             "queries_run": queries_run,
             "queries_skipped": queries_skipped,
             "dismissed_count": len(dismissed),
+            "approved_count": len(approved),
             "insights_count": len(insights),
             "insights": insights,
         }, default=str, indent=2)

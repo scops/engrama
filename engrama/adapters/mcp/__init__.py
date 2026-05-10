@@ -4,14 +4,14 @@ any other MCP-compatible client.
 
 Usage (stdio, default)::
 
-    engrama-mcp
+    engrama-mcp                              # SQLite backend (default)
+    engrama-mcp --backend neo4j              # opt in to Neo4j
+    engrama-mcp --transport http --port 8000
 
-Usage (HTTP)::
-
-    engrama-mcp --transport http --host 127.0.0.1 --port 8000
-
-The server reads ``NEO4J_URI``, ``NEO4J_USERNAME``, and ``NEO4J_PASSWORD``
-from environment variables (or a ``.env`` file).
+The server reads ``GRAPH_BACKEND`` (default ``sqlite``) plus
+backend-specific env vars: ``ENGRAMA_DB_PATH`` for SQLite,
+``NEO4J_URI`` / ``NEO4J_USERNAME`` / ``NEO4J_PASSWORD`` for Neo4j.
+``VAULT_PATH`` enables the Obsidian sync tools.
 """
 
 import argparse
@@ -33,24 +33,37 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Engrama MCP Server")
     parser.add_argument(
+        "--backend",
+        default=os.getenv("GRAPH_BACKEND", "sqlite"),
+        choices=["sqlite", "neo4j"],
+        help="Storage backend (default: sqlite, override with $GRAPH_BACKEND)",
+    )
+    # SQLite-specific
+    parser.add_argument(
+        "--db-path",
+        default=os.getenv("ENGRAMA_DB_PATH"),
+        help="SQLite database path (default: ~/.engrama/engrama.db)",
+    )
+    # Neo4j-specific (only used when --backend=neo4j)
+    parser.add_argument(
         "--db-url",
         default=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-        help="Neo4j bolt URI (default: $NEO4J_URI or bolt://localhost:7687)",
+        help="Neo4j bolt URI when --backend=neo4j",
     )
     parser.add_argument(
         "--username",
         default=os.getenv("NEO4J_USERNAME", "neo4j"),
-        help="Neo4j username (default: $NEO4J_USERNAME or neo4j)",
+        help="Neo4j username when --backend=neo4j",
     )
     parser.add_argument(
         "--password",
         default=os.getenv("NEO4J_PASSWORD"),
-        help="Neo4j password (default: $NEO4J_PASSWORD, required)",
+        help="Neo4j password when --backend=neo4j (env: $NEO4J_PASSWORD)",
     )
     parser.add_argument(
         "--database",
         default=os.getenv("NEO4J_DATABASE", "neo4j"),
-        help="Neo4j database name (default: neo4j)",
+        help="Neo4j database name when --backend=neo4j",
     )
     parser.add_argument(
         "--transport",
@@ -68,17 +81,25 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if not args.password:
-        parser.error(
-            "Neo4j password is required. Set NEO4J_PASSWORD in the environment, "
-            "create a .env file, or pass --password."
-        )
+    # Build a config dict honoring the backend choice.
+    config: dict[str, str] = {"GRAPH_BACKEND": args.backend}
+    if args.backend == "neo4j":
+        if not args.password:
+            parser.error(
+                "--password (or $NEO4J_PASSWORD) is required when --backend=neo4j."
+            )
+        config.update({
+            "NEO4J_URI": args.db_url,
+            "NEO4J_USERNAME": args.username,
+            "NEO4J_PASSWORD": args.password,
+            "NEO4J_DATABASE": args.database,
+        })
+    elif args.backend == "sqlite" and args.db_path:
+        config["ENGRAMA_DB_PATH"] = args.db_path
 
     mcp = create_engrama_mcp(
-        db_url=args.db_url,
-        username=args.username,
-        password=args.password,
-        database=args.database,
+        backend=args.backend,
+        config=config,
         vault_path=args.vault_path,
     )
 

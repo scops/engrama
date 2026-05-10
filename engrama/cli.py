@@ -3,17 +3,22 @@ engrama/cli.py
 
 Command-line interface for Engrama.
 
+The active backend is selected by the ``GRAPH_BACKEND`` env var
+(``sqlite`` by default, opt in to ``neo4j``). All commands work
+against whichever backend is configured.
+
 Commands:
 
     engrama init --profile developer
-        Generate schema.py and init-schema.cypher from a profile YAML,
-        then apply the schema to Neo4j.
+        Generate schema.py from a profile YAML, then seed Domain /
+        Concept nodes for any requested modules. With Neo4j, also
+        applies init-schema.cypher.
 
     engrama init --profile base --modules hacking teaching photography
         Compose a base profile with domain modules and apply.
 
     engrama verify
-        Check connectivity to Neo4j.
+        Check the configured backend is reachable.
 
     engrama reflect
         Run cross-entity pattern detection and print results.
@@ -32,6 +37,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -53,7 +59,12 @@ def _find_project_root() -> Path:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """Generate schema from profile and optionally apply to Neo4j."""
+    """Generate schema from profile and apply it to the configured backend.
+
+    SQLite picks up its schema automatically at connection time, so for
+    that backend ``init`` only seeds Domain/Concept nodes for the
+    requested modules. Neo4j gets the full ``init-schema.cypher`` apply.
+    """
     project_root = _find_project_root()
     profile_path = Path(args.profile)
 
@@ -100,26 +111,27 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     print("Schema files generated.")
 
-    # Step 2: Optionally apply schema to Neo4j
-    if not args.no_apply:
-        cypher_path = project_root / "scripts" / "init-schema.cypher"
-        if cypher_path.exists():
-            print("Applying schema to Neo4j...")
-            try:
-                from engrama.backends.neo4j.backend import Neo4jGraphStore
-                from engrama.core.client import EngramaClient
-                client = EngramaClient()
-                client.verify()
-                store = Neo4jGraphStore(client)
+    if args.no_apply:
+        return 0
 
-                # Read and execute the cypher script statement by statement.
-                # Each chunk between semicolons may contain leading comment
-                # lines (// ...) that must be stripped before execution.
+    # Step 2: apply schema + seed via the configured backend.
+    backend = os.getenv("GRAPH_BACKEND", "sqlite")
+    try:
+        from engrama.backends import create_stores
+        store, _ = create_stores()
+    except Exception as e:
+        print(f"Warning: could not open {backend} backend: {e}", file=sys.stderr)
+        return 0
+
+    try:
+        if backend == "neo4j":
+            cypher_path = project_root / "scripts" / "init-schema.cypher"
+            if cypher_path.exists():
+                print("Applying schema to Neo4j...")
                 cypher_text = cypher_path.read_text(encoding="utf-8")
                 raw_chunks = [s.strip() for s in cypher_text.split(";") if s.strip()]
                 statements: list[str] = []
                 for chunk in raw_chunks:
-                    # Strip comment lines from within the chunk
                     lines = [
                         line for line in chunk.splitlines()
                         if line.strip() and not line.strip().startswith("//")
@@ -127,25 +139,23 @@ def cmd_init(args: argparse.Namespace) -> int:
                     cleaned = "\n".join(lines).strip()
                     if cleaned:
                         statements.append(cleaned)
-
                 failures = store.apply_schema_statements(statements)
                 for stmt, exc in failures:
-                    # SHOW statements may fail on certain Neo4j editions
-                    # — skip non-critical errors.
                     if "SHOW" not in stmt.upper():
                         print(f"  Warning: {exc}", file=sys.stderr)
-                # Step 3: Seed Domain nodes per module (BUG-004)
-                if modules:
-                    _seed_domain_nodes(store, modules)
-
-                client.close()
-                print("Schema applied successfully.")
-            except Exception as e:
-                print(f"Warning: could not apply schema to Neo4j: {e}", file=sys.stderr)
-                print("  You can apply it manually with:", file=sys.stderr)
-                print(f"  cypher-shell < {cypher_path}", file=sys.stderr)
+            else:
+                print("No init-schema.cypher found — skipping Neo4j apply.")
         else:
-            print("No init-schema.cypher found — skipping Neo4j apply.")
+            print(f"Backend {backend!r}: schema auto-applied at connection time.")
+
+        if modules:
+            _seed_domain_nodes(store, modules)
+        print("Init complete.")
+    except Exception as e:
+        print(f"Warning: init step failed: {e}", file=sys.stderr)
+    finally:
+        if hasattr(store, "close"):
+            store.close()
 
     return 0
 
@@ -195,10 +205,11 @@ _MODULE_SEEDS: dict[str, dict] = {
 }
 
 
-def _seed_domain_nodes(store: "Neo4jGraphStore", modules: list[str]) -> None:
+def _seed_domain_nodes(store: Any, modules: list[str]) -> None:
     """Seed Domain (and optionally Concept) nodes for each module.
 
-    Uses MERGE so it's safe to run repeatedly.
+    Backend-agnostic: works against any GraphStore that exposes the
+    ``seed_domain`` / ``seed_concept_in_domain`` helpers.
     """
     for module_name in modules:
         seed = _MODULE_SEEDS.get(module_name)
@@ -221,13 +232,15 @@ def _seed_domain_nodes(store: "Neo4jGraphStore", modules: list[str]) -> None:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    """Check Neo4j connectivity."""
+    """Check the configured backend is reachable."""
     try:
-        from engrama.core.client import EngramaClient
-        client = EngramaClient()
-        client.verify()
-        print(f"Connected to Neo4j at {client._uri}")
-        client.close()
+        from engrama.backends import create_stores
+        store, _ = create_stores()
+        health = store.health_check()
+        backend = os.getenv("GRAPH_BACKEND", "sqlite")
+        print(f"Connected to {backend}: {health}")
+        if hasattr(store, "close"):
+            store.close()
         return 0
     except Exception as e:
         print(f"Connection failed: {e}", file=sys.stderr)
@@ -257,22 +270,19 @@ def cmd_reflect(args: argparse.Namespace) -> int:
 def cmd_reindex(args: argparse.Namespace) -> int:
     """Batch re-embed all nodes and store vectors.
 
-    Iterates over every node in the graph, generates embeddings using the
-    configured provider, and stores them via the vector store.  Existing
-    embeddings are overwritten.
+    Iterates over every node in the graph, generates embeddings using
+    the configured provider, and writes them via the configured vector
+    store. Existing embeddings are overwritten.
     """
     try:
-        from engrama.backends import create_embedding_provider
-        from engrama.backends.neo4j.backend import Neo4jGraphStore
-        from engrama.backends.neo4j.vector import Neo4jVectorStore
-        from engrama.core.client import EngramaClient
+        from engrama.backends import create_embedding_provider, create_stores
         from engrama.embeddings.text import node_to_text
 
         embedder = create_embedding_provider()
         if getattr(embedder, "dimensions", 0) == 0:
             print(
                 "Error: EMBEDDING_PROVIDER is 'none'. "
-                "Set EMBEDDING_PROVIDER=ollama in .env first.",
+                "Configure an embedder (e.g. EMBEDDING_PROVIDER=ollama) first.",
                 file=sys.stderr,
             )
             return 1
@@ -281,27 +291,23 @@ def cmd_reindex(args: argparse.Namespace) -> int:
         if not embedder.health_check():
             print(
                 "Error: embedding provider health check failed. "
-                "Is Ollama running and the model pulled?",
+                "Is the configured endpoint reachable?",
                 file=sys.stderr,
             )
             return 1
 
-        client = EngramaClient()
-        client.verify()
-        store = Neo4jGraphStore(client)
-        vector_store = Neo4jVectorStore(
-            client,
-            dimensions=embedder.dimensions,
-        )
-        vector_store.ensure_index()
-
+        # Push embedder dims through the factory so the vector store
+        # sizes itself correctly (sqlite-vec needs dims at create time).
+        config = {"EMBEDDING_DIMENSIONS": str(embedder.dimensions)}
+        store, vector_store = create_stores(config)
         # Fetch all nodes
         print("Fetching all nodes from graph...")
         records = store.list_nodes_for_embedding(force=args.force)
 
         if not records:
             print("No nodes to embed.")
-            client.close()
+            if hasattr(store, "close"):
+                store.close()
             return 0
 
         total = len(records)
@@ -350,7 +356,8 @@ def cmd_reindex(args: argparse.Namespace) -> int:
         print(f"\nDone: {embedded} nodes embedded, {errors} errors.")
         count = vector_store.count()
         print(f"Total vectors in index: {count}")
-        client.close()
+        if hasattr(store, "close"):
+            store.close()
         return 0
 
     except Exception as e:
@@ -444,7 +451,10 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
 
     # --- init ---
-    p_init = sub.add_parser("init", help="Generate schema from profile and apply to Neo4j")
+    p_init = sub.add_parser(
+        "init",
+        help="Generate schema from profile and apply it to the configured backend",
+    )
     p_init.add_argument(
         "--profile", "-p", required=True,
         help="Profile name (e.g. 'developer') or path to YAML file",
@@ -455,7 +465,7 @@ def main() -> None:
     )
     p_init.add_argument(
         "--no-apply", action="store_true",
-        help="Generate files only, don't apply to Neo4j",
+        help="Generate files only, don't apply to the backend",
     )
     p_init.add_argument(
         "--dry-run", action="store_true",
@@ -463,7 +473,7 @@ def main() -> None:
     )
 
     # --- verify ---
-    sub.add_parser("verify", help="Check Neo4j connectivity")
+    sub.add_parser("verify", help="Check the configured backend is reachable")
 
     # --- reflect ---
     sub.add_parser("reflect", help="Run cross-entity pattern detection")

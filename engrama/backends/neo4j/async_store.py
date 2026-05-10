@@ -50,6 +50,10 @@ class Neo4jAsyncStore:
         self._database = database
         self._vector_dimensions = vector_dimensions
         self._vector_index = vector_index
+        # Set to True by the factory when it created the driver itself,
+        # so close() knows whether to shut the driver down or leave it
+        # to the caller (legacy lifespan path).
+        self._owns_driver = False
 
     # ------------------------------------------------------------------
     # Properties
@@ -480,6 +484,20 @@ class Neo4jAsyncStore:
         )
         return {r["title"] for r in records}
 
+    async def get_approved_titles(self) -> set[str]:
+        """Return titles of all approved Insights.
+
+        Used by reflect to skip patterns the user has already approved,
+        so a re-run doesn't pin them back to ``status='pending'`` (the
+        default applied by ``MERGE``).
+        """
+        records, _, _ = await self._driver.execute_query(
+            "MATCH (i:Insight {status: 'approved'}) "
+            "RETURN i.title AS title",
+            database_=self._database,
+        )
+        return {r["title"] for r in records}
+
     async def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
         """Retrieve pending Insights ordered by confidence (highest first),
         breaking ties by ``created_at`` (newest first).
@@ -756,7 +774,11 @@ class Neo4jAsyncStore:
                 "RETURN elementId(node) AS node_id, "
                 "primary_label AS label, "
                 "COALESCE(node.name, node.title) AS name, "
-                "score "
+                "score, "
+                "COALESCE(node.summary, node.description, '') AS summary, "
+                "node.tags AS tags, "
+                "node.confidence AS confidence, "
+                "toString(node.updated_at) AS updated_at "
                 "ORDER BY score DESC LIMIT $limit"
             )
             records, _, _ = await self._driver.execute_query(
@@ -951,6 +973,17 @@ class Neo4jAsyncStore:
         """Return backend status."""
         await self._driver.verify_connectivity()
         return {"status": "ok", "backend": "neo4j-async"}
+
+    async def close(self) -> None:
+        """Shut the driver down if this store owns it.
+
+        Stores returned by :func:`engrama.backends.create_async_stores`
+        own their driver; manually constructed stores (driver passed in
+        from a caller-managed lifespan) do not.
+        """
+        if self._owns_driver and self._driver is not None:
+            await self._driver.close()
+            self._driver = None  # type: ignore[assignment]
 
     # ------------------------------------------------------------------
     # Repr

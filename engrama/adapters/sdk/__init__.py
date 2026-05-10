@@ -45,7 +45,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
 from engrama.core.schema import TITLE_KEYED_LABELS
 from engrama.skills.remember import RememberSkill
@@ -60,16 +59,22 @@ class Engrama:
     """High-level Python SDK for the Engrama memory graph.
 
     Wraps the engine, skills, and optional Obsidian adapter behind a
-    single, convenient interface.  Use as a context manager to ensure
-    the Neo4j connection is closed cleanly.
+    single, convenient interface. Backend is selected by env (default
+    ``GRAPH_BACKEND=sqlite``) or by passing explicit Neo4j credentials.
 
     Args:
-        uri: Neo4j bolt URI.  Falls back to ``NEO4J_URI`` env var.
-        username: Neo4j user.  Falls back to ``NEO4J_USERNAME`` env var.
-        password: Neo4j password.  Falls back to ``NEO4J_PASSWORD`` env var.
-        vault_path: Obsidian vault path.  Falls back to ``VAULT_PATH``
-                    env var.  If ``None`` and no env var, Obsidian
-                    features are disabled.
+        uri: Neo4j bolt URI. Passing this implicitly selects
+            ``backend='neo4j'``. Falls back to ``NEO4J_URI`` env var.
+        username: Neo4j user. Falls back to ``NEO4J_USERNAME`` env var.
+        password: Neo4j password. Falls back to ``NEO4J_PASSWORD`` env var.
+        backend: Explicit backend override (``"sqlite"`` or ``"neo4j"``).
+            When ``None``, inferred from explicit Neo4j args, env, or
+            falls back to the default (``sqlite``).
+        db_path: SQLite database path (only used when backend is sqlite).
+            Falls back to ``ENGRAMA_DB_PATH`` env var.
+        vault_path: Obsidian vault path. Falls back to ``VAULT_PATH``
+            env var. If ``None`` and no env var, Obsidian features are
+            disabled.
     """
 
     def __init__(
@@ -77,31 +82,41 @@ class Engrama:
         uri: str | None = None,
         username: str | None = None,
         password: str | None = None,
+        *,
+        backend: str | None = None,
+        db_path: str | Path | None = None,
         vault_path: str | Path | None = None,
     ) -> None:
-        self._client = EngramaClient(uri=uri, user=username, password=password)
+        from engrama.backends import create_embedding_provider, create_stores
 
-        # DDR-003 Phase C: create vector store + embedder via factory
-        self._vector_store = None
-        self._embedder = None
-        try:
-            from engrama.backends import create_embedding_provider
-            from engrama.backends.neo4j.vector import Neo4jVectorStore
-            import os
+        # Resolve backend: explicit > implied by Neo4j args > env > default.
+        if backend is None:
+            if any(v is not None for v in (uri, username, password)):
+                backend = "neo4j"
+        config: dict[str, Any] = {}
+        if backend is not None:
+            config["GRAPH_BACKEND"] = backend
+        if uri is not None:
+            config["NEO4J_URI"] = uri
+        if username is not None:
+            config["NEO4J_USERNAME"] = username
+        if password is not None:
+            config["NEO4J_PASSWORD"] = password
+        if db_path is not None:
+            config["ENGRAMA_DB_PATH"] = str(db_path)
 
-            self._embedder = create_embedding_provider()
-            dims = int(os.getenv("EMBEDDING_DIMENSIONS", "768"))
-            vector_backend = os.getenv("VECTOR_BACKEND", "none")
-            if vector_backend == "neo4j":
-                self._vector_store = Neo4jVectorStore(
-                    self._client, dimensions=dims,
-                )
-                self._vector_store.ensure_index()
-        except Exception:
-            pass
+        self._embedder = create_embedding_provider()
+        # Push embedder dimensions through the factory so the vector
+        # store can size itself correctly.
+        if self._embedder is not None:
+            config.setdefault(
+                "EMBEDDING_DIMENSIONS",
+                str(getattr(self._embedder, "dimensions", 0) or 0),
+            )
 
+        self._store, self._vector_store = create_stores(config)
         self._engine = EngramaEngine(
-            self._client,
+            self._store,
             vector_store=self._vector_store,
             embedder=self._embedder,
         )
@@ -133,12 +148,14 @@ class Engrama:
         self.close()
 
     def close(self) -> None:
-        """Close the Neo4j connection."""
-        self._client.close()
+        """Release the underlying store (file handle / driver)."""
+        if hasattr(self._store, "close"):
+            self._store.close()
 
     def verify(self) -> None:
-        """Check that Neo4j is reachable."""
-        self._client.verify()
+        """Check the configured backend is reachable."""
+        if hasattr(self._store, "health_check"):
+            self._store.health_check()
 
     # ------------------------------------------------------------------
     # Remember
@@ -413,7 +430,8 @@ class Engrama:
 
     def __repr__(self) -> str:
         vault = f", vault={self._obsidian.vault_path}" if self._obsidian else ""
-        return f"Engrama(uri={self._client._uri!r}{vault})"
+        backend = type(self._store).__name__
+        return f"Engrama(backend={backend}{vault})"
 
 
 __all__ = ["Engrama"]
