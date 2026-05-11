@@ -105,6 +105,32 @@ class EngramaEngine:
                 logger.warning("Embedding failed for %s/%s: %s", label, merge_value, e)
                 embedding = None
 
+        # --- Guard against degenerate embeddings (issue #18) ---
+        # A None / empty / zero-norm vector cannot serve as a similarity
+        # key — storing it pollutes the hybrid-search ranking because
+        # cosine similarity is undefined (or uniformly maximal) against
+        # such a vector. Drop the embedding and flag the node so the
+        # next ``engrama reindex`` run picks it up. If the embedding is
+        # healthy we clear any pre-existing flag (self-healing on
+        # re-merge — exactly the workaround the issue documented).
+        from engrama.embeddings.health import is_degenerate_vector
+
+        if self._embed_on_write:
+            if is_degenerate_vector(embedding):
+                if embedding is not None:  # None already warned above
+                    logger.warning(
+                        "Embedding for %s/%s came back degenerate "
+                        "(len=%d, near-zero norm); skipping vector "
+                        "storage and flagging needs_reindex=true",
+                        label,
+                        merge_value,
+                        len(embedding),
+                    )
+                extra_props["needs_reindex"] = True
+                embedding = None
+            else:
+                extra_props["needs_reindex"] = False
+
         result = self._store.merge_node(
             label,
             merge_key,

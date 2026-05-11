@@ -1342,16 +1342,20 @@ class SqliteGraphStore:
     ) -> list[dict[str, Any]]:
         """Return nodes that need embeddings.
 
-        Once the vector store is wired, this filters by absence of an
-        entry in ``node_embeddings``. For now we return every node
-        (force=True) or every node missing an embedding flag in props.
+        With ``force=True`` returns every node. With ``force=False``
+        returns nodes missing an ``embedded`` marker or explicitly
+        flagged ``needs_reindex = true`` — the latter is set by the
+        engine when an embedding round-trip returned a degenerate
+        vector (issue #18), so a follow-up ``engrama reindex`` heals
+        them.
         """
         if force:
             cur = self._conn.execute("SELECT id, label, props FROM nodes")
         else:
             cur = self._conn.execute(
                 "SELECT id, label, props FROM nodes "
-                "WHERE COALESCE(json_extract(props, '$.embedded'), 0) = 0"
+                "WHERE COALESCE(json_extract(props, '$.embedded'), 0) = 0 "
+                "   OR COALESCE(json_extract(props, '$.needs_reindex'), 0) = 1"
             )
         return [
             {
