@@ -1,0 +1,20 @@
+# Auto-assigned reviewers per path.
+#
+# Lines later in the file take precedence over earlier ones, so the most
+# specific match wins. With a single maintainer today, the default rule
+# covers everything; per-path overrides exist as anchor points for future
+# co-maintainers without rewriting the file.
+#
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo.
+*                                   @scops
+
+# CI, packaging and supply-chain code is load-bearing; flag it explicitly.
+/.github/                           @scops
+/pyproject.toml                     @scops
+/uv.lock                            @scops
+
+# Architecture decisions and DDRs need an owner-level signoff.
+/DDR-*.md                           @scops
+/SECURITY.md                        @scops

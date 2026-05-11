@@ -1,0 +1,84 @@
+name: Bug report
+description: Something doesn't work the way the docs / DDRs say it should.
+title: "bug: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please include enough
+        context that someone unfamiliar with your setup can reproduce it.
+        Security-sensitive bugs should go through [private vulnerability
+        reporting](../../security/advisories/new) instead of a public issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Engrama version
+      description: "Output of `python -c \"import engrama; print(engrama.__version__)\"`."
+      placeholder: "0.9.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend in use
+      description: Which storage backend was active when the bug appeared?
+      options:
+        - SQLite (default)
+        - Neo4j
+        - Both / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.4"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 14.5 / Ubuntu 24.04 / Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal commands or code that trigger the bug. Smaller is better.
+      placeholder: |
+        1. `engrama init`
+        2. `engrama remember "..."`
+        3. Observed: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the full traceback if any. Use triple backticks for code blocks.
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Logs, screenshots, related issues, theories about the root cause.
+    validations:
+      required: false
