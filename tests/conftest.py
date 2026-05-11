@@ -4,8 +4,9 @@ Engrama test suite — conftest.py
 Tests that need a live Neo4j instance go through the ``neo4j_driver``
 fixture, which skips gracefully when ``NEO4J_PASSWORD`` is not set.
 This means the SQLite-only test suite (``tests/backends/test_sqlite*``)
-runs without any external dependency — matching the spec's goal of
-``pip install engrama && pytest`` working out of the box.
+runs without any external dependency — matching the spec's goal of a
+base install (``uv sync`` from source, or ``pip install engrama`` once
+on PyPI) plus ``pytest`` working out of the box.
 """
 
 import os

@@ -16,10 +16,10 @@ Cada elemento individual del grafo. Tiene una **etiqueta** (`Project`, `Technolo
 La conexión entre dos nodos. Tiene un **tipo** en mayúsculas y suele ser un verbo: `USES`, `TREATS`, `DOCUMENTS`. Es dirigida: va de un nodo origen a un nodo destino.
 
 **Neo4j**
-Base de datos de grafos open source (con versión LTS gratuita). Engrama la soporta como backend opcional para producción multi-proceso, índices vectoriales muy grandes o equipos que ya usan Cypher. Se administra con un lenguaje propio llamado **Cypher**. Se instala con `pip install engrama[neo4j]`.
+Base de datos de grafos open source (con versión LTS gratuita). Engrama la soporta como backend opcional para producción multi-proceso, índices vectoriales muy grandes o equipos que ya usan Cypher. Se administra con un lenguaje propio llamado **Cypher**. Se instala con `uv sync --extra neo4j` (o `pip install engrama[neo4j]` cuando Engrama llegue a PyPI).
 
 **SQLite**
-Base de datos relacional embebida en un único archivo. Es el backend por defecto de Engrama desde la versión 0.9 (DDR-004): cero servicios externos, cero Docker, cero JVM. Cualquier laptop o VM puede ejecutar Engrama con `pip install engrama` y un comando `engrama init`.
+Base de datos relacional embebida en un único archivo. Es el backend por defecto de Engrama desde la versión 0.9 (DDR-004): cero servicios externos, cero Docker, cero JVM. Cualquier laptop o VM puede ejecutar Engrama con `git clone` + `uv sync` y un comando `uv run engrama init` (Engrama todavía no está publicado en PyPI).
 
 **sqlite-vec**
 Extensión de SQLite que añade búsqueda vectorial mediante una "virtual table" llamada `vec0`. Engrama la usa para que los embeddings vivan en el mismo archivo `.db` que el grafo. Búsqueda por fuerza bruta — cómoda hasta ~100k vectores; más allá compensa pasar a Neo4j (ver [BACKENDS.md](BACKENDS.md)).
@@ -135,7 +135,7 @@ Framework Python para construir servidores MCP con poco código (decoradores `@m
 Gestor moderno de paquetes y entornos virtuales para Python, escrito en Rust. Reemplaza a `pip` + `venv` + `pip-tools`. Mucho más rápido. `uv run X` ejecuta un comando dentro del entorno del proyecto sin necesidad de activarlo.
 
 **Extra (de instalación)**
-Grupo opcional de dependencias declarado en `pyproject.toml`. `pip install engrama` instala solo el núcleo (SQLite); `pip install engrama[neo4j]` añade el driver de Neo4j; `pip install engrama[mcp]` añade FastMCP. Pueden combinarse: `pip install engrama[neo4j,mcp]`.
+Grupo opcional de dependencias declarado en `pyproject.toml`. `uv sync` instala solo el núcleo (SQLite); `uv sync --extra neo4j` añade el driver de Neo4j; `uv sync --extra mcp` añade FastMCP. Pueden combinarse: `uv sync --extra neo4j --extra mcp`. Cuando Engrama se publique en PyPI el equivalente será `pip install engrama[neo4j,mcp]`.
 
 **DDR (Design Decision Record)**
 Documento corto que registra una decisión arquitectónica importante, su contexto y sus consecuencias. Engrama tiene cuatro: DDR-001 clasificación facetada, DDR-002 sincronización bidireccional vault ↔ grafo, DDR-003 protocolos + embeddings + búsqueda híbrida + razonamiento temporal, DDR-004 almacenamiento portátil (SQLite por defecto).

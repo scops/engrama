@@ -17,9 +17,16 @@ profile that drives the entire system.
 ## Prerequisites
 
 The only hard dependencies are:
-- **Python ≥ 3.11** with PyYAML (`pip install pyyaml`)
-- **Neo4j** running (Docker or native)
+- **Python ≥ 3.11** with PyYAML (installed automatically by `uv sync`)
+- An installed Engrama checkout (`git clone` + `uv sync`)
 - **Obsidian** vault (optional — only needed for note sync features)
+
+**A database is not a prerequisite.** Since 0.9 Engrama defaults to a
+zero-dependency SQLite backend that lives in `~/.engrama/engrama.db`
+and is created automatically on first connection. Neo4j is opt-in
+(`uv sync --extra neo4j` + Docker) for multi-process production
+setups, very large vector indexes, or teams already using Cypher —
+see [BACKENDS.md](../../../BACKENDS.md) for the decision guide.
 
 No dependency on any specific AI framework, agent SDK, or MCP runtime.
 
@@ -30,7 +37,11 @@ script produces:
 
 1. **`engrama/core/schema.py`** — NodeType enum, RelationType enum, dataclasses,
    `TITLE_KEYED_LABELS` set (used by engine and MCP server for merge-key logic)
-2. **`scripts/init-schema.cypher`** — Neo4j constraints, fulltext index, range indexes
+2. **`scripts/init-schema.cypher`** — Neo4j-only constraints, fulltext index,
+   and range indexes. Applied automatically when the Neo4j backend is selected.
+   The SQLite backend ignores this file entirely; its schema lives in
+   `engrama/backends/sqlite/schema.sql` and is applied on first connection,
+   so `uv run engrama init` is backend-agnostic.
 
 The profile YAML is the **single source of truth**.  Change it, rerun the
 script, and the entire schema propagates.  No manual editing needed.
@@ -151,10 +162,14 @@ Once confirmed:
    uv run engrama init --profile base --modules nursing biology cooking
    ```
 
-3. If the fulltext index already exists with different labels, drop it first:
+3. **(Neo4j backend only)** If the fulltext index already exists with
+   different labels, drop it first via `cypher-shell` or Neo4j Browser:
    ```cypher
    DROP INDEX memory_search IF EXISTS;
    ```
+   On the SQLite backend this step is unnecessary — `uv run engrama
+   init` regenerates the schema and FTS5 index automatically on the
+   next connection.
 
 4. Verify:
    ```bash
