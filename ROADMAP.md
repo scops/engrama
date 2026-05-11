@@ -214,7 +214,8 @@
 - [x] **Async contract suite** — `tests/contracts/test_async_graphstore_contract.py` parameterised over both async backends. 421 tests passing total (was 393 before this phase).
 - [x] **Bugs surfaced & fixed pre-merge:** async-store contract drift on SQLite (commit `23d5537`), reflect re-pinning approved Insights to pending (`e1a0d4e`), hybrid search dropping enrichment on pure-vector hits (`156fbf5`).
 - [x] **Public-facing decision guide** — `BACKENDS.md` with FAQ and decision tree; `DDR-004.md` with the formal record.
-- [ ] **Follow-ups** (non-blocking): FTS5 query sanitization for queries containing `-` (SQLite default tokenizer treats it as an operator), first-class `engrama export` / `engrama import` cross-backend migration tool, README embedder matrix with worked examples per provider.
+- [x] **FTS5 query sanitization** — user queries containing hyphens, colons, parentheses, quotes, etc. are now routed through a sanitizer in `SqliteGraphStore.fulltext_search` (each unsafe token wrapped as a quoted phrase, embedded `"` doubled per FTS5 grammar). Closes the `engrama-mcp-server` miss; operator keywords (`AND`/`OR`/`NOT`/`NEAR`) keep their semantics.
+- [ ] **Follow-ups** (non-blocking): first-class `engrama export` / `engrama import` cross-backend migration tool, README embedder matrix with worked examples per provider.
 
 ## Phase 13 · Security hardening
 

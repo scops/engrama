@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from engrama.backends.sqlite import SqliteGraphStore
+from engrama.backends.sqlite.store import _sanitize_fts5_query
 
 
 @pytest.fixture()
@@ -274,6 +275,87 @@ def test_fulltext_indexes_tags_as_text(store):
     store.merge_node("Project", "name", "alpha", {"tags": ["security", "graphdb"]})
     out = store.fulltext_search("security")
     assert any(r["name"] == "alpha" for r in out)
+
+
+# ----------------------------------------------------------------------
+# FTS5 query sanitization (unit-level)
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("", ""),
+        ("simple", "simple"),
+        ("multiple bare words", "multiple bare words"),
+        ("engrama-mcp-server", '"engrama-mcp-server"'),
+        ("foo:bar", '"foo:bar"'),
+        ("status:active engrama-mcp", '"status:active" "engrama-mcp"'),
+        ("(parens)", '"(parens)"'),
+        ("wild*card", '"wild*card"'),
+        # Embedded double quote inside an unsafe token gets doubled per
+        # the FTS5 phrase-escape grammar; the safe "say" token passes
+        # through unwrapped.
+        ('say "hi"', 'say """hi"""'),
+        # Boolean operator keywords are pure alphanumeric, so they
+        # survive unquoted and keep their FTS5 semantics.
+        ("foo AND bar", "foo AND bar"),
+        ("a OR b NOT c", "a OR b NOT c"),
+        # Extra whitespace collapses; empty input stays empty.
+        ("   ", ""),
+    ],
+)
+def test_sanitize_fts5_query(raw, expected):
+    assert _sanitize_fts5_query(raw) == expected
+
+
+def test_fulltext_search_handles_hyphenated_query(store):
+    """The default FTS5 tokenizer treats ``-`` as syntax, so a raw
+    ``engrama-mcp-server`` MATCH would error. The sanitizer wraps such
+    tokens as a phrase, restoring the expected match behaviour.
+    """
+    store.merge_node(
+        "Project",
+        "name",
+        "alpha",
+        {"description": "engrama-mcp-server uses FastMCP"},
+    )
+    out = store.fulltext_search("engrama-mcp-server")
+    assert any(r["name"] == "alpha" for r in out)
+
+
+def test_fulltext_search_handles_special_chars_without_error(store):
+    """Tokens that contain ``:``, ``(``, ``*`` etc. must not raise — the
+    sanitizer routes them through the FTS5 phrase grammar.
+    """
+    store.merge_node("Project", "name", "alpha", {"description": "regular content"})
+    # Each of these used to be capable of erroring in raw FTS5.
+    for q in ["foo:bar", "(parens)", "wild*card", "trailing-dash-"]:
+        out = store.fulltext_search(q)
+        assert isinstance(out, list)
+
+
+def test_fulltext_search_mixed_safe_and_unsafe_tokens(store):
+    """A query like ``status:active engrama-mcp`` must still AND-combine
+    its tokens against the FTS5 index.
+    """
+    store.merge_node(
+        "Project",
+        "name",
+        "match",
+        {"description": "engrama-mcp deployment, status active"},
+    )
+    store.merge_node(
+        "Project",
+        "name",
+        "miss",
+        {"description": "engrama-mcp only, no status field mentioned"},
+    )
+    out = store.fulltext_search("engrama-mcp active")
+    names = {r["name"] for r in out}
+    assert "match" in names
+    # "miss" does not contain "active" so it must not surface.
+    assert "miss" not in names
 
 
 # ----------------------------------------------------------------------
