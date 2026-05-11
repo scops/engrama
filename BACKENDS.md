@@ -17,7 +17,7 @@ later with one environment variable.
 
 | | **SQLite (default)** | **Neo4j (opt-in)** |
 |---|---|---|
-| Install | `pip install engrama` | `pip install engrama[neo4j]` + Docker |
+| Install | `git clone` + `uv sync` | `git clone` + `uv sync --extra neo4j` + Docker |
 | External services | none | Neo4j 5.26 LTS in Docker |
 | First run | seconds | ~15s for the database to boot |
 | Disk footprint | one `.db` file | Neo4j data directory + Docker image (~500 MB) |
@@ -61,7 +61,8 @@ In practice the first branch covers ~90% of users.
 ## When to pick SQLite
 
 - **You're getting started.** Zero install friction, no Docker, no JVM.
-  `pip install engrama && engrama init` and you're querying the graph.
+  `git clone … && uv sync && uv run engrama init` and you're querying
+  the graph (Engrama is not yet on PyPI; install from source for now).
 - **Single-agent setups.** One Claude Desktop, one MCP client, one
   long-running script. SQLite handles this perfectly.
 - **CI runs and tests.** No external service to spin up — `pytest` works
@@ -100,7 +101,7 @@ or skill that works on one backend works on the other.
 
 ```bash
 # 1. Install the extra and start Neo4j
-pip install 'engrama[neo4j]'
+uv sync --extra neo4j
 docker compose up -d                 # uses docker-compose.yml from the repo
 
 # 2. Tell Engrama to use it

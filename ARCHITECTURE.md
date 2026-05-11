@@ -17,7 +17,7 @@
 | Async HTTP | httpx | ≥ 0.27 | Non-blocking embedding calls in MCP server |
 | Container (Neo4j only) | Docker Desktop | latest | Reproducible Neo4j infrastructure |
 | CI/CD | GitHub Actions | — | Tests and PyPI publishing |
-| Packaging | pyproject.toml | — | `pip install engrama` (base) / `engrama[neo4j]` (opt-in) |
+| Packaging | pyproject.toml | — | `uv sync` (base) / `uv sync --extra neo4j` (opt-in); PyPI publication planned |
 
 ## What makes Engrama different
 
@@ -244,7 +244,7 @@ engrama/
 │   │   │   ├── async_store.py # SqliteAsyncStore — mirrors Neo4jAsyncStore contract
 │   │   │   ├── vector.py    # SqliteVecStore — sqlite-vec virtual table
 │   │   │   └── schema.sql   # Applied automatically on first connect
-│   │   └── neo4j/           # Opt-in via pip install engrama[neo4j]
+│   │   └── neo4j/           # Opt-in via `uv sync --extra neo4j`
 │   │       ├── backend.py   # Neo4jGraphStore (sync) — SDK / CLI
 │   │       ├── async_store.py # Neo4jAsyncStore (async) — MCP server
 │   │       └── vector.py    # Neo4jVectorStore — vector index ops

@@ -4,10 +4,12 @@ Engrama — Backend factory.
 Reads configuration from environment variables (or a ``dict``) and
 returns the appropriate ``GraphStore`` + ``VectorStore`` implementations.
 
-Default backend is ``sqlite`` (zero dependency, file-based) so
-``pip install engrama`` works without Docker, JVM, or any external
-service. ``GRAPH_BACKEND=neo4j`` opts in to the production backend
-(install with ``pip install engrama[neo4j]``).
+Default backend is ``sqlite`` (zero dependency, file-based) so a
+base install works without Docker, JVM, or any external service
+(``uv sync`` from a source checkout; ``pip install engrama`` once
+the package ships on PyPI). ``GRAPH_BACKEND=neo4j`` opts in to the
+production backend (install with ``uv sync --extra neo4j`` /
+``pip install engrama[neo4j]``).
 
 Usage::
 

@@ -55,9 +55,10 @@ parity (DDR-004, PR #5).
 ### Changed
 - **Default `GRAPH_BACKEND` is now `sqlite`** (was `neo4j`). Existing
   installs that rely on Neo4j must set `GRAPH_BACKEND=neo4j` explicitly.
-- **`neo4j` driver moves to an opt-in extra** (`pip install
-  engrama[neo4j]`). Base install ships with `sqlite-vec`, `httpx`,
-  `pydantic`, `python-dotenv`, `pyyaml` only.
+- **`neo4j` driver moves to an opt-in extra** (`uv sync --extra
+  neo4j`, or the `engrama[neo4j]` extra once Engrama ships on PyPI).
+  Base install ships with `sqlite-vec`, `httpx`, `pydantic`,
+  `python-dotenv`, `pyyaml` only.
 - **`Neo4jGraphStore` returns plain dicts** at the boundary (Phase 1 of
   the spec). `EngramaEngine`, `recall.py` and other internal callers
   consume Python `dict` rather than driver-specific types.

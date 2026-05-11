@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](BACKENDS.md)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
-[![PyPI](https://img.shields.io/badge/pypi-engrama-orange.svg)](https://pypi.org/project/engrama)
+[![Estado](https://img.shields.io/badge/estado-alpha%20%C2%B7%20instalaci%C3%B3n%20desde%20fuente-orange.svg)](#inicio-r%C3%A1pido-sqlite-cero-dependencias)
 
 Engrama dota a cualquier agente de IA de una memoria persistente y
 estructurada respaldada por un **grafo de conocimiento**. En lugar de
@@ -17,7 +17,8 @@ conocimiento acumulado.
 Hay dos backends de primera clase:
 
 - **SQLite + `sqlite-vec`** (por defecto desde la 0.9) — un único
-  archivo, sin servicios externos, `pip install engrama` y a correr.
+  archivo, sin servicios externos, `git clone` + `uv sync` y a
+  correr (Engrama aún no está en PyPI; instalación desde fuente).
 - **Neo4j 5.26 LTS** (opcional) — para producción multiproceso, índices
   vectoriales muy grandes o equipos que ya usan Cypher.
 

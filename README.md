@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](BACKENDS.md)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
-[![PyPI](https://img.shields.io/badge/pypi-engrama-orange.svg)](https://pypi.org/project/engrama)
+[![Status](https://img.shields.io/badge/status-alpha%20%C2%B7%20install%20from%20source-orange.svg)](#quick-start-sqlite-zero-dep)
 
 Engrama gives any AI agent persistent, structured memory backed by a
 **knowledge graph**. Instead of flat key-value stores or opaque vector
@@ -16,7 +16,8 @@ their accumulated knowledge.
 Two backends are first-class:
 
 - **SQLite + `sqlite-vec`** (default since 0.9) — single file, zero
-  external services, `pip install engrama` and you're running.
+  external services, `git clone` + `uv sync` and you're running
+  (Engrama is not yet on PyPI; install from source).
 - **Neo4j 5.26 LTS** (opt-in) — for multi-process production setups,
   large-scale vector search, or teams that already use Cypher.
 

@@ -54,7 +54,8 @@ class EngramaClient:
 
     Raises:
         ImportError: If the ``neo4j`` extra is not installed
-            (``pip install engrama[neo4j]``).
+            (``uv sync --extra neo4j`` from a source checkout, or
+            ``pip install engrama[neo4j]`` once Engrama ships on PyPI).
         ValueError: If no password is found in arguments, environment,
             or a loaded ``.env`` file.
     """
@@ -71,7 +72,9 @@ class EngramaClient:
             from neo4j import GraphDatabase
         except ImportError as e:
             raise ImportError(
-                "EngramaClient requires the 'neo4j' extra. Install with: pip install engrama[neo4j]"
+                "EngramaClient requires the 'neo4j' extra. "
+                "Install with: uv sync --extra neo4j  "
+                "(or `pip install engrama[neo4j]` once Engrama ships on PyPI)."
             ) from e
 
         self._uri: str = uri or os.getenv("NEO4J_URI", _DEFAULT_URI)

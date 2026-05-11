@@ -37,3 +37,9 @@ neo4j_logs/
 # ── Development references (not part of codebase) ─────
 _obsidian_mcp_ref/
 docs/
+
+# ── Skill packaging artifacts ──────────────────────────
+# `*.skill` zips are generated from `engrama/skills/<name>/` on
+# demand (see issue #14). The in-package directory is the single
+# source of truth; the zip is never committed.
+*.skill
