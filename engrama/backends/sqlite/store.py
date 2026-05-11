@@ -1167,8 +1167,14 @@ class SqliteGraphStore:
         ]
 
     def detect_under_connected_nodes(self) -> list[dict[str, Any]]:
-        """Nodes with fewer than 2 relationships (excluding Domain/Insight
-        and archived).
+        """Nodes with fewer than 2 *substantive* relationships (excluding
+        Domain/Insight and archived nodes).
+
+        Edges to neighbours marked ``status = 'stub'`` are not counted —
+        stubs are placeholder nodes created during ingest before their
+        real content arrives, and treating them as real connections
+        masks genuinely under-connected nodes whose only neighbours are
+        placeholders.
         """
         cur = self._conn.execute(
             """
@@ -1177,7 +1183,13 @@ class SqliteGraphStore:
                 n.label     AS label,
                 (
                     SELECT COUNT(*) FROM edges e
-                    WHERE e.from_id = n.id OR e.to_id = n.id
+                    JOIN nodes m
+                      ON m.id = CASE WHEN e.from_id = n.id
+                                     THEN e.to_id
+                                     ELSE e.from_id END
+                    WHERE (e.from_id = n.id OR e.to_id = n.id)
+                      AND COALESCE(json_extract(m.props, '$.status'), 'active')
+                          != 'stub'
                 ) AS rel_count,
                 n.created_at AS created
             FROM nodes n
