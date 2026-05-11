@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import logging
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,11 @@ _FTS_FIELDS = (
     "tags",
 )
 
+# A token is "safe" to pass to FTS5 MATCH unquoted iff it contains only
+# the bareword alphabet. Everything else (hyphens, colons, parentheses,
+# quotes, wildcards, ...) is grammar to FTS5 and must be quoted.
+_FTS5_SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_]+$")
+
 
 def _now_iso() -> str:
     return _dt.datetime.now(_dt.UTC).isoformat()
@@ -48,6 +54,33 @@ def _fts_value(v: Any) -> str:
     if isinstance(v, list):
         return " ".join(str(x) for x in v)
     return str(v)
+
+
+def _sanitize_fts5_query(query: str) -> str:
+    """Turn a free-form user query into a syntactically valid FTS5 MATCH
+    expression.
+
+    FTS5's default tokenizer treats characters like ``-``, ``:``, ``(``,
+    ``"`` and ``*`` as grammar. Passing raw user input therefore makes
+    common queries (e.g. ``engrama-mcp-server``) either error out with
+    ``OperationalError`` or miss the fulltext path silently.
+
+    The strategy is deliberately conservative: split on whitespace and
+    wrap any token that contains anything outside ``[A-Za-z0-9_]`` as a
+    quoted phrase, doubling any embedded ``"`` per the FTS5 grammar.
+    Pure-alphanumeric tokens — including the operator keywords ``AND``,
+    ``OR``, ``NOT`` and ``NEAR`` — pass through unchanged, so callers
+    that intentionally use boolean syntax keep their semantics.
+    """
+    tokens = query.split()
+    out: list[str] = []
+    for tok in tokens:
+        if _FTS5_SAFE_TOKEN.fullmatch(tok):
+            out.append(tok)
+        else:
+            escaped = tok.replace('"', '""')
+            out.append(f'"{escaped}"')
+    return " ".join(out)
 
 
 def _node_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -497,6 +530,12 @@ class SqliteGraphStore:
         """
         if not query.strip():
             return []
+        # Convert the raw user query into a valid FTS5 MATCH expression
+        # so hyphens, colons and other tokenizer-significant characters
+        # don't trip a syntax error or silently miss matches.
+        match_expr = _sanitize_fts5_query(query)
+        if not match_expr:
+            return []
         try:
             cur = self._conn.execute(
                 """
@@ -514,13 +553,14 @@ class SqliteGraphStore:
                 ORDER BY rank
                 LIMIT ?
                 """,
-                (query, limit),
+                (match_expr, limit),
             )
         except sqlite3.OperationalError as e:
-            # FTS5 syntax errors on caller queries (e.g. unbalanced quotes)
-            # — return empty rather than propagating, matching how Neo4j
-            # silently returns no matches for a bad Lucene string.
-            logger.debug("FTS5 query failed for %r: %s", query, e)
+            # FTS5 syntax errors on caller queries (e.g. unbalanced quotes
+            # that survive sanitization) — return empty rather than
+            # propagating, matching how Neo4j silently returns no matches
+            # for a bad Lucene string.
+            logger.debug("FTS5 query failed for %r (sanitized to %r): %s", query, match_expr, e)
             return []
         results: list[dict[str, Any]] = []
         for r in cur.fetchall():
