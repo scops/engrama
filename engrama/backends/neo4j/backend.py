@@ -938,13 +938,19 @@ class Neo4jGraphStore:
     ) -> list[dict[str, Any]]:
         """List nodes for re-embedding.
 
-        With ``force=False`` skips nodes already labelled ``:Embedded``;
-        with ``force=True`` returns every node.
+        With ``force=False`` returns nodes not yet labelled ``:Embedded``
+        **or** explicitly flagged ``needs_reindex = true`` — the latter
+        is set by the engine when an embedding round-trip returned a
+        degenerate vector (issue #18). With ``force=True`` returns every
+        node.
 
         Returns ``[{eid, labels, props}, ...]``.
         """
         records = self._client.run(
-            "MATCH (n) WHERE NOT 'Embedded' IN labels(n) OR $force "
+            "MATCH (n) WHERE "
+            "NOT 'Embedded' IN labels(n) "
+            "OR coalesce(n.needs_reindex, false) = true "
+            "OR $force "
             "RETURN elementId(n) AS eid, labels(n) AS labels, "
             "properties(n) AS props",
             {"force": force},
