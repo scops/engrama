@@ -811,3 +811,51 @@ def test_detect_under_connected_skips_archived(store):
     store.delete_node("Project", "name", "ghost", soft=True)
     out = store.detect_under_connected_nodes()
     assert all(r["name"] != "ghost" for r in out)
+
+
+def test_detect_under_connected_excludes_stub_neighbours(store):
+    """Edges to ``status = 'stub'`` neighbours must not satisfy the
+    "well-connected" threshold — otherwise a node whose only
+    connections are placeholders is wrongly considered healthy.
+    """
+    # Subject node with two stub neighbours and zero real ones.
+    store.merge_node("Project", "name", "subject", {})
+    store.merge_node("Concept", "name", "stub-a", {"status": "stub"})
+    store.merge_node("Concept", "name", "stub-b", {"status": "stub"})
+    store.merge_relation("Project", "name", "subject", "RELATED_TO", "Concept", "name", "stub-a")
+    store.merge_relation("Project", "name", "subject", "RELATED_TO", "Concept", "name", "stub-b")
+
+    out = store.detect_under_connected_nodes()
+    by_name = {r["name"]: r for r in out}
+    assert "subject" in by_name, "stub-only neighbours must not count as connections"
+    assert by_name["subject"]["rel_count"] == 0
+
+
+def test_detect_under_connected_counts_real_neighbours_only(store):
+    """A node with one real edge and one stub edge has effectively one
+    connection — still under-connected by the < 2 threshold.
+    """
+    store.merge_node("Project", "name", "mixed", {})
+    store.merge_node("Technology", "name", "real-tech", {})  # no status -> active
+    store.merge_node("Concept", "name", "stub-c", {"status": "stub"})
+    store.merge_relation("Project", "name", "mixed", "USES", "Technology", "name", "real-tech")
+    store.merge_relation("Project", "name", "mixed", "RELATED_TO", "Concept", "name", "stub-c")
+
+    out = store.detect_under_connected_nodes()
+    by_name = {r["name"]: r for r in out}
+    assert "mixed" in by_name
+    assert by_name["mixed"]["rel_count"] == 1  # only the real-tech edge counts
+
+
+def test_detect_under_connected_two_real_neighbours_pass_threshold(store):
+    """Sanity: two non-stub neighbours still take a node above the
+    "under-connected" threshold (regression guard on the JOIN rewrite).
+    """
+    store.merge_node("Project", "name", "healthy", {})
+    store.merge_node("Technology", "name", "t1", {})
+    store.merge_node("Technology", "name", "t2", {"status": "active"})
+    store.merge_relation("Project", "name", "healthy", "USES", "Technology", "name", "t1")
+    store.merge_relation("Project", "name", "healthy", "USES", "Technology", "name", "t2")
+
+    out = store.detect_under_connected_nodes()
+    assert all(r["name"] != "healthy" for r in out)

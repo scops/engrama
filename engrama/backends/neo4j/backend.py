@@ -740,12 +740,18 @@ class Neo4jGraphStore:
         return [dict(r) for r in records]
 
     def detect_under_connected_nodes(self) -> list[dict[str, Any]]:
-        """Nodes with fewer than 2 relationships."""
+        """Nodes with fewer than 2 *substantive* relationships.
+
+        Edges to neighbours with ``status = 'stub'`` are not counted —
+        stubs are placeholder nodes and treating them as real
+        connections hides genuinely under-connected nodes.
+        """
         cypher = (
             "MATCH (n) WHERE NOT n:Domain AND NOT n:Insight "
             "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
             "AND n.status <> 'archived' "
-            "WITH n, size([(n)-[]-() | 1]) AS rel_count "
+            "WITH n, size([(n)-[]-(m) "
+            "WHERE coalesce(m.status, 'active') <> 'stub' | 1]) AS rel_count "
             "WHERE rel_count < 2 "
             "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
             "rel_count, n.created_at AS created "
