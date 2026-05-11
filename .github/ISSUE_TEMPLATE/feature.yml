@@ -1,0 +1,61 @@
+name: Feature request
+description: Suggest an enhancement, new skill, new backend or API change.
+title: "feat: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Engrama tries to stay small and opinionated. The more concretely
+        you describe the problem you're hitting, the easier it is to land
+        on a design that fits.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that Engrama makes hard or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Sketch the shape — API signature, CLI flag, config key, MCP tool, schema change…
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you try or think about? Why isn't it enough?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where does this live?
+      multiple: true
+      options:
+        - Skills / engine
+        - SQLite backend
+        - Neo4j backend
+        - Embedding provider
+        - MCP adapter
+        - SDK / CLI
+        - Profiles / schema
+        - Docs / repo hygiene
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Prior art in other projects, links to related issues / DDRs, screenshots.
+    validations:
+      required: false

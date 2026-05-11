@@ -1,0 +1,58 @@
+name: Link checker
+
+# Catches broken cross-references in docs before they reach `main`, and
+# catches link rot in external URLs on a weekly schedule. Markdown-only —
+# code-reference checks belong in ruff / pytest, not here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+  pull_request:
+    paths:
+      - '**/*.md'
+  schedule:
+    # Monday 04:00 UTC. Surfaces external-URL rot once a week without
+    # blocking PRs in the meantime.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lychee:
+    name: lychee
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Restore lychee cache
+        uses: actions/cache@v4
+        with:
+          path: .lycheecache
+          key: cache-lychee-${{ github.sha }}
+          restore-keys: cache-lychee-
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # `--cache` reuses the .lycheecache restored above so a transient
+          # 5xx doesn't cascade across runs. `--max-cache-age 1d` keeps the
+          # cache fresh enough to still catch real link rot week-to-week.
+          args: >-
+            --cache
+            --max-cache-age 1d
+            --no-progress
+            --accept 200..=299,403,429
+            './**/*.md'
+          # Block PRs and pushes to main on broken links so authors notice
+          # immediately. The scheduled run is informational only — link rot
+          # in an external dependency shouldn't gate a merge.
+          fail: ${{ github.event_name != 'schedule' }}
