@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from engrama.core.search import HybridConfig, HybridSearchEngine, SearchResult
+from engrama.core.search import HybridConfig, HybridSearchEngine, SearchMode, SearchResult
 
 # ---------------------------------------------------------------------------
 # Mock stores for unit tests
@@ -371,6 +371,137 @@ class TestHybridSearchAsync:
         results = await engine.asearch("engrama")
         # Should still return fulltext results despite vector failure
         assert len(results) >= 1
+
+
+# ---------------------------------------------------------------------------
+# last_mode descriptor (issue #17 — silent hybrid degradation)
+# ---------------------------------------------------------------------------
+
+
+class _FailingEmbedder:
+    """Embedder whose ``embed``/``aembed`` raises — simulates an
+    unreachable Ollama (or any OpenAI-compatible endpoint that's down).
+    """
+
+    dimensions = 4
+
+    def embed(self, text: str) -> list[float]:
+        raise ConnectionError("ollama not running")
+
+    async def aembed(self, text: str) -> list[float]:
+        raise ConnectionError("ollama not running")
+
+
+class _EmptyEmbedder:
+    """Embedder that returns an empty vector without raising — covers
+    the silent-failure mode where the provider replies but the body is
+    unusable (e.g. malformed JSON, model not loaded).
+    """
+
+    dimensions = 4
+
+    def embed(self, text: str) -> list[float]:
+        return []
+
+    async def aembed(self, text: str) -> list[float]:
+        return []
+
+
+class TestSearchModeDescriptor:
+    """``last_mode`` must distinguish healthy hybrid from silent fallbacks."""
+
+    def test_initial_last_mode_hybrid_when_vector_enabled(self):
+        engine = HybridSearchEngine(_SyncMockGraphStore(), _SyncMockVectorStore(), _MockEmbedder())
+        assert engine.last_mode == SearchMode(mode="hybrid", degraded=False, reason="")
+
+    def test_initial_last_mode_fulltext_when_vector_disabled(self):
+        engine = HybridSearchEngine(_SyncMockGraphStore(), _SyncNullVectorStore(), _NullEmbedder())
+        assert engine.last_mode.mode == "fulltext_only"
+        assert engine.last_mode.degraded is False
+
+    def test_search_sets_hybrid_mode_on_healthy_run(self):
+        engine = HybridSearchEngine(
+            _SyncMockGraphStore([{"type": "T", "name": "a", "score": 1.0}]),
+            _SyncMockVectorStore([{"label": "T", "name": "a", "score": 0.9}]),
+            _MockEmbedder(),
+        )
+        engine.search("a")
+        assert engine.last_mode.mode == "hybrid"
+        assert engine.last_mode.degraded is False
+        assert engine.last_mode.reason == ""
+
+    def test_search_sets_fulltext_only_when_vector_disabled_by_config(self):
+        engine = HybridSearchEngine(
+            _SyncMockGraphStore([{"type": "T", "name": "a", "score": 1.0}]),
+            _SyncNullVectorStore(),
+            _NullEmbedder(),
+        )
+        engine.search("a")
+        assert engine.last_mode.mode == "fulltext_only"
+        assert engine.last_mode.degraded is False, "disabled-by-config is not a runtime degradation"
+
+    def test_search_marks_degraded_when_embedder_raises(self):
+        engine = HybridSearchEngine(
+            _SyncMockGraphStore([{"type": "T", "name": "a", "score": 1.0}]),
+            _SyncMockVectorStore(),
+            _FailingEmbedder(),
+        )
+        engine.search("a")
+        assert engine.last_mode.mode == "fulltext_only"
+        assert engine.last_mode.degraded is True
+        assert "ConnectionError" in engine.last_mode.reason
+        assert "ollama not running" in engine.last_mode.reason
+
+    def test_search_marks_degraded_when_embedder_returns_empty_vector(self):
+        engine = HybridSearchEngine(
+            _SyncMockGraphStore([{"type": "T", "name": "a", "score": 1.0}]),
+            _SyncMockVectorStore(),
+            _EmptyEmbedder(),
+        )
+        engine.search("a")
+        assert engine.last_mode.mode == "fulltext_only"
+        assert engine.last_mode.degraded is True
+        assert "empty vector" in engine.last_mode.reason
+
+    def test_search_marks_degraded_when_vector_store_raises(self):
+        class _FailingVectorStore:
+            dimensions = 4
+
+            def search_vectors(self, *a, **kw):
+                raise RuntimeError("vec0 table missing")
+
+        engine = HybridSearchEngine(
+            _SyncMockGraphStore([{"type": "T", "name": "a", "score": 1.0}]),
+            _FailingVectorStore(),
+            _MockEmbedder(),
+        )
+        engine.search("a")
+        assert engine.last_mode.mode == "fulltext_only"
+        assert engine.last_mode.degraded is True
+        assert "RuntimeError" in engine.last_mode.reason
+
+    @pytest.mark.asyncio
+    async def test_asearch_sets_hybrid_mode_on_healthy_run(self):
+        engine = HybridSearchEngine(
+            _AsyncMockGraphStore([{"type": "T", "name": "a", "score": 1.0}]),
+            _AsyncMockVectorStore([{"label": "T", "name": "a", "score": 0.9}]),
+            _MockEmbedder(),
+        )
+        await engine.asearch("a")
+        assert engine.last_mode.mode == "hybrid"
+        assert engine.last_mode.degraded is False
+
+    @pytest.mark.asyncio
+    async def test_asearch_marks_degraded_when_embedder_raises(self):
+        engine = HybridSearchEngine(
+            _AsyncMockGraphStore([{"type": "T", "name": "a", "score": 1.0}]),
+            _AsyncMockVectorStore(),
+            _FailingEmbedder(),
+        )
+        await engine.asearch("a")
+        assert engine.last_mode.mode == "fulltext_only"
+        assert engine.last_mode.degraded is True
+        assert "ConnectionError" in engine.last_mode.reason
 
 
 # ---------------------------------------------------------------------------

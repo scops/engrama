@@ -53,6 +53,39 @@ class HybridConfig:
 
 
 # ---------------------------------------------------------------------------
+# Mode descriptor
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SearchMode:
+    """Describes how a hybrid search call actually ran.
+
+    Populated on the engine as ``last_mode`` after every ``search`` /
+    ``asearch`` call so callers can detect silent degradation
+    (e.g. the embeddings provider being unreachable) and surface it to
+    the end user instead of mistaking a fulltext-only result list for
+    a full hybrid hit.
+
+    Attributes:
+        mode: One of ``"hybrid"`` (both paths ran), ``"fulltext_only"``
+            (vector path was skipped — by config or because it failed),
+            or ``"vector_only"`` (fulltext path returned empty / errored
+            — rare).
+        degraded: ``True`` iff a path was *attempted* but failed at
+            runtime. ``mode="fulltext_only"`` with ``degraded=False``
+            means vector search is disabled by configuration (no
+            embedder, ``EMBEDDING_PROVIDER=none``, etc.).
+        reason: Short human-readable explanation when ``degraded`` is
+            ``True``. Empty otherwise.
+    """
+
+    mode: str = "fulltext_only"
+    degraded: bool = False
+    reason: str = ""
+
+
+# ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
 
@@ -121,6 +154,13 @@ class HybridSearchEngine:
             getattr(embedder, "dimensions", 0) > 0 and getattr(vector_store, "dimensions", 0) > 0
         )
 
+        # Populated by every (a)search() call so callers can introspect
+        # whether the result list came from a full hybrid run or a
+        # degraded fallback path.
+        self.last_mode: SearchMode = SearchMode(
+            mode="fulltext_only" if not self._vector_enabled else "hybrid"
+        )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -134,8 +174,11 @@ class HybridSearchEngine:
 
         Returns:
             List of :class:`SearchResult` ordered by ``final_score``.
+            Inspect ``self.last_mode`` after the call for whether the
+            vector path actually ran or fell back to fulltext-only.
         """
         alpha = self.config.alpha
+        vector_reason = ""
 
         # --- Vector branch ---
         v_results: list[dict[str, Any]] = []
@@ -147,14 +190,20 @@ class HybridSearchEngine:
                         query_vec,
                         limit=self.config.vector_k,
                     )
-            except (ConnectionError, RuntimeError) as e:
+                else:
+                    vector_reason = "embedder returned an empty vector"
+                    alpha = 0.0
+            except Exception as e:
                 logger.warning("Vector search failed, falling back to fulltext: %s", e)
                 alpha = 0.0
+                vector_reason = f"vector path failed: {type(e).__name__}: {e}"
         else:
             alpha = 0.0
 
         # --- Fulltext branch ---
         f_results = self.graph.fulltext_search(query, limit=self.config.fulltext_k)
+
+        self.last_mode = self._compute_mode(vector_reason)
 
         # --- Merge ---
         merged = self._merge(v_results, f_results, alpha)
@@ -167,9 +216,11 @@ class HybridSearchEngine:
         """Async hybrid search — for MCP server and async callers.
 
         Same algorithm as :meth:`search` but uses ``aembed`` and async
-        store methods.
+        store methods. Inspect ``self.last_mode`` after the call for
+        the actual execution mode.
         """
         alpha = self.config.alpha
+        vector_reason = ""
 
         # --- Vector branch ---
         v_results: list[dict[str, Any]] = []
@@ -181,19 +232,42 @@ class HybridSearchEngine:
                         query_vec,
                         limit=self.config.vector_k,
                     )
-            except (ConnectionError, RuntimeError, Exception) as e:
+                else:
+                    vector_reason = "embedder returned an empty vector"
+                    alpha = 0.0
+            except Exception as e:
                 logger.warning("Async vector search failed, falling back: %s", e)
                 alpha = 0.0
+                vector_reason = f"vector path failed: {type(e).__name__}: {e}"
         else:
             alpha = 0.0
 
         # --- Fulltext branch ---
         f_results = await self.graph.fulltext_search(query, limit=self.config.fulltext_k)
 
+        self.last_mode = self._compute_mode(vector_reason)
+
         # --- Merge + rank (sync computation) ---
         merged = self._merge(v_results, f_results, alpha)
         merged.sort(key=lambda r: r.final_score, reverse=True)
         return merged[:limit]
+
+    def _compute_mode(self, vector_reason: str) -> SearchMode:
+        """Build the :class:`SearchMode` descriptor for the most recent
+        search call.
+
+        ``vector_reason`` is non-empty iff the vector path was attempted
+        but did not produce results (failure or empty embedding).
+        """
+        if not self._vector_enabled:
+            return SearchMode(mode="fulltext_only", degraded=False)
+        if vector_reason:
+            return SearchMode(
+                mode="fulltext_only",
+                degraded=True,
+                reason=vector_reason,
+            )
+        return SearchMode(mode="hybrid", degraded=False)
 
     # ------------------------------------------------------------------
     # Internals

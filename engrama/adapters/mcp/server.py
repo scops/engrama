@@ -425,6 +425,14 @@ def create_engrama_mcp(
 
                 # --- Proactivity: check for pending Insights ---
                 response = await _build_search_response(results, params.query, store)
+                # Surface the actual execution mode so the caller can
+                # tell a healthy hybrid run from a silent fallback when
+                # the embeddings provider is unreachable (issue #17).
+                response["search_mode"] = {
+                    "mode": hybrid.last_mode.mode,
+                    "degraded": hybrid.last_mode.degraded,
+                    "reason": hybrid.last_mode.reason,
+                }
                 return json.dumps(response, default=str, indent=2)
             except Exception as e:
                 logger.warning("Hybrid search failed, falling back to fulltext: %s", e)
@@ -435,6 +443,17 @@ def create_engrama_mcp(
             return f"No results found for '{params.query}'."
 
         response = await _build_search_response(results, params.query, store)
+        # Same degradation signal as the hybrid branch above (issue #17).
+        # If hybrid was not even attempted (``use_hybrid`` False) we
+        # mark it as a non-degraded fulltext-only run; if hybrid was
+        # attempted but raised, the ``except`` above already logged the
+        # reason — surface a generic "hybrid_search_failed" marker so
+        # callers see *something*.
+        response["search_mode"] = {
+            "mode": "fulltext_only",
+            "degraded": use_hybrid,
+            "reason": "hybrid path raised; see server logs" if use_hybrid else "",
+        }
         return json.dumps(response, default=str, indent=2)
 
     async def _build_search_response(
