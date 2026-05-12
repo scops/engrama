@@ -106,7 +106,7 @@ Salida esperada: `backend=sqlite, ok=true, ...`
 
 Tres formas:
 
-**A) Desde Claude Desktop** — ver [Integración MCP](#integración-mcp-claude-desktop) más abajo.
+**A) Desde Claude Desktop o Codex** — ver [Integración MCP](#integración-mcp) más abajo.
 
 **B) Desde Python:**
 
@@ -249,12 +249,14 @@ Los nodos nuevos se embeben automáticamente al crearse.
 
 ---
 
-## Integración MCP (Claude Desktop)
+## Integración MCP
 
 Engrama actúa como capa de abstracción entre el agente de IA y el
-backend de almacenamiento. Claude Desktop se conecta al servidor MCP de
-Engrama — nunca ve credenciales, cadenas de conexión ni consultas en
+backend de almacenamiento. Los clientes MCP se conectan al servidor de
+Engrama — nunca ven credenciales, cadenas de conexión ni consultas en
 crudo.
+
+### Claude Desktop
 
 **1. Localiza tu archivo de configuración de Claude Desktop:**
 
@@ -292,6 +294,44 @@ clonaste el repositorio. En macOS/Linux usa barras normales (p. ej.
 servidor las lee desde `.env` cuando funciona contra Neo4j.
 
 **3. Reinicia Claude Desktop** completamente (sal y vuelve a abrir).
+
+### Codex
+
+Codex soporta servidores MCP locales por `stdio`, así que puedes
+registrar Engrama directamente desde el CLI:
+
+```bash
+codex mcp add engrama -- uv run --directory C:\Proyectos\engrama --extra mcp engrama-mcp --backend sqlite
+```
+
+Para Neo4j, cambia `--backend sqlite` por `--backend neo4j` y añade
+también el extra:
+
+```bash
+codex mcp add engrama -- uv run --directory C:\Proyectos\engrama --extra mcp --extra neo4j engrama-mcp --backend neo4j
+```
+
+Después comprueba que quedó registrado:
+
+```bash
+codex mcp list
+```
+
+Igual que en Claude Desktop, cambia `C:\Proyectos\engrama` por la ruta
+real donde clonaste el repositorio.
+
+### ChatGPT Desktop
+
+ChatGPT **no** usa directamente esta configuración local por `stdio`.
+La documentación actual de OpenAI describe los conectores MCP
+personalizados de ChatGPT como servidores MCP **remotos** importados
+desde `Settings -> Connectors`, sobre HTTP/SSE y no como un comando
+local.
+
+Eso significa que `engrama-mcp` encaja bien con Claude Desktop y
+Codex, pero **todavía no** como integración directa de ChatGPT Desktop.
+Para usar Engrama desde ChatGPT habría que exponer un endpoint MCP
+remoto y empaquetarlo como conector personalizado de ChatGPT.
 
 Ahora deberías ver las once herramientas:
 
