@@ -237,12 +237,27 @@ def _seed_domain_nodes(store: Any, modules: list[str]) -> None:
 def cmd_verify(args: argparse.Namespace) -> int:
     """Check the configured backend is reachable."""
     try:
-        from engrama.backends import create_stores
+        from engrama.backends import create_embedding_provider, create_stores
 
         store, _ = create_stores()
         health = store.health_check()
         backend = os.getenv("GRAPH_BACKEND", "sqlite")
         print(f"Connected to {backend}: {health}")
+        embedder = create_embedding_provider()
+        if getattr(embedder, "dimensions", 0) > 0:
+            if embedder.health_check():
+                print(
+                    "Embeddings: ok "
+                    f"(provider={os.getenv('EMBEDDING_PROVIDER', 'none')}, "
+                    f"model={getattr(embedder, 'model', 'n/a')})"
+                )
+            else:
+                print(
+                    "Embeddings: degraded "
+                    f"(provider={os.getenv('EMBEDDING_PROVIDER', 'none')}, "
+                    "endpoint unreachable or model unavailable)",
+                    file=sys.stderr,
+                )
         if hasattr(store, "close"):
             store.close()
         return 0

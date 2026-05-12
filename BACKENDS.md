@@ -113,6 +113,10 @@ uv run engrama init --profile developer
 uv run engrama reindex
 ```
 
+If `GRAPH_BACKEND=neo4j` is set but the Python extra is missing, both
+the CLI and the MCP server now fail with an explicit install hint
+instead of a generic import or startup error.
+
 To carry data across, the simplest path today is: configure a temporary
 SDK script that reads from SQLite and writes to Neo4j via two `Engrama`
 contexts. A first-class export tool is on the roadmap.
@@ -170,6 +174,11 @@ feature needs ad-hoc Cypher, the Neo4j backend will get it first.
 Both backends support the full hybrid-search stack (vector + fulltext +
 graph boost + temporal). SQLite stores vectors via `sqlite-vec` in the
 same `.db` file; Neo4j uses its native vector index.
+
+If the graph backend is healthy but the embedding service is down,
+Engrama degrades to fulltext search and reports that explicitly. This
+lets you distinguish "Neo4j is misconfigured" from "Ollama / embeddings
+are unavailable".
 
 **Does the schema migration script (`engrama init`) work on SQLite?**
 SQLite's schema lives in `engrama/backends/sqlite/schema.sql` and is
