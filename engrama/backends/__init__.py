@@ -202,6 +202,7 @@ def create_async_stores(
     if graph_backend == "neo4j":
         try:
             from neo4j import AsyncGraphDatabase
+
             from engrama.backends.neo4j.async_store import Neo4jAsyncStore
         except ImportError as e:
             raise ImportError(_neo4j_extra_error_message()) from e
