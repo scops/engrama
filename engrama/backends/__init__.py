@@ -32,6 +32,15 @@ load_dotenv()
 _DEFAULT_GRAPH_BACKEND = "sqlite"
 
 
+def _neo4j_extra_error_message() -> str:
+    """Return a consistent install hint for Neo4j-backed execution."""
+    return (
+        "GRAPH_BACKEND=neo4j requires the optional 'neo4j' Python dependency. "
+        "Install it with `uv sync --extra neo4j` "
+        "(or `pip install engrama[neo4j]` once Engrama ships on PyPI)."
+    )
+
+
 def _resolve(config: dict[str, Any], key: str, default: str | None = None) -> str | None:
     """Look up a value in ``config`` first, then env var, then default."""
     value = config.get(key) if config else None
@@ -91,8 +100,11 @@ def _create_graph_store(backend: str, config: dict[str, Any]) -> Any:
         return SqliteGraphStore(path)
 
     if backend == "neo4j":
-        from engrama.backends.neo4j.backend import Neo4jGraphStore
-        from engrama.core.client import EngramaClient
+        try:
+            from engrama.backends.neo4j.backend import Neo4jGraphStore
+            from engrama.core.client import EngramaClient
+        except ImportError as e:
+            raise ImportError(_neo4j_extra_error_message()) from e
 
         client = EngramaClient(
             uri=_resolve(config, "NEO4J_URI"),
@@ -188,9 +200,12 @@ def create_async_stores(
         return store, store
 
     if graph_backend == "neo4j":
-        from neo4j import AsyncGraphDatabase
+        try:
+            from neo4j import AsyncGraphDatabase
 
-        from engrama.backends.neo4j.async_store import Neo4jAsyncStore
+            from engrama.backends.neo4j.async_store import Neo4jAsyncStore
+        except ImportError as e:
+            raise ImportError(_neo4j_extra_error_message()) from e
 
         uri = _resolve(cfg, "NEO4J_URI", "bolt://localhost:7687")
         user = _resolve(cfg, "NEO4J_USERNAME", "neo4j")

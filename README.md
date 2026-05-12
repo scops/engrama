@@ -188,6 +188,10 @@ uv run engrama verify
 
 Expected output: `Connected to Neo4j at bolt://localhost:7687`.
 
+If you set `GRAPH_BACKEND=neo4j` but only installed the base
+dependencies, `uv run engrama verify` fails with an explicit hint to
+run `uv sync --extra neo4j`.
+
 The rest of the workflow (Python SDK, CLI, MCP integration) is
 identical to the SQLite path.
 
@@ -215,6 +219,8 @@ echo 'OLLAMA_URL=http://localhost:11434' >> .env
 
 Embeddings are generated locally — no data leaves your machine. The
 `nomic-embed-text` model is ~274 MB and supports an 8192-token context.
+If Ollama is not running or the model is unavailable, search degrades to
+`fulltext_only` and reports the reason in `search_mode`.
 
 ### Option B: OpenAI-compatible service (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina, ...)
 
@@ -280,6 +286,10 @@ For the Neo4j backend swap `--backend sqlite` for `--backend neo4j` (or
 omit the flag and set `GRAPH_BACKEND=neo4j` in `.env`). Make sure
 `--extra mcp` is replaced or augmented with `--extra neo4j` too:
 `"--extra", "mcp", "--extra", "neo4j"`.
+
+If you forget the `neo4j` extra while keeping `GRAPH_BACKEND=neo4j`, the
+MCP tools now return the startup cause instead of only
+`Async store not initialised`.
 
 **Important:** change `C:\\Proyectos\\engrama` to the actual path where
 you cloned the repo. On macOS/Linux use forward slashes (e.g.
@@ -371,6 +381,63 @@ To override the backend on a single command:
 
 ```bash
 GRAPH_BACKEND=neo4j uv run engrama verify
+```
+
+`engrama verify` also checks the embedding provider when one is
+configured. A healthy backend with a down embedder reports
+`Embeddings: degraded ...`, which separates storage failures from
+semantic-search failures.
+
+---
+
+## Troubleshooting
+
+**`No module named 'neo4j'` or an error telling you to install the extra**
+
+Your config points at Neo4j but the Python driver is not installed.
+Fix it with:
+
+```bash
+uv sync --extra neo4j
+```
+
+If you launch the MCP server through `uv run`, include both extras when
+needed:
+
+```bash
+uv run --extra mcp --extra neo4j engrama-mcp --backend neo4j
+```
+
+**MCP says `Async store not initialised`**
+
+That message now includes the root cause. The common causes are:
+
+- `GRAPH_BACKEND=neo4j` but the `neo4j` extra is missing
+- `NEO4J_PASSWORD` is unset
+- Neo4j is not reachable at `NEO4J_URI`
+
+**Search works but `search_mode` says `fulltext_only` with `degraded=true`**
+
+The graph backend is up, but embeddings are not. Common causes:
+
+- Ollama is not running
+- the configured embedding model has not been pulled yet
+- the endpoint does not match the selected provider
+
+For native Ollama mode use:
+
+```dotenv
+EMBEDDING_PROVIDER=ollama
+OLLAMA_URL=http://localhost:11434
+EMBEDDING_MODEL=nomic-embed-text
+```
+
+For OpenAI-compatible mode against Ollama use:
+
+```dotenv
+EMBEDDING_PROVIDER=openai
+OPENAI_BASE_URL=http://localhost:11434/v1
+EMBEDDING_MODEL=nomic-embed-text
 ```
 
 ---

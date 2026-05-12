@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from unittest.mock import MagicMock
+
+import engrama.cli as cli
 
 
 def run_cli(*args: str) -> subprocess.CompletedProcess:
@@ -46,6 +49,35 @@ class TestCliVerify:
         result = run_cli("verify")
         assert result.returncode == 0
         assert "Connected" in result.stdout
+
+    def test_verify_reports_embedding_degraded(self, monkeypatch, capsys) -> None:
+        """Verify should distinguish backend health from embedder health."""
+        store = MagicMock()
+        store.health_check.return_value = {"ok": True, "backend": "sqlite"}
+
+        embedder = MagicMock()
+        embedder.dimensions = 768
+        embedder.model = "nomic-embed-text"
+        embedder.health_check.return_value = False
+
+        backend_stub = type(
+            "_Backends",
+            (),
+            {
+                "create_stores": staticmethod(lambda: (store, None)),
+                "create_embedding_provider": staticmethod(lambda: embedder),
+            },
+        )
+        monkeypatch.setitem(sys.modules, "engrama.backends", backend_stub)
+        monkeypatch.setenv("GRAPH_BACKEND", "sqlite")
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "ollama")
+
+        rc = cli.cmd_verify(MagicMock())
+
+        out = capsys.readouterr()
+        assert rc == 0
+        assert "Connected to sqlite" in out.out
+        assert "Embeddings: degraded" in out.err
 
 
 class TestCliSearch:

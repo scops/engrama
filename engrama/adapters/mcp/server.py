@@ -305,6 +305,7 @@ def create_engrama_mcp(
 
         async_store = None
         embedder = None
+        startup_error = ""
         try:
             async_store, _ = create_async_stores(cfg)
             embedder = create_embedding_provider()
@@ -317,6 +318,7 @@ def create_engrama_mcp(
         except Exception as e:
             logger.warning("Store factory failed (non-fatal): %s", e)
             async_store = None
+            startup_error = str(e)
 
         try:
             if async_store is not None:
@@ -327,6 +329,7 @@ def create_engrama_mcp(
                 "obsidian": obsidian,
                 "parser": NoteParser(),
                 "embedder": embedder,
+                "startup_error": startup_error,
             }
         finally:
             if embedder is not None and hasattr(embedder, "aclose"):
@@ -354,6 +357,9 @@ def create_engrama_mcp(
         state = ctx.request_context.lifespan_context
         store = state.get("async_store")
         if store is None:
+            startup_error = state.get("startup_error", "")
+            if startup_error:
+                raise RuntimeError(f"Async store not initialised: {startup_error}")
             raise RuntimeError("Async store not initialised")
         return store
 
