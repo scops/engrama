@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability (private)
+    url: https://github.com/scops/engrama/security/advisories/new
+    about: Report a security issue privately. Do not file a public issue.
