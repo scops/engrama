@@ -98,6 +98,11 @@ class TestRecall:
             "MERGE (p)-[:USES]->(t)",
             {"proj": "SDK_RecallProject", "tech": "SDK_RecallTech"},
         )
+        # Neo4j fulltext indexes are populated asynchronously after MERGE;
+        # without awaiting, recall() can race the index and return [] in
+        # a freshly-started CI Neo4j (passes locally because the index is
+        # already warm from prior runs).
+        neo4j_session.run("CALL db.awaitIndexes()")
 
         results = eng.recall("SDK_RecallProject", hops=1)
         assert len(results) >= 1
