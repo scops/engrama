@@ -128,7 +128,8 @@ jobs:
             tests/test_protocols.py \
             tests/test_composable.py \
             tests/test_openai_compat_embedder.py \
-            tests/test_cli.py
+            tests/test_cli.py \
+            tests/test_mcp_entrypoint.py
 
   test-neo4j:
     name: Tests (Neo4j integration)

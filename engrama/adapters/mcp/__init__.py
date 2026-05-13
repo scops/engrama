@@ -17,6 +17,7 @@ backend-specific env vars: ``ENGRAMA_DB_PATH`` for SQLite,
 import argparse
 import asyncio
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -27,9 +28,27 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(_PROJECT_ROOT / ".env")
 
 
+_MCP_EXTRA_HINT = (
+    "engrama-mcp requires the 'mcp' extra. "
+    "Install with: uv sync --extra mcp "
+    "(or `pip install engrama[mcp]` once Engrama ships on PyPI)."
+)
+
+
 def main() -> None:
     """CLI entry point registered as ``engrama-mcp`` in pyproject.toml."""
-    from .server import create_engrama_mcp  # deferred to keep import lightweight
+    try:
+        # Deferred to keep `import engrama` lightweight on base installs.
+        # The mcp + fastmcp packages live in the `[mcp]` extra; if they're
+        # missing we surface a clear install hint instead of a raw
+        # ImportError traceback.
+        from .server import create_engrama_mcp
+    except ImportError as e:
+        missing = getattr(e, "name", "") or ""
+        if missing == "mcp" or missing.startswith("mcp.") or missing.startswith("fastmcp"):
+            print(_MCP_EXTRA_HINT, file=sys.stderr)
+            sys.exit(1)
+        raise
 
     parser = argparse.ArgumentParser(description="Engrama MCP Server")
     parser.add_argument(

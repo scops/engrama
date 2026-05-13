@@ -58,6 +58,49 @@ or creating a Release:
 2. Enter the candidate tag (e.g. `v0.9.1`) and leave `dry_run: true`.
 3. Pipeline runs everything up through SBOM + attest. `publish` and `release-notes` are skipped via `if:` guards.
 
+## Smoke-testing the wheel locally
+
+Before tagging, run the wheel through a fresh venv to catch packaging
+bugs that the matrixed `import-smoke` CI job can't see — e.g. a missing
+file in `MANIFEST.in`, a broken `[mcp]` extra, or a CLI entry point that
+crashes on a base install:
+
+```bash
+# 1. Build
+uv build --sdist --wheel
+
+# 2. Fresh venv with stdlib python (NOT uv venv — avoid uv's resolution cache)
+python -m venv /tmp/engrama-cleantest
+source /tmp/engrama-cleantest/bin/activate   # PowerShell: . /tmp/engrama-cleantest/Scripts/Activate.ps1
+
+# 3. Base install only
+pip install dist/engrama-*.whl
+
+# 4. cd OUT of the repo (so source tree doesn't shadow the installed package)
+cd /tmp
+
+# 5. Sanity-check the install path resolves to the venv, not the source tree
+python -c "import engrama; print(engrama.__file__)"
+# Expect: .../engrama-cleantest/.../site-packages/engrama/__init__.py
+
+# 6. Exercise the zero-config SQLite path end-to-end
+python -c "from engrama import Engrama; \
+  e = Engrama(); e.remember('Concept', 'Smoke', 'works'); \
+  print('hits:', len(e.recall('Smoke', hops=0)))"
+
+# 7. CLI entry points
+engrama --help
+engrama-mcp --help   # must fail with a CLEAR install hint, not a traceback
+
+# 8. Now install the [mcp] extra and re-check
+pip install "dist/engrama-*.whl[mcp]"
+engrama-mcp --help   # should print the usage block
+```
+
+If step 7's `engrama-mcp` call without the extra prints a Python traceback
+instead of a one-line install hint, the friendly-error handler in
+`engrama/adapters/mcp/__init__.py` regressed — fix that before tagging.
+
 ## Verifying a release
 
 After a release lands, you can verify the artifacts were built by this exact workflow:
