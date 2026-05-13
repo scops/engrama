@@ -7,6 +7,91 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+CI maturity + supply-chain hardening for the first public PyPI publish.
+The library APIs are unchanged from 0.9.0; this release is about making
+engrama installable, auditable, and migratable for users outside the
+dev environment.
+
+### Added
+- **`engrama export` / `engrama import`** — backend-agnostic NDJSON dump
+  and restore for the graph + vectors, enabling cross-backend migrations
+  (SQLite ↔ Neo4j) as a first-class CLI path. Format is one JSON object
+  per line: envelope, then `node` / `relation` / `vector` records.
+  Vectors only restore when source and target embedding dimensions
+  match; mismatches are reported and `engrama reindex` rebuilds them
+  under the active embedder. (#30)
+- **Release pipeline** (`.github/workflows/release.yml`) — six-stage
+  `guardian → build → sbom → attest → publish → release-notes` triggered
+  by `v*` tags. PyPI **trusted publishing** (OIDC, no API key in
+  secrets), CycloneDX + SPDX SBOMs attached to the GitHub Release, SLSA
+  build-provenance attestations on the wheel and sdist, and a
+  `workflow_dispatch` dry-run path. Guardian fails fast on version
+  drift between `pyproject.toml`, `engrama/__init__.py` and the topmost
+  CHANGELOG entry. (#27)
+- **PR-level vulnerability gate** — `audit-deps` job runs `pip-audit`
+  on PRs that touch `pyproject.toml` or `uv.lock` (always on push to
+  `main`). Blocks on CVSS ≥ 7.0 (looked up from OSV) or any advisory
+  with an upstream fix; warns on LOW/MEDIUM with no fix. (#27)
+- **CI matrix** across Python 3.11 / 3.12 / 3.13 for `import-smoke` and
+  `test-sqlite`. New `test-neo4j` integration job uses a
+  `neo4j:5.26.4-community` service container with the committed
+  `scripts/init-schema.cypher` applied via the Python driver. (#26)
+- **Phase-1 CI baseline** — `lint` (ruff format + check), `test-sqlite`
+  (SQLite-only suite, no Docker), `import-smoke` (DDR-004 promise gate).
+  Dependabot weekly for `pip` and `github-actions`, monthly for
+  `docker`. (#7–#12)
+- **Phase-4 repo hygiene** — `.github/CODEOWNERS`,
+  `pull_request_template.md`, structured issue templates, `SECURITY.md`
+  (disclosure via GitHub private advisories), `lychee-action` weekly +
+  per-PR link checker, `DDR-template.md`. (#22)
+- **`RELEASING.md`** — one-time PyPI trusted-publisher setup,
+  per-release runbook (bump three files, tag, push), and a manual
+  wheel-smoke procedure that catches packaging surprises the matrixed
+  `import-smoke` job can't see.
+
+### Changed
+- **README embedder section** — expanded to a six-provider matrix
+  (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina) with
+  copy-pasteable `.env` blocks, recommended models + dimensions, start
+  commands where relevant, and provider-specific gotchas. Mirrored in
+  `README_ES.md`. (#29)
+- **Misconfig surfacing in the CLI/MCP** — `GRAPH_BACKEND=neo4j`
+  without the `[neo4j]` extra (#23) and `engrama-mcp` without the
+  `[mcp]` extra (#28) now both emit a single-line install hint to
+  stderr and exit 1, replacing the prior raw Python tracebacks.
+- **Documentation** — install instructions aligned with source-only
+  reality, Codex + ChatGPT Desktop MCP setup snippets added in both
+  READMEs. (#15, #23, #25)
+- **License metadata** — `pyproject.toml` corrected to `Apache-2.0`.
+
+### Fixed
+- **Base install no longer eagerly imports `neo4j`** —
+  `engrama/core/client.py` defers the import to
+  `EngramaClient.__init__`, so `import engrama` works on a
+  `pip install engrama` base install with no extras (DDR-004 promise
+  gate). (#11)
+- **FTS5 MATCH sanitization on SQLite** — hyphenated queries like
+  `engrama-mcp-server` are wrapped as phrases instead of being treated
+  as FTS5 grammar, restoring the fulltext path. 14 tests added. (#16)
+- **Hybrid search degraded-mode signal** — when the embeddings provider
+  is unreachable, the search engine exposes
+  `last_mode = {mode, degraded, reason}` and the MCP `engrama_search`
+  response carries a `search_mode` field, so callers can distinguish a
+  fulltext-only fallback from a healthy hybrid result. (#20)
+- **Degenerate embeddings caught at write time** —
+  `engrama/embeddings/health.is_degenerate_vector` flags
+  `needs_reindex=true` on the node and skips vector storage;
+  `list_nodes_for_embedding(force=False)` now pulls those nodes back so
+  `engrama reindex` heals them. (#21)
+- **`under_connected` reflect pattern excludes stub neighbours** — both
+  backends now filter out `status='stub'` nodes when counting
+  connections. (#19)
+- **Ruff import grouping** repo-wide cleanup. (#24)
+
+---
+
 ## [0.9.0] — 2026-05-10
 
 Portable storage — SQLite + sqlite-vec as the default backend, Neo4j moved
