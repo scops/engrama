@@ -365,6 +365,96 @@ class Neo4jGraphStore:
         return _records_to_dicts(self._client.run(query, params))
 
     # ------------------------------------------------------------------
+    # Migration helpers (iter_all_*, purge_all) — used by engrama
+    # export / import. Not on the GraphStore protocol because they only
+    # make sense for the bulk-migration code path.
+    # ------------------------------------------------------------------
+
+    def iter_all_nodes(self):
+        """Yield every non-Insight-stub node as ``{label, key_field,
+        key_value, properties}``. ``key_field`` is ``'title'`` when the
+        node carries a title and no name, ``'name'`` otherwise. Properties
+        exclude the synthetic ``embedding`` array — vectors come back via
+        :meth:`Neo4jVectorStore.iter_all_vectors`. Driver types
+        (``DateTime``, ``Node``, ``Relationship``) are passed through
+        :func:`_to_python` so the dump is plain JSON.
+        """
+        records = self._client.run(
+            "MATCH (n) "
+            "WITH n, [l IN labels(n) WHERE l <> 'Embedded'][0] AS label "
+            "WHERE label IS NOT NULL "
+            "RETURN label, "
+            "       n.name  AS name, "
+            "       n.title AS title, "
+            "       properties(n) AS props"
+        )
+        for r in records:
+            name = r.get("name")
+            title = r.get("title")
+            raw_props = r.get("props") or {}
+            props = {k: _to_python(v) for k, v in raw_props.items()}
+            props.pop("embedding", None)  # vectors are dumped separately
+            if name:
+                key_field, key_value = "name", name
+            elif title:
+                key_field, key_value = "title", title
+            else:
+                # Node without a merge key — orphan from manual cypher.
+                # Skip rather than emit a record we can't re-import.
+                continue
+            yield {
+                "label": r["label"],
+                "key_field": key_field,
+                "key_value": key_value,
+                "properties": props,
+            }
+
+    def iter_all_relations(self):
+        """Yield every relationship as ``{from_label, from_key, from_value,
+        rel_type, to_label, to_key, to_value}``. Mirrors the SQLite
+        backend's edge dump.
+        """
+        records = self._client.run(
+            "MATCH (a)-[r]->(b) "
+            "WITH r, "
+            "     [l IN labels(a) WHERE l <> 'Embedded'][0] AS from_label, "
+            "     [l IN labels(b) WHERE l <> 'Embedded'][0] AS to_label, "
+            "     a, b "
+            "WHERE from_label IS NOT NULL AND to_label IS NOT NULL "
+            "RETURN from_label, "
+            "       a.name  AS from_name, "
+            "       a.title AS from_title, "
+            "       type(r) AS rel_type, "
+            "       to_label, "
+            "       b.name  AS to_name, "
+            "       b.title AS to_title"
+        )
+        for r in records:
+            from_field, from_value = (
+                ("name", r["from_name"]) if r["from_name"] else ("title", r["from_title"])
+            )
+            to_field, to_value = (
+                ("name", r["to_name"]) if r["to_name"] else ("title", r["to_title"])
+            )
+            if not from_value or not to_value:
+                continue
+            yield {
+                "from_label": r["from_label"],
+                "from_key": from_field,
+                "from_value": from_value,
+                "rel_type": r["rel_type"],
+                "to_label": r["to_label"],
+                "to_key": to_field,
+                "to_value": to_value,
+            }
+
+    def purge_all(self) -> None:
+        """Wipe every node and relationship from the database. Vector
+        index entries are tied to the nodes and disappear with them.
+        """
+        self._client.run("MATCH (n) DETACH DELETE n")
+
+    # ------------------------------------------------------------------
     # Query operations
     # ------------------------------------------------------------------
 

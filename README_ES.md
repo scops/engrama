@@ -495,6 +495,8 @@ uv run engrama reindex                                          # Re-embedding p
 uv run engrama decay --dry-run                                  # Vista previa del decay
 uv run engrama decay --rate 0.01                                # Aplicar decay suave
 uv run engrama decay --rate 0.1 --min-confidence 0.05           # Agresivo + archivar
+uv run engrama export dump.ndjson                               # Volcado backend-agnostic
+uv run engrama import dump.ndjson --purge                       # Restaurar (limpiando destino)
 ```
 
 Para sobrescribir el backend en un comando puntual:
@@ -502,6 +504,19 @@ Para sobrescribir el backend en un comando puntual:
 ```bash
 GRAPH_BACKEND=neo4j uv run engrama verify
 ```
+
+`engrama export` vuelca el grafo + vectores del backend activo a un
+fichero NDJSON. `engrama import` lo restaura. Funciona cross-backend
+— para migrar SQLite a Neo4j:
+
+```bash
+GRAPH_BACKEND=sqlite uv run engrama export dump.ndjson
+GRAPH_BACKEND=neo4j  uv run engrama import dump.ndjson --purge
+```
+
+Los vectores se restauran sólo cuando origen y destino tienen las
+mismas dimensiones de embedding; si no coinciden se saltan y
+`engrama reindex` los regenera con el embedder activo.
 
 ---
 

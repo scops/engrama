@@ -28,6 +28,12 @@ Commands:
 
     engrama reindex [--batch-size 50] [--force]
         Batch re-embed all nodes and store vectors.
+
+    engrama export <file> [--no-vectors]
+        Dump graph + vectors to an NDJSON file (backend-agnostic).
+
+    engrama import <file> [--purge]
+        Restore an NDJSON dump into the active backend.
 """
 
 from __future__ import annotations
@@ -456,6 +462,73 @@ def cmd_decay(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """Export the active backend's graph + vectors to an NDJSON file."""
+    try:
+        from engrama.backends import create_stores
+        from engrama.migrate import export_graph
+
+        graph_store, vector_store = create_stores()
+        try:
+            counts = export_graph(
+                graph_store,
+                vector_store,
+                Path(args.output),
+                with_vectors=not args.no_vectors,
+            )
+        finally:
+            close = getattr(graph_store, "close", None)
+            if callable(close):
+                close()
+        print(
+            f"Exported {counts['nodes']} nodes, {counts['relations']} relations, "
+            f"{counts['vectors']} vectors → {args.output}"
+        )
+        return 0
+    except Exception as e:
+        print(f"Export failed: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Import an NDJSON dump into the active backend."""
+    try:
+        from engrama.backends import create_stores
+        from engrama.migrate import import_graph
+
+        input_path = Path(args.input)
+        if not input_path.exists():
+            print(f"Error: input file not found: {args.input}", file=sys.stderr)
+            return 1
+
+        graph_store, vector_store = create_stores()
+        try:
+            counts = import_graph(
+                graph_store,
+                vector_store,
+                input_path,
+                purge=args.purge,
+            )
+        finally:
+            close = getattr(graph_store, "close", None)
+            if callable(close):
+                close()
+        msg = (
+            f"Imported {counts['nodes']} nodes, {counts['relations']} relations, "
+            f"{counts['vectors']} vectors from {args.input}"
+        )
+        if counts["skipped_vectors"]:
+            msg += (
+                f" (skipped {counts['skipped_vectors']} vectors — dimensions mismatch; "
+                f"run `engrama reindex` to rebuild under the active embedder)"
+            )
+        print(msg)
+        return 0
+    except Exception as e:
+        print(f"Import failed: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_search(args: argparse.Namespace) -> int:
     """Fulltext search."""
     try:
@@ -585,6 +658,39 @@ def main() -> None:
         help="Show what would happen without making changes",
     )
 
+    # --- export ---
+    p_export = sub.add_parser(
+        "export",
+        help="Dump the active backend's graph + vectors to NDJSON",
+    )
+    p_export.add_argument(
+        "output",
+        help="Path to the NDJSON file to write (parent dirs are created)",
+    )
+    p_export.add_argument(
+        "--no-vectors",
+        action="store_true",
+        help=(
+            "Skip embeddings (graph + relations only). Default: include "
+            "vectors when an embedder is configured."
+        ),
+    )
+
+    # --- import ---
+    p_import = sub.add_parser(
+        "import",
+        help="Restore an NDJSON dump into the active backend",
+    )
+    p_import.add_argument(
+        "input",
+        help="Path to the NDJSON file to read",
+    )
+    p_import.add_argument(
+        "--purge",
+        action="store_true",
+        help="Wipe the destination graph + vectors before importing",
+    )
+
     args = parser.parse_args()
 
     handlers = {
@@ -594,6 +700,8 @@ def main() -> None:
         "search": cmd_search,
         "reindex": cmd_reindex,
         "decay": cmd_decay,
+        "export": cmd_export,
+        "import": cmd_import,
     }
 
     if args.command is None:

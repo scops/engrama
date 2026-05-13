@@ -178,6 +178,49 @@ class Neo4jVectorStore:
         return records[0]["total"] if records else 0
 
     # ------------------------------------------------------------------
+    # Migration helpers (iter_all_vectors, purge_all) — used by engrama
+    # export / import. Not on the VectorStore protocol because they
+    # only make sense for the bulk-migration code path.
+    # ------------------------------------------------------------------
+
+    def iter_all_vectors(self):
+        """Yield ``{label, key_field, key_value, vector}`` for every
+        ``:Embedded`` node, resolved to the primary label + merge key so
+        the dump is portable across backends.
+        """
+        records = self._client.run(
+            "MATCH (n:Embedded) "
+            "WITH n, [l IN labels(n) WHERE l <> 'Embedded'][0] AS label "
+            "WHERE label IS NOT NULL "
+            "RETURN label, "
+            "       n.name      AS name, "
+            "       n.title     AS title, "
+            "       n.embedding AS embedding"
+        )
+        for r in records:
+            name = r["name"]
+            title = r["title"]
+            if name:
+                key_field, key_value = "name", name
+            elif title:
+                key_field, key_value = "title", title
+            else:
+                continue
+            yield {
+                "label": r["label"],
+                "key_field": key_field,
+                "key_value": key_value,
+                "vector": list(r["embedding"] or []),
+            }
+
+    def purge_all(self) -> None:
+        """No-op: vectors live on nodes, so wiping nodes (the graph
+        store's ``purge_all``) already drops every embedding. The method
+        exists for symmetry with :class:`SqliteVecStore`.
+        """
+        return None
+
+    # ------------------------------------------------------------------
     # Index management
     # ------------------------------------------------------------------
 
