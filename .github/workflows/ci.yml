@@ -47,7 +47,12 @@ jobs:
     # gate that catches accidental eager imports of optional deps in
     # the engrama/__init__ chain. If it goes red, someone added a
     # top-level `from neo4j import …` (or similar) somewhere it
-    # shouldn't.
+    # shouldn't. Matrixed across supported Python versions because the
+    # promise is "install on any supported Python".
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -56,6 +61,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
@@ -66,7 +72,7 @@ jobs:
         # groups. That is exactly what `pip install engrama` does for
         # an end user.
         run: |
-          uv venv .venv-smoke
+          uv venv .venv-smoke --python ${{ matrix.python-version }}
           uv pip install --python .venv-smoke/bin/python .
 
       - name: Import engrama with no extras
@@ -83,7 +89,12 @@ jobs:
     # The SQLite-only suite is the contract Engrama promises to anyone
     # running `pip install engrama` with no Neo4j and no .env. Keeping
     # it green on every PR is the baseline for portable storage
-    # (DDR-004). The Neo4j matrix is wired up in Phase 2 of the CI plan.
+    # (DDR-004). Matrixed across supported Python versions; the Neo4j
+    # integration suite runs separately in `test-neo4j`.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -92,6 +103,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
@@ -105,10 +117,10 @@ jobs:
 
       - name: Run pytest (SQLite + backend-agnostic)
         # tests/test_sdk.py explicitly opts into backend="neo4j" — those
-        # are integration tests for the Neo4j path and run in Phase 2's
-        # matrix. tests/test_neo4j_store.py and tests that depend on the
-        # `neo4j_session` fixture skip cleanly via the conftest skip
-        # when NEO4J_PASSWORD is unset.
+        # are integration tests for the Neo4j path and run in the
+        # `test-neo4j` job. tests/test_neo4j_store.py and tests that
+        # depend on the `neo4j_session` fixture skip cleanly via the
+        # conftest skip when NEO4J_PASSWORD is unset.
         run: |
           uv run pytest -q \
             tests/backends \
@@ -117,3 +129,107 @@ jobs:
             tests/test_composable.py \
             tests/test_openai_compat_embedder.py \
             tests/test_cli.py
+
+  test-neo4j:
+    name: Tests (Neo4j integration)
+    runs-on: ubuntu-latest
+    # Neo4j integration suite. Runs the test files excluded from
+    # `test-sqlite` because they assume a live Neo4j (either via the
+    # `neo4j_session` fixture, an EngramaClient(), or backend="neo4j"
+    # in the SDK). Pinned to a single Python version — the matrix
+    # tradeoff isn't worth 3× the integration cost when neither the
+    # backend driver nor our adapter is Python-version-sensitive.
+    services:
+      neo4j:
+        image: neo4j:5.26.4-community
+        env:
+          NEO4J_AUTH: neo4j/testpassword
+          NEO4J_PLUGINS: '["apoc"]'
+          NEO4J_dbms_memory_heap_max__size: 1G
+          NEO4J_dbms_memory_pagecache_size: 512m
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p testpassword 'RETURN 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 30s
+    env:
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: testpassword
+      GRAPH_BACKEND: neo4j
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.13"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Install dev + neo4j + mcp extras
+        run: uv sync --extra dev --extra neo4j --extra mcp
+
+      - name: Apply Neo4j schema
+        # Apply the committed scripts/init-schema.cypher directly via
+        # the neo4j driver. We don't go through `engrama init` because
+        # that regenerates the schema from a profile, which would
+        # diverge from what's in-repo for testing purposes.
+        run: |
+          uv run python - <<'PY'
+          import os
+          from pathlib import Path
+          from neo4j import GraphDatabase
+
+          driver = GraphDatabase.driver(
+              os.environ["NEO4J_URI"],
+              auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
+          )
+          driver.verify_connectivity()
+          text = Path("scripts/init-schema.cypher").read_text(encoding="utf-8")
+          stmts = []
+          for chunk in text.split(";"):
+              lines = [
+                  ln for ln in chunk.splitlines()
+                  if ln.strip() and not ln.strip().startswith("//")
+              ]
+              cleaned = "\n".join(lines).strip()
+              if cleaned and not cleaned.upper().startswith("SHOW"):
+                  stmts.append(cleaned)
+
+          with driver.session() as session:
+              for stmt in stmts:
+                  try:
+                      session.run(stmt)
+                  except Exception as exc:
+                      print(f"Warning applying statement: {exc}")
+          driver.close()
+          print(f"Applied {len(stmts)} schema statement(s).")
+          PY
+
+      - name: Run pytest (Neo4j integration)
+        # Everything excluded from `test-sqlite` (see that job's pytest
+        # invocation). Some of these files also contain pure-helper
+        # tests that don't need Neo4j; running them here is harmless
+        # and keeps the split easy to reason about.
+        run: |
+          uv run pytest -q \
+            tests/test_core.py \
+            tests/test_neo4j_store.py \
+            tests/test_sdk.py \
+            tests/test_temporal.py \
+            tests/test_hybrid_search.py \
+            tests/test_vector_store.py \
+            tests/test_embeddings.py \
+            tests/test_adapters.py \
+            tests/test_proactive.py \
+            tests/test_skills.py \
+            tests/test_phase4_skills.py \
+            tests/test_obsidian_sync.py

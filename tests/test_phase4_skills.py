@@ -59,6 +59,10 @@ def seed_recall_data(neo4j_session) -> None:
             "concept": "P4_Caching",
         },
     )
+    # Neo4j fulltext indexes populate asynchronously; without awaiting,
+    # recall queries can race the index and miss freshly-merged nodes
+    # in a freshly-started CI Neo4j.
+    neo4j_session.run("CALL db.awaitIndexes()")
 
 
 @pytest.fixture()
