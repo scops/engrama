@@ -1,0 +1,305 @@
+name: Release
+
+# Cuts a PyPI release + GitHub Release from a `v*` tag, with SBOMs and
+# SLSA build-provenance attestations. The full pipeline is:
+#
+#   guardian → build → sbom → attest → publish → release-notes
+#
+# guardian fails fast on any version drift between the tag, pyproject.toml,
+# engrama/__init__.py, and the topmost CHANGELOG entry. Nothing else runs
+# until that gate passes, so we never publish an inconsistent release.
+#
+# `workflow_dispatch` with `dry_run: true` is the safe rehearsal — it
+# runs guardian + build + sbom against a hypothetical tag without
+# touching PyPI or creating a Release, so you can validate that a release
+# WOULD work before actually pushing the tag.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to validate (e.g. v0.9.1). Used only by workflow_dispatch — push events derive the tag from GITHUB_REF."
+        required: true
+        type: string
+      dry_run:
+        description: "Run guardian/build/sbom only — skip publish and Release."
+        required: false
+        type: boolean
+        default: true
+
+# Don't cancel an in-flight release; double-publishing is harmless (PyPI
+# rejects duplicate filenames) but cancelling mid-attestation could
+# leave a half-attested artifact.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guardian:
+    name: Guardian (version drift check)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      tag: ${{ steps.parse.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Derive tag + version
+        id: parse
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${GITHUB_REF##refs/tags/}"
+          else
+            TAG="${{ inputs.tag }}"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9.+-]*)?$ ]]; then
+            echo "Tag '$TAG' does not look like a SemVer tag (vMAJOR.MINOR.PATCH[suffix])."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release tag:     $TAG"
+          echo "Release version: $VERSION"
+
+      - name: Verify pyproject.toml version
+        run: |
+          PY_VER=$(grep -E '^version *=' pyproject.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          if [[ "$PY_VER" != "${{ steps.parse.outputs.version }}" ]]; then
+            echo "::error::pyproject.toml version ($PY_VER) does not match tag (${{ steps.parse.outputs.version }})"
+            exit 1
+          fi
+
+      - name: Verify engrama/__init__.py __version__
+        run: |
+          INIT_VER=$(grep -E '^__version__' engrama/__init__.py | sed -E 's/.*"(.*)".*/\1/')
+          if [[ "$INIT_VER" != "${{ steps.parse.outputs.version }}" ]]; then
+            echo "::error::engrama/__init__.py __version__ ($INIT_VER) does not match tag (${{ steps.parse.outputs.version }})"
+            exit 1
+          fi
+
+      - name: Verify CHANGELOG topmost entry
+        run: |
+          TOP=$(grep -E '^## \[[^]]+\]' CHANGELOG.md | head -1 | sed -E 's/^## \[([^]]+)\].*/\1/')
+          if [[ "$TOP" != "${{ steps.parse.outputs.version }}" ]]; then
+            echo "::error::CHANGELOG.md topmost version ($TOP) does not match tag (${{ steps.parse.outputs.version }})"
+            exit 1
+          fi
+
+  build:
+    name: Build wheel + sdist (uv)
+    needs: guardian
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Build distributions
+        run: uv build --sdist --wheel
+
+      - name: Show artifacts
+        run: ls -la dist/
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  sbom:
+    name: Generate SBOM (CycloneDX + SPDX)
+    needs: [guardian, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Export runtime requirements from uv.lock
+        # uv export materialises the resolved lock as a pip-style
+        # requirements.txt that CycloneDX and pip-audit both consume.
+        # --no-emit-project keeps engrama itself out of the SBOM
+        # (we publish it; we don't list it as one of its own deps).
+        # --no-dev drops the dev dependency group.
+        run: |
+          uv export \
+            --no-hashes \
+            --no-emit-project \
+            --no-dev \
+            --format requirements-txt \
+            > requirements-sbom.txt
+          echo "--- requirements-sbom.txt ---"
+          cat requirements-sbom.txt
+
+      - name: Install cyclonedx-py and pip-audit
+        run: |
+          uv tool install cyclonedx-bom
+          uv tool install pip-audit
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          uv tool run --from cyclonedx-bom cyclonedx-py requirements \
+            requirements-sbom.txt \
+            --of JSON \
+            -o "engrama-${{ needs.guardian.outputs.version }}.cyclonedx.json"
+
+      - name: Generate pip-audit CycloneDX cross-check
+        # pip-audit also speaks CycloneDX. Producing both lets consumers
+        # cross-check the dependency tree against an independent tool.
+        # Soft-failing (|| true) because pip-audit exits nonzero on
+        # advisories; finding CVEs is the audit gate's job, not the
+        # release SBOM job's.
+        run: |
+          uv tool run pip-audit \
+            -r requirements-sbom.txt \
+            --format=cyclonedx-json \
+            > "engrama-${{ needs.guardian.outputs.version }}.pip-audit.cyclonedx.json" || true
+
+      - name: Generate SPDX SBOM
+        # Uses Anchore syft under the hood — it parses pyproject.toml +
+        # uv.lock and emits SPDX 2.3. Complements CycloneDX with the
+        # format some SCA / procurement tools prefer.
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: engrama-${{ needs.guardian.outputs.version }}.spdx.json
+          upload-artifact: false
+
+      - name: List generated SBOMs
+        run: ls -la engrama-*.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            engrama-*.cyclonedx.json
+            engrama-*.pip-audit.cyclonedx.json
+            engrama-*.spdx.json
+          retention-days: 7
+          if-no-files-found: error
+
+  attest:
+    name: SLSA build-provenance attestation
+    needs: [guardian, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Attest wheel + sdist
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI (trusted publishing)
+    needs: [guardian, build, sbom, attest]
+    if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/engrama
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
+
+  release-notes:
+    name: Create GitHub Release
+    needs: [guardian, build, sbom, publish]
+    if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Download SBOMs
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: sbom/
+
+      - name: Extract topmost CHANGELOG entry
+        # Pulls just the section for this version out of CHANGELOG.md:
+        # everything from the first `## [` heading up to (but not
+        # including) the next `## [` heading. Fed to `gh release create`
+        # as the body so the Release page shows the same notes the repo
+        # ships.
+        run: |
+          python - <<'PY' > release-notes.md
+          import pathlib
+          import re
+
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          headings = list(re.finditer(r"(?m)^## \[", text))
+          if not headings:
+              raise SystemExit("CHANGELOG.md has no version headings")
+          start = headings[0].start()
+          end = headings[1].start() if len(headings) > 1 else len(text)
+          print(text[start:end].rstrip())
+          PY
+          echo "--- release-notes.md ---"
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ needs.guardian.outputs.version }}" \
+            dist/*.whl \
+            dist/*.tar.gz \
+            sbom/engrama-*.cyclonedx.json \
+            sbom/engrama-*.spdx.json \
+            --title "engrama v${{ needs.guardian.outputs.version }}" \
+            --notes-file release-notes.md

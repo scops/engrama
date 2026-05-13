@@ -233,3 +233,168 @@ jobs:
             tests/test_skills.py \
             tests/test_phase4_skills.py \
             tests/test_obsidian_sync.py
+
+  audit-deps:
+    name: Audit dependencies (pip-audit)
+    # PR-time vulnerability gate. Only runs when pyproject.toml or
+    # uv.lock changes — most PRs don't touch deps, and rerunning the
+    # advisory DB for every unrelated PR is wasted CI minutes. Push
+    # events on main always run, so a CVE landing in a transitive dep
+    # is caught the moment we merge a lockfile bump.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # fetch-depth: 0 is needed so the diff step can see the base
+          # of the PR. Without it `git diff base...HEAD` falls back to
+          # whatever shallow history `actions/checkout` cloned.
+          fetch-depth: 0
+
+      - name: Detect dependency changes
+        id: changed
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            if git diff --quiet "$BASE_SHA" -- pyproject.toml uv.lock; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No changes to pyproject.toml or uv.lock — skipping audit."
+            else
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Dependency files changed — running audit."
+            fi
+          else
+            # push to main (or any non-PR event) — always run
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up uv
+        if: steps.changed.outputs.changed == 'true'
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Export runtime requirements
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          uv export \
+            --no-hashes \
+            --no-emit-project \
+            --no-dev \
+            --format requirements-txt \
+            > requirements-audit.txt
+          echo "--- requirements-audit.txt ---"
+          cat requirements-audit.txt
+
+      - name: Run pip-audit
+        if: steps.changed.outputs.changed == 'true'
+        # pip-audit exits 1 on any advisory; we don't want that — we
+        # want to classify ourselves by severity. So swallow the exit
+        # and let the classifier decide.
+        run: |
+          uv tool install pip-audit
+          uv tool run pip-audit \
+            -r requirements-audit.txt \
+            --format=json \
+            > audit.json || true
+          echo "--- audit.json ---"
+          cat audit.json
+
+      - name: Classify findings + decide
+        if: steps.changed.outputs.changed == 'true'
+        # Severity policy:
+        #   - HIGH/CRITICAL (CVSS >= 7.0, parsed from OSV record)
+        #     OR any advisory with an upstream fix available → BLOCKER
+        #   - LOW/MEDIUM with no fix yet → warning (commented, doesn't fail)
+        #   - No advisories → green
+        # The "fix available → block" branch handles vulns where OSV
+        # doesn't expose CVSS (common for newer advisories): if there's
+        # something we could upgrade to, we should upgrade.
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          def fetch_cvss(vuln_id: str) -> float | None:
+              """Look up the OSV record and return the highest CVSS v3 base score, or None."""
+              try:
+                  with urllib.request.urlopen(
+                      f"https://api.osv.dev/v1/vulns/{vuln_id}", timeout=10
+                  ) as resp:
+                      data = json.load(resp)
+              except (urllib.error.URLError, json.JSONDecodeError, TimeoutError):
+                  return None
+              scores: list[float] = []
+              for entry in data.get("severity", []) or []:
+                  if entry.get("type", "").startswith("CVSS_V3"):
+                      vector = entry.get("score", "")
+                      # CVSS vector strings look like "CVSS:3.1/AV:N/AC:L/.../A:H".
+                      # The base score isn't encoded in the vector itself; OSV
+                      # records sometimes include it in database_specific or
+                      # affected[].database_specific.cvss. We try those next.
+              for affected in data.get("affected", []) or []:
+                  for spec_key in ("database_specific", "ecosystem_specific"):
+                      spec = affected.get(spec_key) or {}
+                      score = spec.get("cvss", {}).get("score") if isinstance(spec.get("cvss"), dict) else spec.get("cvss_score")
+                      if isinstance(score, (int, float)):
+                          scores.append(float(score))
+              top = data.get("database_specific", {}) or {}
+              if isinstance(top.get("severity"), str):
+                  mapping = {"LOW": 3.0, "MODERATE": 5.0, "MEDIUM": 5.0, "HIGH": 8.0, "CRITICAL": 9.5}
+                  mapped = mapping.get(top["severity"].upper())
+                  if mapped is not None:
+                      scores.append(mapped)
+              return max(scores) if scores else None
+
+          with open("audit.json") as f:
+              data = json.load(f)
+
+          blockers: list[str] = []
+          warnings: list[str] = []
+          for dep in data.get("dependencies", []):
+              name = dep.get("name", "?")
+              version = dep.get("version", "?")
+              for v in dep.get("vulns", []) or []:
+                  vid = v.get("id", "?")
+                  fix = v.get("fix_versions") or []
+                  desc = (v.get("description") or "").strip().splitlines()[:1]
+                  desc_one = desc[0] if desc else ""
+                  cvss = fetch_cvss(vid)
+                  cvss_label = f"CVSS {cvss:.1f}" if cvss is not None else "CVSS n/a"
+                  fix_label = f"fix in {', '.join(fix)}" if fix else "no upstream fix"
+                  line = f"- **{name}** {version} — `{vid}` ({cvss_label}, {fix_label}) — {desc_one}"
+                  is_high = cvss is not None and cvss >= 7.0
+                  if is_high or fix:
+                      blockers.append(line)
+                  else:
+                      warnings.append(line)
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          lines = ["## pip-audit results", ""]
+          if blockers:
+              lines.append("### :red_circle: Blocking advisories")
+              lines.append("These have HIGH/CRITICAL severity or an available upstream fix — please upgrade or pin around them.")
+              lines.append("")
+              lines.extend(blockers)
+              lines.append("")
+          if warnings:
+              lines.append("### :yellow_circle: Informational advisories")
+              lines.append("LOW/MEDIUM severity with no upstream fix yet — not blocking, but track them.")
+              lines.append("")
+              lines.extend(warnings)
+              lines.append("")
+          if not blockers and not warnings:
+              lines.append(":white_check_mark: No known advisories against runtime dependencies.")
+          if summary_path:
+              with open(summary_path, "a") as f:
+                  f.write("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          if blockers:
+              sys.exit(1)
+          PY
