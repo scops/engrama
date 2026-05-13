@@ -17,6 +17,7 @@ import json
 import logging
 import re
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -324,6 +325,29 @@ class SqliteGraphStore:
         )
         return [{"label": r["label"], "name": r["name"]} for r in cur.fetchall()]
 
+    def iter_all_nodes(self) -> Iterator[dict[str, Any]]:
+        """Yield every node in the graph for export. Migration-only — not
+        intended for query paths, which should use indexed lookups instead.
+        """
+        cur = self._conn.execute("SELECT label, key_field, key_value, props FROM nodes ORDER BY id")
+        for row in cur:
+            yield {
+                "label": row["label"],
+                "key_field": row["key_field"],
+                "key_value": row["key_value"],
+                "properties": json.loads(row["props"]) if row["props"] else {},
+            }
+
+    def purge_all(self) -> None:
+        """Wipe every node, edge, and FTS row. Used by ``engrama import
+        --purge``. Vectors live in a separate vec0 table and must be
+        purged by :meth:`SqliteVecStore.purge_all`.
+        """
+        self._conn.execute("DELETE FROM edges")
+        self._conn.execute("DELETE FROM nodes")
+        self._conn.execute("DELETE FROM nodes_fts")
+        self._conn.commit()
+
     # ------------------------------------------------------------------
     # Relationship operations
     # ------------------------------------------------------------------
@@ -360,6 +384,37 @@ class SqliteGraphStore:
         )
         self._conn.commit()
         return [{"rel_type": rel_type}]
+
+    def iter_all_relations(self) -> Iterator[dict[str, Any]]:
+        """Yield every edge in the graph for export, resolved to the
+        label/key tuple on each endpoint so the dump is portable across
+        backends (Neo4j has no concept of our integer ``nodes.id``).
+        """
+        cur = self._conn.execute(
+            """
+            SELECT f.label     AS from_label,
+                   f.key_field AS from_key,
+                   f.key_value AS from_value,
+                   e.rel_type  AS rel_type,
+                   t.label     AS to_label,
+                   t.key_field AS to_key,
+                   t.key_value AS to_value
+              FROM edges e
+              JOIN nodes f ON f.id = e.from_id
+              JOIN nodes t ON t.id = e.to_id
+             ORDER BY e.id
+            """
+        )
+        for row in cur:
+            yield {
+                "from_label": row["from_label"],
+                "from_key": row["from_key"],
+                "from_value": row["from_value"],
+                "rel_type": row["rel_type"],
+                "to_label": row["to_label"],
+                "to_key": row["to_key"],
+                "to_value": row["to_value"],
+            }
 
     def get_neighbours(
         self,

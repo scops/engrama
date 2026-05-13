@@ -457,6 +457,8 @@ uv run engrama reindex                                          # Re-embed all n
 uv run engrama decay --dry-run                                  # Preview decay
 uv run engrama decay --rate 0.01                                # Apply gentle decay
 uv run engrama decay --rate 0.1 --min-confidence 0.05           # Aggressive + archive
+uv run engrama export dump.ndjson                               # Backend-agnostic dump
+uv run engrama import dump.ndjson --purge                       # Restore (wiping target)
 ```
 
 To override the backend on a single command:
@@ -464,6 +466,19 @@ To override the backend on a single command:
 ```bash
 GRAPH_BACKEND=neo4j uv run engrama verify
 ```
+
+`engrama export` dumps the active backend's graph + vectors to an
+NDJSON file. `engrama import` restores it. Cross-backend works — to
+migrate SQLite to Neo4j:
+
+```bash
+GRAPH_BACKEND=sqlite uv run engrama export dump.ndjson
+GRAPH_BACKEND=neo4j  uv run engrama import dump.ndjson --purge
+```
+
+Vectors only restore when the source and target have matching
+embedding dimensions; otherwise they're skipped and `engrama reindex`
+rebuilds them under the active embedder.
 
 `engrama verify` also checks the embedding provider when one is
 configured. A healthy backend with a down embedder reports

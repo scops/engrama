@@ -136,9 +136,45 @@ class SqliteVecStore:
         self._conn.commit()
         return len(ids)
 
+    def purge_all(self) -> None:
+        """Drop every stored vector. Migration-only; pairs with
+        :meth:`SqliteGraphStore.purge_all` for ``engrama import --purge``.
+        """
+        if not self._index_ready and self._dimensions == 0:
+            return
+        # vec0 virtual tables don't support TRUNCATE; bulk DELETE is fine.
+        self._conn.execute(f"DELETE FROM {self._index_name}")
+        self._conn.commit()
+
     # ------------------------------------------------------------------
     # Reads
     # ------------------------------------------------------------------
+
+    def iter_all_vectors(self):
+        """Yield ``{label, key_field, key_value, vector}`` for every stored
+        embedding, resolved against the nodes table so the dump is
+        portable across backends.
+        """
+        if self._dimensions == 0 or not self._index_ready:
+            return
+        cur = self._conn.execute(
+            f"""
+            SELECT n.label, n.key_field, n.key_value, v.embedding
+              FROM {self._index_name} v
+              JOIN nodes n ON n.id = v.node_id
+             ORDER BY n.id
+            """
+        )
+        # vec0 stores vectors as little-endian float32 blobs.
+        fmt = f"<{self._dimensions}f"
+        for row in cur:
+            blob = row["embedding"]
+            yield {
+                "label": row["label"],
+                "key_field": row["key_field"],
+                "key_value": row["key_value"],
+                "vector": list(struct.unpack(fmt, blob)),
+            }
 
     def search_vectors(
         self,
