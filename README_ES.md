@@ -202,50 +202,135 @@ por similitud semántica** — encontrar nodos conceptualmente relacionados,
 no solo coincidencias por palabra clave — activa los embeddings vía
 cualquier servicio compatible con OpenAI.
 
-### Opción A: Ollama (local, lo más simple)
+Configura cuatro variables de entorno (`EMBEDDING_PROVIDER`,
+`EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS`, `OPENAI_BASE_URL`) más
+`OPENAI_API_KEY` cuando el servidor lo requiera. Luego ejecuta
+`uv run engrama verify` — imprime `Embeddings: ok (provider=…, model=…)`
+al éxito y `Embeddings: degraded …` si el endpoint o el modelo no
+están disponibles.
 
-```bash
-# 1. Instala Ollama desde https://ollama.com y arráncalo
-# 2. Descarga el modelo
-ollama pull nomic-embed-text
+Tras activar embeddings sobre un grafo existente, ejecuta
+`uv run engrama reindex` para embeberse los nodos antiguos. Los nodos
+nuevos se embeben automáticamente al crearse. Si el endpoint deja de
+estar disponible, la búsqueda degrada a `fulltext_only` y expone el
+motivo en `search_mode` — Engrama nunca devuelve resultados vacíos en
+silencio.
 
-# 3. Añade a .env
-echo 'EMBEDDING_PROVIDER=ollama'         >> .env
-echo 'EMBEDDING_MODEL=nomic-embed-text'  >> .env
-echo 'EMBEDDING_DIMENSIONS=768'          >> .env
-echo 'OLLAMA_URL=http://localhost:11434' >> .env
+### Matriz de proveedores (ejemplos trabajados)
+
+Todos los proveedores hablan el formato OpenAI `/v1/embeddings`, así
+que `EMBEDDING_PROVIDER=openai` es la opción recomendada para todos
+ellos (incluido Ollama local). La ruta nativa de Ollama `/api/embed`
+sigue soportada con `EMBEDDING_PROVIDER=ollama` — se mantiene por
+retrocompatibilidad, pero elige un estilo y mantente en él.
+
+#### Ollama (local, recomendado para empezar)
+
+Local, gratis, sin API key, ~274 MB de descarga. La mejor ruta si
+solo quieres probar búsqueda semántica.
+
+```dotenv
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_DIMENSIONS=768
+OPENAI_BASE_URL=http://localhost:11434/v1
 ```
 
-Los embeddings se generan localmente — ningún dato sale de tu máquina.
-El modelo `nomic-embed-text` ocupa ~274 MB y soporta un contexto de
-8192 tokens.
+```bash
+# Instalar: https://ollama.com
+ollama pull nomic-embed-text
+uv run engrama verify   # → "Embeddings: ok (provider=openai, model=nomic-embed-text)"
+```
 
-### Opción B: Servicio compatible con OpenAI (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina, ...)
+Otros modelos locales sólidos: `mxbai-embed-large` (1024 dims, inglés),
+`bge-m3` (1024 dims, multilingüe). Empareja `EMBEDDING_DIMENSIONS` con
+el modelo — discrepancias hacen que la búsqueda híbrida caiga a fulltext.
 
-Las mismas variables de entorno sirven para cualquier servicio que
-exponga el endpoint OpenAI `/v1/embeddings`:
+#### OpenAI
+
+API cloud, de pago, latencia <10 ms. La implementación de referencia
+del contrato `/v1/embeddings`.
 
 ```dotenv
 EMBEDDING_PROVIDER=openai
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSIONS=1536
-OPENAI_BASE_URL=https://api.openai.com/v1   # OpenAI propio
+OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=sk-...
 ```
 
-Para servidores locales apunta `OPENAI_BASE_URL` al endpoint correcto:
+`text-embedding-3-large` (3072 dims) también funciona — pon
+`EMBEDDING_DIMENSIONS=3072`. Los modelos `text-embedding-3-*` aceptan
+un valor de dimensiones menor para truncar (p. ej.
+`EMBEDDING_DIMENSIONS=512` con el modelo small y OpenAI devuelve
+vectores de 512 dims).
 
-| Proveedor | `OPENAI_BASE_URL` |
-|---|---|
-| Ollama (modo OpenAI-compat) | `http://localhost:11434/v1` |
-| LM Studio | `http://localhost:1234/v1` |
-| vLLM | `http://localhost:8000/v1` |
-| llama.cpp server | `http://localhost:8080/v1` |
-| Jina | `https://api.jina.ai/v1` |
+#### LM Studio
 
-Tras activar embeddings sobre un grafo existente, ejecuta
-`uv run engrama reindex` para generar los embeddings de nodos antiguos.
-Los nodos nuevos se embeben automáticamente al crearse.
+Servidor local gestionado por GUI, útil cuando quieres selector de
+modelo y gestor de descargas. Arranca un modelo de embeddings desde
+la pestaña "Local Server" de LM Studio primero.
+
+```dotenv
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5-GGUF
+EMBEDDING_DIMENSIONS=768
+OPENAI_BASE_URL=http://localhost:1234/v1
+OPENAI_API_KEY=lm-studio
+```
+
+LM Studio ignora el valor de la API key pero su cliente HTTP espera
+que la cabecera esté presente — cualquier string no vacío sirve.
+
+#### vLLM
+
+Servidor de inferencia de alto throughput, buena opción cuando
+embebes en bulk y quieres batching contra una GPU.
+
+```dotenv
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=intfloat/e5-mistral-7b-instruct
+EMBEDDING_DIMENSIONS=4096
+OPENAI_BASE_URL=http://localhost:8000/v1
+OPENAI_API_KEY=any
+```
+
+Arranca vLLM con un modelo capaz de embeddings:
+`vllm serve intfloat/e5-mistral-7b-instruct --task embed`. Empareja
+`EMBEDDING_DIMENSIONS` con el hidden size del modelo.
+
+#### llama.cpp server
+
+Servidor binario único CPU/GPU, mínimas piezas móviles. Útil para
+modelos de embedding pequeños en hosts con recursos limitados.
+
+```dotenv
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=nomic-embed-text-v1.5.Q4_K_M
+EMBEDDING_DIMENSIONS=768
+OPENAI_BASE_URL=http://localhost:8080/v1
+OPENAI_API_KEY=any
+```
+
+Arranca con `--embedding` y la ruta al GGUF:
+`./llama-server -m nomic-embed-text-v1.5.Q4_K_M.gguf --embedding --port 8080`.
+
+#### Jina (cloud)
+
+Embeddings multilingües hosteados con contexto largo. Pago por token,
+sin self-hosting.
+
+```dotenv
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=jina-embeddings-v3
+EMBEDDING_DIMENSIONS=1024
+OPENAI_BASE_URL=https://api.jina.ai/v1
+OPENAI_API_KEY=jina_...
+```
+
+`jina-embeddings-v3` es multilingüe (89 idiomas) con 8192 tokens de
+contexto. Para entradas más cortas y menos latencia, usa
+`jina-embeddings-v2-base-en` con `EMBEDDING_DIMENSIONS=768`.
 
 ---
 
