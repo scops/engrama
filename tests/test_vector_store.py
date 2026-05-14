@@ -326,11 +326,11 @@ class TestHybridSearchEngine:
         embedder.dimensions = 768
         embedder.embed.return_value = [0.1] * 768
 
-        config = HybridConfig(alpha=1.0, temporal_gamma=0.0)  # vector only, no temporal
+        # Vector only — zero out every other signal so final == vector.
+        config = HybridConfig(alpha=1.0, temporal_gamma=0.0, trust_delta=0.0)
         engine = HybridSearchEngine(graph, vector, embedder, config)
         results = engine.search("test")
         assert len(results) == 1
-        # With alpha=1.0 and gamma=0, fulltext and temporal contributions = 0
         assert results[0].final_score == results[0].vector_score
 
     def test_empty_results(self):
