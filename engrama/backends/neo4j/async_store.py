@@ -356,6 +356,7 @@ class Neo4jAsyncStore:
         key_field: str,
         key_value: str,
         hops: int = 1,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
         """Convenience: get_node + get_neighbours in one call.
 
@@ -369,10 +370,18 @@ class Neo4jAsyncStore:
         timestamps) to keep the response compact; they still carry
         ``summary`` and ``tags`` so the model can decide whether to fetch
         a neighbour's full context.
+
+        DDR-003 Phase F: when ``scope`` is set, neighbours are filtered
+        by the scope-visibility rule. The root-node lookup itself is
+        unscoped — callers that already know a node's key are
+        considered authorised on this path.
         """
+        nb_clause, nb_params = scope_filter_cypher(scope, "neighbour")
+        where_sql = f"WHERE neighbour IS NULL OR ({nb_clause}) " if nb_clause else ""
         cypher = (
             f"MATCH (start:{label} {{{key_field}: $key_value}}) "
             f"OPTIONAL MATCH (start)-[r*1..{hops}]-(neighbour) "
+            f"{where_sql}"
             "RETURN start, "
             "  [rel IN r | type(rel)] AS rel_types, "
             "  labels(neighbour)[0] AS neighbour_label, "
@@ -381,7 +390,7 @@ class Neo4jAsyncStore:
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
-            parameters_={"key_value": key_value},
+            parameters_={"key_value": key_value, **nb_params},
             database_=self._database,
         )
         if not records:

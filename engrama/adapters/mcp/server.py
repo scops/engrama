@@ -41,6 +41,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
+from engrama.core.scope import MemoryScope
 from engrama.core.security import Provenance, Sanitiser
 
 logger = logging.getLogger("engrama_mcp")
@@ -59,17 +60,26 @@ _VALID_RELATIONS: set[str] = {member.value for member in RelationType}
 _SANITISER = Sanitiser(valid_labels=_VALID_LABELS, valid_relations=_VALID_RELATIONS)
 _MCP_PROVENANCE_PROPS = Provenance(source="mcp").to_properties()
 
+# Process-wide scope for the MCP server — one scope per running
+# process, populated at import time from the operator's env vars
+# (ENGRAMA_ORG_ID, ENGRAMA_USER_ID, ENGRAMA_AGENT_ID, ENGRAMA_SESSION_ID).
+# Empty when nothing is exported, so single-user deployments behave
+# exactly as before this PR.
+_MCP_SCOPE: MemoryScope = MemoryScope.from_env()
+_MCP_SCOPE_PROPS: dict[str, Any] = _MCP_SCOPE.to_properties()
+
 
 def _with_mcp_provenance(extra: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Sanitise an MCP-supplied extras dict and stamp it with MCP provenance.
+    """Sanitise an MCP-supplied extras dict and stamp it with MCP metadata.
 
-    The caller's extras are cleaned first (reserved provenance keys
-    stripped, control chars removed, long strings truncated) and then
-    the MCP provenance fields are applied — they always win, so a
-    malicious agent cannot forge its own ``source`` or ``trust_level``.
+    The caller's extras are cleaned first (reserved provenance + scope
+    keys stripped, control chars removed, long strings truncated) and
+    then the system-managed properties are applied — they always win,
+    so a malicious agent cannot forge its own ``source``, ``trust_level``
+    or scope dimensions.
     """
     cleaned = _SANITISER.sanitise_properties(extra or {})
-    return {**cleaned, **_MCP_PROVENANCE_PROPS}
+    return {**cleaned, **_MCP_PROVENANCE_PROPS, **_MCP_SCOPE_PROPS}
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +437,7 @@ def create_engrama_mcp(
                 from engrama.core.search import HybridSearchEngine
 
                 # Use the async store as both graph and vector backend
-                hybrid = HybridSearchEngine(store, store, _embedder)
+                hybrid = HybridSearchEngine(store, store, _embedder, scope=_MCP_SCOPE)
                 hybrid_results = await hybrid.asearch(params.query, limit=params.limit)
                 results = [
                     {
@@ -464,7 +474,7 @@ def create_engrama_mcp(
                 logger.warning("Hybrid search failed, falling back to fulltext: %s", e)
 
         # --- Fulltext fallback ---
-        results = await store.fulltext_search(params.query, params.limit)
+        results = await store.fulltext_search(params.query, params.limit, scope=_MCP_SCOPE)
         if not results:
             return f"No results found for '{params.query}'."
 
@@ -492,7 +502,7 @@ def create_engrama_mcp(
         related_insights: list[dict[str, Any]] = []
         if _proactive_state.get("enabled", True):
             try:
-                insight_results = await store.fulltext_search(query, limit=3)
+                insight_results = await store.fulltext_search(query, limit=3, scope=_MCP_SCOPE)
                 # Filter for pending Insights
                 related_insights = [
                     {k: v for k, v in r.items() if k in ("title", "body", "confidence", "score")}
@@ -925,7 +935,7 @@ def create_engrama_mcp(
         merge_key = "title" if params.label in TITLE_KEYED_LABELS else "name"
 
         data = await store.get_node_with_neighbours(
-            params.label, merge_key, params.name, params.hops
+            params.label, merge_key, params.name, params.hops, scope=_MCP_SCOPE
         )
         if data is None:
             return f"No node found: (:{params.label} {{name: '{params.name}'}})."

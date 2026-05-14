@@ -543,14 +543,21 @@ class SqliteGraphStore:
         key_field: str,
         key_value: str,
         hops: int = 1,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        """Convenience: ``{node, neighbours}`` shape used by MCP context."""
+        """Convenience: ``{node, neighbours}`` shape used by MCP context.
+
+        DDR-003 Phase F: ``scope`` is forwarded to :meth:`get_neighbours`
+        so traversal respects scope visibility. The root node lookup
+        does *not* apply scope — admin/debug paths still need to fetch
+        a known node by key.
+        """
         node = self.get_node(label, key_field, key_value)
         if node is None:
             return None
         # Strip embedding-like blobs and timestamps from neighbour props
         # to keep the response compact (mirrors Neo4j async behaviour).
-        rows = self.get_neighbours(label, key_field, key_value, hops=hops)
+        rows = self.get_neighbours(label, key_field, key_value, hops=hops, scope=scope)
         seen: set[tuple[str, str]] = set()
         neighbours: list[dict[str, Any]] = []
         for row in rows:
