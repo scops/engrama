@@ -552,7 +552,7 @@ def cmd_search(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-_BENCHMARKS = {"locomo"}
+_BENCHMARKS = {"locomo", "longmemeval"}
 
 
 def _load_benchmark(name: str, path: str) -> Any:
@@ -564,7 +564,11 @@ def _load_benchmark(name: str, path: str) -> Any:
     if name == "locomo":
         from engrama.bench.locomo import LocomoBenchmark
 
-        bench = LocomoBenchmark()
+        bench: Any = LocomoBenchmark()
+    elif name == "longmemeval":
+        from engrama.bench.longmemeval import LongMemEvalBenchmark
+
+        bench = LongMemEvalBenchmark()
     else:
         raise ValueError(f"Unknown benchmark: {name!r}. Known: {sorted(_BENCHMARKS)}")
     bench.load(path)

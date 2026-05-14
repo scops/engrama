@@ -1,0 +1,40 @@
+[
+  {
+    "question_id": "qsn_0001",
+    "question_type": "single-session-user",
+    "question": "What hobby did the user take up in May?",
+    "answer": "Photography.",
+    "haystack_session_ids": ["s1", "s2"],
+    "haystack_dates": ["2024-05-04", "2024-05-12"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I just bought my first DSLR."},
+        {"role": "assistant", "content": "Nice, photography is rewarding."}
+      ],
+      [
+        {"role": "user", "content": "Took some macro shots in the garden today.", "has_answer": true}
+      ]
+    ],
+    "answer_session_ids": ["s2"]
+  },
+  {
+    "question_id": "qsn_0002",
+    "question_type": "multi-session",
+    "question": "What did the assistant recommend about backups?",
+    "answer": "An off-site copy weekly.",
+    "haystack_session_ids": ["s10"],
+    "haystack_dates": ["2024-07-01"],
+    "haystack_sessions": [
+      [
+        {"role": "assistant", "content": "Keep an off-site copy weekly to survive disasters."}
+      ]
+    ],
+    "answer_session_ids": ["s10"]
+  },
+  {
+    "question_id": "qsn_0003",
+    "question": "Empty haystack edge case.",
+    "answer": "n/a",
+    "haystack_sessions": []
+  }
+]
