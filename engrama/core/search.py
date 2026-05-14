@@ -16,10 +16,17 @@ Graceful degradation:
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger("engrama.core.search")
+
+# Default trust score for a node that has no ``trust_level`` property.
+# 0.5 is the same neutral middle that ``default_trust_for`` returns for
+# unknown sources, so legacy nodes written before DDR-003 Phase E rank
+# halfway between high-trust (sync/cli) and low-trust hypotheticals.
+DEFAULT_TRUST_SCORE: float = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +48,10 @@ class HybridConfig:
         temporal_gamma: Weight for the temporal signal (Phase D).
             ``0.0`` disables temporal scoring.
         recency_half_life: Days after which recency factor is 0.5.
+        trust_delta: Weight for the per-node trust signal (DDR-003 Phase
+            E layer 3).  ``0.0`` disables; default ``0.1`` matches the
+            DDR. Read from ``ENGRAMA_TRUST_DELTA`` at instantiation time
+            so operators can tune without touching code.
     """
 
     alpha: float = 0.6
@@ -50,6 +61,18 @@ class HybridConfig:
     fulltext_k: int = 20
     temporal_gamma: float = 0.1
     recency_half_life: float = 30.0
+    trust_delta: float = 0.1
+
+    def __post_init__(self) -> None:
+        raw = os.environ.get("ENGRAMA_TRUST_DELTA")
+        if raw is not None:
+            try:
+                self.trust_delta = float(raw)
+            except ValueError:
+                logger.warning(
+                    "Ignoring invalid ENGRAMA_TRUST_DELTA=%r (expected float)",
+                    raw,
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +137,14 @@ class SearchResult:
 
     temporal_score: float = 1.0
     """Temporal relevance (confidence × recency), 0-1."""
+
+    trust_score: float = DEFAULT_TRUST_SCORE
+    """Per-node provenance trust (DDR-003 Phase E), 0-1.
+
+    Defaults to :data:`DEFAULT_TRUST_SCORE` (0.5) when the node has no
+    ``trust_level`` property — that is, for nodes written before
+    provenance landed.
+    """
 
     final_score: float = 0.0
     """Weighted combination of all signals."""
@@ -306,7 +337,7 @@ class HybridSearchEngine:
                 # surfaces as ``summary=""`` / ``tags=[]`` in the MCP
                 # response and starves the caller of context.
                 vec_props: dict[str, Any] = {}
-                for k in ("confidence", "updated_at", "summary", "tags"):
+                for k in ("confidence", "updated_at", "summary", "tags", "trust_level"):
                     if k in r and r[k] is not None:
                         vec_props[k] = r[k]
                 sr = SearchResult(
@@ -337,7 +368,7 @@ class HybridSearchEngine:
                 # ``details`` is intentionally omitted — use engrama_context
                 # when full context is needed.
                 props: dict[str, Any] = {}
-                for k in ("confidence", "updated_at", "summary", "tags"):
+                for k in ("confidence", "updated_at", "summary", "tags", "trust_level"):
                     if k in d:
                         props[k] = d[k]
 
@@ -370,6 +401,13 @@ class HybridSearchEngine:
                     recency_half_life=self.config.recency_half_life,
                 )
 
+        # --- Trust scoring (Phase E layer 3) ---
+        delta = self.config.trust_delta
+        if delta > 0:
+            for sr in by_name.values():
+                trust = sr.properties.get("trust_level")
+                sr.trust_score = float(trust) if trust is not None else DEFAULT_TRUST_SCORE
+
         # --- Score ---
         beta = self.config.graph_beta
         for sr in by_name.values():
@@ -378,6 +416,7 @@ class HybridSearchEngine:
                 + (1 - alpha) * sr.fulltext_score
                 + beta * min(sr.graph_boost, self.config.boost_cap)
                 + gamma * sr.temporal_score
+                + delta * sr.trust_score
             )
 
         return list(by_name.values())
