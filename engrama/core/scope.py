@@ -80,6 +80,22 @@ class MemoryScope:
         )
 
 
+def _check_identifier(name: str, kind: str) -> None:
+    """Reject ``name`` if it isn't a valid Python identifier.
+
+    The scope-filter helpers interpolate identifiers directly into SQL
+    / Cypher strings — values come from internal call sites today (``"n"``,
+    ``"node"``, ``"props"``) but the function signatures accept ``str``,
+    so a future caller could pass tainted data. ``str.isidentifier()`` is
+    the cheap fence that keeps the helpers safe from injection if that
+    happens: it allows ``[A-Za-z_][A-Za-z0-9_]*`` only, which is the
+    intersection of valid SQL identifiers (when unquoted), Cypher labels,
+    and Python names.
+    """
+    if not name or not name.isidentifier():
+        raise ValueError(f"{kind} must be a valid identifier, got {name!r}")
+
+
 def scope_filter_sql(
     scope: MemoryScope | None,
     table_alias: str,
@@ -97,6 +113,9 @@ def scope_filter_sql(
     plain ``{table_alias}.{dim}`` — needed for the SQLite backend, which
     stores all node properties inside a single JSON ``props`` column.
 
+    ``table_alias`` and ``json_column`` are validated as Python
+    identifiers before being interpolated into the SQL string.
+
     Example::
 
         clause, params = scope_filter_sql(scope, "n", json_column="props")
@@ -104,6 +123,9 @@ def scope_filter_sql(
             sql += f" AND {clause}"
             cursor.execute(sql, {**other_params, **params})
     """
+    _check_identifier(table_alias, "table_alias")
+    if json_column is not None:
+        _check_identifier(json_column, "json_column")
     if scope is None or scope.is_empty():
         return "", {}
     clauses: list[str] = []
@@ -130,8 +152,10 @@ def scope_filter_cypher(
 
     Same semantics as :func:`scope_filter_sql`, but with Cypher
     ``$name`` placeholders. Returns ``("", {})`` for ``None`` or empty
-    scopes so the call site can unconditionally concat.
+    scopes so the call site can unconditionally concat. ``node_var`` is
+    validated as a Python identifier before interpolation.
     """
+    _check_identifier(node_var, "node_var")
     if scope is None or scope.is_empty():
         return "", {}
     clauses: list[str] = []
