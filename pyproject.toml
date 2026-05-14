@@ -1,6 +1,6 @@
 [project]
 name = "engrama"
-version = "0.9.0"
+version = "0.10.0"
 description = "Graph-based long-term memory framework for AI agents (SQLite default, Neo4j optional)"
 readme = "README.md"
 license = { text = "Apache-2.0" }

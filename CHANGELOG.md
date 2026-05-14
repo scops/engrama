@@ -7,7 +7,7 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [Unreleased]
+## [0.10.0] — 2026-05-14
 
 CI maturity + supply-chain hardening for the first public PyPI publish.
 The library APIs are unchanged from 0.9.0; this release is about making
