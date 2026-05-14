@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any
 
 from engrama.core.engine import EngramaEngine
+from engrama.core.security import Provenance
 from engrama.skills.associate import AssociateSkill
 from engrama.skills.forget import ForgetSkill
 from engrama.skills.proactive import ProactiveSkill, SurfacedInsight
@@ -74,6 +75,10 @@ class Engrama:
         vault_path: Obsidian vault path. Falls back to ``VAULT_PATH``
             env var. If ``None`` and no env var, Obsidian features are
             disabled.
+        source_agent: Optional agent identifier persisted on every write
+            as ``source_agent`` (DDR-003 Phase E provenance).
+        source_session: Optional session identifier persisted on every
+            write as ``source_session``.
     """
 
     def __init__(
@@ -85,6 +90,8 @@ class Engrama:
         backend: str | None = None,
         db_path: str | Path | None = None,
         vault_path: str | Path | None = None,
+        source_agent: str | None = None,
+        source_session: str | None = None,
     ) -> None:
         from engrama.backends import create_embedding_provider, create_stores
 
@@ -118,6 +125,11 @@ class Engrama:
             self._store,
             vector_store=self._vector_store,
             embedder=self._embedder,
+            default_provenance=Provenance(
+                source="sdk",
+                source_agent=source_agent,
+                source_session=source_session,
+            ),
         )
 
         # Skills

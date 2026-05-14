@@ -29,6 +29,8 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from engrama.core.security import Provenance
+
 from .adapter import ObsidianAdapter
 from .parser import NoteParser, ParsedNote
 
@@ -36,6 +38,8 @@ if TYPE_CHECKING:
     from engrama.core.engine import EngramaEngine
 
 logger = logging.getLogger(__name__)
+
+_SYNC_PROVENANCE = Provenance(source="sync")
 
 
 class ObsidianSync:
@@ -157,7 +161,7 @@ class ObsidianSync:
             "obsidian_path": path,
         }
 
-        result = self.engine.merge_node(parsed.label, props)
+        result = self.engine.merge_node(parsed.label, props, provenance=_SYNC_PROVENANCE)
         status = "created" if result.get("created") else "updated"
         return parsed, status
 
@@ -264,6 +268,7 @@ class ObsidianSync:
                                     "name": target_name,
                                     "status": "stub",
                                 },
+                                provenance=_SYNC_PROVENANCE,
                             )
                             stubs_created += 1
                             known_nodes[target_lower] = target_label
@@ -323,6 +328,7 @@ class ObsidianSync:
                                 "name": target_name,
                                 "status": "stub",
                             },
+                            provenance=_SYNC_PROVENANCE,
                         )
                         logger.info(
                             "Created stub %s:%s (target of %s from %s)",
