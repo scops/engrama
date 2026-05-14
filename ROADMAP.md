@@ -215,7 +215,7 @@
 - [x] **Bugs surfaced & fixed pre-merge:** async-store contract drift on SQLite (commit `23d5537`), reflect re-pinning approved Insights to pending (`e1a0d4e`), hybrid search dropping enrichment on pure-vector hits (`156fbf5`).
 - [x] **Public-facing decision guide** — `BACKENDS.md` with FAQ and decision tree; `DDR-004.md` with the formal record.
 - [x] **FTS5 query sanitization** — user queries containing hyphens, colons, parentheses, quotes, etc. are now routed through a sanitizer in `SqliteGraphStore.fulltext_search` (each unsafe token wrapped as a quoted phrase, embedded `"` doubled per FTS5 grammar). Closes the `engrama-mcp-server` miss; operator keywords (`AND`/`OR`/`NOT`/`NEAR`) keep their semantics.
-- [ ] **Follow-ups** (non-blocking): first-class `engrama export` / `engrama import` cross-backend migration tool, README embedder matrix with worked examples per provider.
+- [x] **Follow-ups** (non-blocking): first-class `engrama export` / `engrama import` cross-backend migration tool (#30) and README embedder matrix with worked examples per provider (#29).
 
 ## Phase 13 · Security hardening
 
@@ -251,7 +251,7 @@
 - [ ] `engrama[chroma]` — Chroma as a dedicated vector store while keeping SQLite or Neo4j for graph
 - [ ] `engrama[leann]` — LEANN for very large embedding indexes
 - [ ] `engrama[pgvector]` — Postgres + pgvector for teams already on Postgres
-- [ ] First-class `engrama export` / `engrama import` cross-backend migration tool
+- [x] First-class `engrama export` / `engrama import` cross-backend migration tool (#30)
 
 
 ## Definition of done
