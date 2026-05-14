@@ -24,6 +24,7 @@ import logging
 from typing import Any
 
 from engrama.core.client import EngramaClient
+from engrama.core.scope import MemoryScope, scope_filter_cypher
 
 logger = logging.getLogger("engrama.backends.neo4j.vector")
 
@@ -114,30 +115,40 @@ class Neo4jVectorStore:
         self,
         query_embedding: list[float],
         limit: int = 10,
-        scope: Any = None,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """k-ANN similarity search using the Neo4j vector index.
 
         Returns:
             List of dicts with ``node_id`` (elementId), ``label``,
-            ``name``, and ``score``.
+            ``name``, ``score`` and ``trust_level``.
+
+        DDR-003 Phase F: when ``scope`` is set, hits are filtered by the
+        scope-visibility rule (see :mod:`engrama.core.scope`).
         """
+        scope_clause, scope_params = scope_filter_cypher(scope, "node")
+        where_sql = f"WHERE {scope_clause} " if scope_clause else ""
         cypher = (
             f"CALL db.index.vector.queryNodes('{self._index_name}', $k, $embedding) "
             "YIELD node, score "
+            f"{where_sql}"
             "WITH node, score, "
             "[l IN labels(node) WHERE l <> 'Embedded'][0] AS primary_label "
             "RETURN elementId(node) AS node_id, "
             "primary_label AS label, "
             "COALESCE(node.name, node.title) AS name, "
-            "score "
+            "score, "
+            "node.trust_level AS trust_level "
             "ORDER BY score DESC "
             "LIMIT $limit"
         )
-        records = self._client.run(
-            cypher,
-            {"k": limit, "embedding": query_embedding, "limit": limit},
-        )
+        params: dict[str, Any] = {
+            "k": limit,
+            "embedding": query_embedding,
+            "limit": limit,
+            **scope_params,
+        }
+        records = self._client.run(cypher, params)
         return [dict(r) for r in records]
 
     # ------------------------------------------------------------------

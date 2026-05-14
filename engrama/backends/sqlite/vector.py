@@ -14,6 +14,8 @@ import sqlite3
 import struct
 from typing import Any
 
+from engrama.core.scope import MemoryScope, scope_filter_sql
+
 logger = logging.getLogger("engrama.backends.sqlite.vector")
 
 
@@ -180,18 +182,20 @@ class SqliteVecStore:
         self,
         query_embedding: list[float],
         limit: int = 10,
-        scope: Any = None,  # MemoryScope placeholder, unused for now
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """k-ANN cosine search. Returns ``[{node_id, score, label, key}]``.
 
         ``score`` is ``1 - distance`` so larger = better, matching the
         Neo4j vector-index convention.
+
+        DDR-003 Phase F: when ``scope`` is set, results are filtered by
+        the scope-visibility rule (see :mod:`engrama.core.scope`).
         """
         if self._dimensions == 0 or not self._index_ready:
             return []
-        try:
-            cur = self._conn.execute(
-                f"""
+        scope_clause, scope_params = scope_filter_sql(scope, "n", json_column="props")
+        sql = f"""
                 SELECT v.node_id                                AS node_id,
                        1 - v.distance                           AS score,
                        n.label                                  AS label,
@@ -200,15 +204,23 @@ class SqliteVecStore:
                        json_extract(n.props, '$.description')   AS description,
                        json_extract(n.props, '$.tags')          AS tags,
                        json_extract(n.props, '$.confidence')    AS confidence,
+                       json_extract(n.props, '$.trust_level')   AS trust_level,
                        n.updated_at                             AS updated_at
                 FROM {self._index_name} v
                 JOIN nodes n ON n.id = v.node_id
-                WHERE v.embedding MATCH ?
-                  AND k = ?
-                ORDER BY v.distance
-                """,
-                (_pack(query_embedding), limit),
-            )
+                WHERE v.embedding MATCH :embedding
+                  AND k = :limit
+        """
+        if scope_clause:
+            sql += f" AND {scope_clause}"
+        sql += " ORDER BY v.distance"
+        params: dict[str, Any] = {
+            "embedding": _pack(query_embedding),
+            "limit": limit,
+            **scope_params,
+        }
+        try:
+            cur = self._conn.execute(sql, params)
         except sqlite3.OperationalError as e:
             logger.warning("vec0 search failed: %s", e)
             return []
@@ -229,6 +241,7 @@ class SqliteVecStore:
                     "summary": r["summary"] or r["description"] or "",
                     "tags": tags,
                     "confidence": r["confidence"],
+                    "trust_level": r["trust_level"],
                     "updated_at": r["updated_at"],
                 }
             )
@@ -238,9 +251,10 @@ class SqliteVecStore:
         self,
         query_embedding: list[float],
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Alias for :meth:`search_vectors` matching Neo4jAsyncStore."""
-        return self.search_vectors(query_embedding, limit=limit)
+        return self.search_vectors(query_embedding, limit=limit, scope=scope)
 
     def count(self) -> int:
         if self._dimensions == 0 or not self._index_ready:

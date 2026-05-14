@@ -72,7 +72,7 @@ class _SyncMockGraphStore:
     def __init__(self, results: list[dict[str, Any]] | None = None):
         self._results = results or []
 
-    def fulltext_search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    def fulltext_search(self, query: str, limit: int = 10, **kwargs) -> list[dict[str, Any]]:
         return self._results[:limit]
 
     def get_neighbours(self, *args, **kwargs) -> list[dict[str, Any]]:
@@ -85,7 +85,7 @@ class _AsyncMockGraphStore:
     def __init__(self, results: list[dict[str, Any]] | None = None):
         self._results = results or []
 
-    async def fulltext_search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    async def fulltext_search(self, query: str, limit: int = 10, **kwargs) -> list[dict[str, Any]]:
         return self._results[:limit]
 
     async def get_neighbours(self, *args, **kwargs) -> list[dict[str, Any]]:
@@ -121,6 +121,7 @@ class _AsyncMockVectorStore:
         self,
         query_embedding: list[float],
         limit: int = 10,
+        scope: Any = None,
     ) -> list[dict[str, Any]]:
         return self._results[:limit]
 

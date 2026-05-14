@@ -17,6 +17,7 @@ from neo4j.time import Date, DateTime, Duration, Time
 
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
+from engrama.core.scope import MemoryScope, scope_filter_cypher
 
 _NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 
@@ -465,6 +466,7 @@ class Neo4jGraphStore:
         key_value: str,
         hops: int = 1,
         limit: int = 50,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Traverse N hops from a node and return its neighbourhood.
 
@@ -472,18 +474,32 @@ class Neo4jGraphStore:
         "rel": [<rel-dict>, ...], "neighbour": <node-dict>}``.  Node and
         relationship dicts carry ``_id``, ``_labels`` / ``_type`` plus
         their properties.
+
+        DDR-003 Phase F: when ``scope`` is set, both the start node and
+        each returned neighbour must match the scope-visibility rule.
         """
+        start_clause, start_params = scope_filter_cypher(scope, "start")
+        nb_clause, nb_params = scope_filter_cypher(scope, "neighbour")
+        where_parts: list[str] = []
+        if start_clause:
+            where_parts.append(start_clause)
+        if nb_clause:
+            where_parts.append(nb_clause)
+        where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
         query = (
             f"MATCH (start:{label} {{{key_field}: $key_value}})"
             f"-[rel*1..{hops}]-(neighbour) "
+            f"{where_sql} "
             "RETURN start, rel, neighbour"
         )
-        return _records_to_dicts(self._client.run(query, {"key_value": key_value}))
+        params: dict[str, Any] = {"key_value": key_value, **start_params, **nb_params}
+        return _records_to_dicts(self._client.run(query, params))
 
     def fulltext_search(
         self,
         query: str,
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Keyword search against the ``memory_search`` fulltext index.
 
@@ -496,20 +512,28 @@ class Neo4jGraphStore:
         context.  ``details`` is intentionally excluded from search results
         to keep responses compact — callers can use ``engrama_context`` for
         the full content.
+
+        DDR-003 Phase F: when ``scope`` is set, results are filtered by
+        the scope-visibility rule (see :mod:`engrama.core.scope`).
         """
+        scope_clause, scope_params = scope_filter_cypher(scope, "node")
+        where_sql = f"WHERE {scope_clause} " if scope_clause else ""
         cypher = (
             'CALL db.index.fulltext.queryNodes("memory_search", $query) '
             "YIELD node, score "
+            f"{where_sql}"
             "RETURN labels(node)[0] AS type, "
             "COALESCE(node.name, node.title) AS name, "
             "score, "
             "COALESCE(node.summary, node.description, '') AS summary, "
             "node.tags AS tags, "
             "node.confidence AS confidence, "
+            "node.trust_level AS trust_level, "
             "toString(node.updated_at) AS updated_at "
             "ORDER BY score DESC LIMIT $limit"
         )
-        return _records_to_dicts(self._client.run(cypher, {"query": query, "limit": limit}))
+        params: dict[str, Any] = {"query": query, "limit": limit, **scope_params}
+        return _records_to_dicts(self._client.run(cypher, params))
 
     def run_cypher(
         self,

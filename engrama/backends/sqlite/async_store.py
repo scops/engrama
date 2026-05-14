@@ -26,6 +26,7 @@ from typing import Any, TypeVar
 
 from engrama.backends.sqlite.store import SqliteGraphStore
 from engrama.backends.sqlite.vector import SqliteVecStore
+from engrama.core.scope import MemoryScope
 
 logger = logging.getLogger("engrama.backends.sqlite.async_store")
 
@@ -200,10 +201,14 @@ class SqliteAsyncStore:
         key_value: str,
         hops: int = 1,
         limit: int = 50,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Traverse N hops from a node. Returns the
         ``[{label, name, via, properties}]`` shape used by the MCP
         tools (mirrors :meth:`Neo4jAsyncStore.get_neighbours`).
+
+        DDR-003 Phase F: optional ``scope`` filter — see the sync
+        ``SqliteGraphStore.get_neighbours`` for the visibility rules.
         """
         rows = await self._run(
             self._sync.get_neighbours,
@@ -212,6 +217,7 @@ class SqliteAsyncStore:
             key_value,
             hops,
             limit,
+            scope,
         )
         if not rows:
             return []
@@ -274,8 +280,9 @@ class SqliteAsyncStore:
         self,
         query: str,
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        return await self._run(self._sync.fulltext_search, query, limit)
+        return await self._run(self._sync.fulltext_search, query, limit, scope)
 
     async def count_labels(self) -> dict[str, int]:
         return await self._run(self._sync.count_labels)

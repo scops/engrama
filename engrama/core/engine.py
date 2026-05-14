@@ -236,14 +236,18 @@ class EngramaEngine:
     # ------------------------------------------------------------------
 
     def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Run a fulltext search against the ``memory_search`` index."""
-        return self._store.fulltext_search(query, limit=limit)
+        """Run a fulltext search against the ``memory_search`` index.
+
+        DDR-003 Phase F: ``self.default_scope`` is forwarded to the
+        store, so queries automatically respect the engine's scope.
+        """
+        return self._store.fulltext_search(query, limit=limit, scope=self.default_scope)
 
     def hybrid_search(self, query: str, limit: int = 10) -> list[Any]:
         """Run a hybrid search combining fulltext and vector similarity.
 
         Falls back to plain fulltext search when no embedder/vector store
-        is configured.
+        is configured. ``self.default_scope`` is honoured on both paths.
         """
         if self._embed_on_write:
             from engrama.core.search import HybridSearchEngine
@@ -252,13 +256,14 @@ class EngramaEngine:
                 self._store,
                 self._vector_store,
                 self._embedder,
+                scope=self.default_scope,
             )
             return engine.search(query, limit=limit)
 
         # Fallback: plain fulltext, wrapped as SearchResult for consistency
         from engrama.core.search import SearchResult
 
-        records = self._store.fulltext_search(query, limit=limit)
+        records = self._store.fulltext_search(query, limit=limit, scope=self.default_scope)
         results = []
         for r in records:
             d = dict(r) if not isinstance(r, dict) else r
@@ -296,5 +301,9 @@ class EngramaEngine:
         )
 
     def get_context(self, name: str, label: str, hops: int = 1) -> list[dict[str, Any]]:
-        """Retrieve the local neighbourhood of a node."""
-        return self._store.get_neighbours(label, "name", name, hops=hops)
+        """Retrieve the local neighbourhood of a node.
+
+        DDR-003 Phase F: ``self.default_scope`` is forwarded to the
+        store, so traversals automatically respect the engine's scope.
+        """
+        return self._store.get_neighbours(label, "name", name, hops=hops, scope=self.default_scope)

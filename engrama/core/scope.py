@@ -1,22 +1,31 @@
 """Scope model for multi-scope memory (DDR-003 Phase F / Roadmap P14).
 
 This module defines :class:`MemoryScope` — the four-dimension address
-that locates a write inside the org → user → agent → session hierarchy.
-PR-F1 carries the scope through writes (every node tagged with the
-dimensions that are set on the active scope). PR-F2 will apply the
-same scope on the read side as a query filter.
+that locates a write inside the org → user → agent → session hierarchy
+— and the helpers that translate it into SQL or Cypher WHERE fragments
+on the read side.
+
+Visibility rule (PR-F2): a node ``N`` is visible at scope ``S`` iff for
+each dimension ``d`` where ``S.d`` is set, ``N.d IS NULL OR N.d == S.d``.
+Dimensions that are ``None`` on ``S`` are not filtered — they act as a
+wildcard. This implements DDR-003 Part 6's "broader-scope inheritance":
+a query at ``user_id="alice"`` sees her writes, the matching org-level
+writes (no ``user_id``), and the truly global writes (no scope at all).
 
 Per DDR-003 Part 6, for v1 Engrama stays single-user: every dimension
 defaults to ``None``, ``MemoryScope().to_properties()`` is empty, and
 the node carries no scope properties. Switching to multi-user is an
-operator decision (set the dimensions when constructing the engine
-or the SDK), not a code change.
+operator decision (set the dimensions when constructing the engine or
+the SDK), not a code change.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
+# Ordered for stable parameter generation / readable WHERE clauses.
+_DIMENSIONS: tuple[str, ...] = ("org_id", "user_id", "agent_id", "session_id")
 
 
 @dataclass(frozen=True)
@@ -71,4 +80,70 @@ class MemoryScope:
         )
 
 
-__all__ = ["MemoryScope"]
+def scope_filter_sql(
+    scope: MemoryScope | None,
+    table_alias: str,
+    *,
+    json_column: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Build a SQLite WHERE fragment + named params for a scope.
+
+    Returns ``("", {})`` when ``scope`` is ``None`` or empty — callers
+    can use the result unconditionally and concatenate when truthy. The
+    fragment uses ``:name`` named-parameter placeholders.
+
+    When ``json_column`` is set, dimensions are read via
+    ``json_extract({table_alias}.{json_column}, '$.{dim}')`` instead of
+    plain ``{table_alias}.{dim}`` — needed for the SQLite backend, which
+    stores all node properties inside a single JSON ``props`` column.
+
+    Example::
+
+        clause, params = scope_filter_sql(scope, "n", json_column="props")
+        if clause:
+            sql += f" AND {clause}"
+            cursor.execute(sql, {**other_params, **params})
+    """
+    if scope is None or scope.is_empty():
+        return "", {}
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    for dim in _DIMENSIONS:
+        value = getattr(scope, dim)
+        if value is None:
+            continue
+        param_name = f"scope_{dim}"
+        if json_column:
+            col_expr = f"json_extract({table_alias}.{json_column}, '$.{dim}')"
+        else:
+            col_expr = f"{table_alias}.{dim}"
+        clauses.append(f"({col_expr} IS NULL OR {col_expr} = :{param_name})")
+        params[param_name] = value
+    return " AND ".join(clauses), params
+
+
+def scope_filter_cypher(
+    scope: MemoryScope | None,
+    node_var: str,
+) -> tuple[str, dict[str, Any]]:
+    """Build a Cypher WHERE fragment + params for a scope.
+
+    Same semantics as :func:`scope_filter_sql`, but with Cypher
+    ``$name`` placeholders. Returns ``("", {})`` for ``None`` or empty
+    scopes so the call site can unconditionally concat.
+    """
+    if scope is None or scope.is_empty():
+        return "", {}
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    for dim in _DIMENSIONS:
+        value = getattr(scope, dim)
+        if value is None:
+            continue
+        param_name = f"scope_{dim}"
+        clauses.append(f"({node_var}.{dim} IS NULL OR {node_var}.{dim} = ${param_name})")
+        params[param_name] = value
+    return " AND ".join(clauses), params
+
+
+__all__ = ["MemoryScope", "scope_filter_cypher", "scope_filter_sql"]

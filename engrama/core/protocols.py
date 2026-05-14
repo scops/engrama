@@ -19,6 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from engrama.core.scope import MemoryScope
+
 # ---------------------------------------------------------------------------
 # Schema definition (passed to GraphStore.init_schema)
 # ---------------------------------------------------------------------------
@@ -54,24 +56,6 @@ class SchemaDefinition:
         ]
     )
     """Properties indexed by the fulltext search index."""
-
-
-# ---------------------------------------------------------------------------
-# Scope (placeholder for Phase F — #6 multi-scope)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class MemoryScope:
-    """Scope filter for multi-user/multi-agent isolation.
-
-    Phase A: defined but unused (all fields default to ``None``).
-    """
-
-    user_id: str | None = None
-    agent_id: str | None = None
-    session_id: str | None = None
-    org_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -144,16 +128,26 @@ class GraphStore(Protocol):
         key_value: str,
         hops: int = 1,
         limit: int = 50,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Traverse N hops from a node."""
+        """Traverse N hops from a node, optionally filtered by scope.
+
+        DDR-003 Phase F: when ``scope`` is set, only neighbours whose
+        scope dimensions match (or are ``NULL``) are returned. Dimensions
+        that are ``None`` on the supplied scope are not filtered.
+        """
         ...
 
     async def fulltext_search(
         self,
         query: str,
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Keyword search across all text properties.
+
+        DDR-003 Phase F: when ``scope`` is set, results are filtered as
+        described on :meth:`get_neighbours`.
 
         Returns: ``[{node, score, label, key}]``
         """
