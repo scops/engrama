@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any
 
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
 from engrama.core.security import Provenance
 from engrama.skills.associate import AssociateSkill
 from engrama.skills.forget import ForgetSkill
@@ -79,6 +80,12 @@ class Engrama:
             as ``source_agent`` (DDR-003 Phase E provenance).
         source_session: Optional session identifier persisted on every
             write as ``source_session``.
+        org_id: Optional organisation scope (DDR-003 Phase F). When set,
+            persisted as ``org_id`` on every write and (in PR-F2) used
+            as a read-side filter.
+        user_id: Optional user scope (DDR-003 Phase F).
+        agent_id: Optional agent scope (DDR-003 Phase F).
+        session_id: Optional session scope (DDR-003 Phase F).
     """
 
     def __init__(
@@ -92,6 +99,10 @@ class Engrama:
         vault_path: str | Path | None = None,
         source_agent: str | None = None,
         source_session: str | None = None,
+        org_id: str | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         from engrama.backends import create_embedding_provider, create_stores
 
@@ -121,6 +132,12 @@ class Engrama:
             )
 
         self._store, self._vector_store = create_stores(config)
+        scope = MemoryScope(
+            org_id=org_id,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+        )
         self._engine = EngramaEngine(
             self._store,
             vector_store=self._vector_store,
@@ -130,6 +147,7 @@ class Engrama:
                 source_agent=source_agent,
                 source_session=source_session,
             ),
+            default_scope=scope if not scope.is_empty() else None,
         )
 
         # Skills

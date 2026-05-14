@@ -44,6 +44,16 @@ RESERVED_PROVENANCE_KEYS: frozenset[str] = frozenset(
     {"source", "source_agent", "source_session", "trust_level"}
 )
 
+# Keys that may never be supplied by a caller's property bag — they must
+# come from a :class:`~engrama.core.scope.MemoryScope` instance applied
+# by the engine. Otherwise a malicious agent could relocate its own
+# writes into another user's or org's scope.
+RESERVED_SCOPE_KEYS: frozenset[str] = frozenset({"org_id", "user_id", "agent_id", "session_id"})
+
+# Union of every reserved key — used by the sanitiser to strip system-
+# managed fields from caller-supplied property bags in one pass.
+RESERVED_KEYS: frozenset[str] = RESERVED_PROVENANCE_KEYS | RESERVED_SCOPE_KEYS
+
 # Maximum string length for a single property value (in characters).
 # Strings longer than this are truncated with a logged warning — belt-
 # and-suspenders against memory exhaustion and against using a property
@@ -143,14 +153,15 @@ class Sanitiser:
         """Return a new dict with reserved keys removed and values cleaned.
 
         Filters:
-        - Drop any key in :data:`RESERVED_PROVENANCE_KEYS` (system-managed).
+        - Drop any key in :data:`RESERVED_KEYS` (system-managed
+          provenance and scope dimensions).
         - Drop any key starting with ``_`` (reserved for internal use).
         - Clean every value: truncate long strings, strip C0 control
           characters except tab/newline, recurse through ``list`` / ``dict``.
         """
         out: dict[str, Any] = {}
         for key, value in props.items():
-            if key in RESERVED_PROVENANCE_KEYS:
+            if key in RESERVED_KEYS:
                 continue
             if isinstance(key, str) and key.startswith("_"):
                 continue
@@ -198,7 +209,9 @@ __all__ = [
     "DEFAULT_TRUST_LEVELS",
     "MAX_PROPERTY_VALUE_LEN",
     "Provenance",
+    "RESERVED_KEYS",
     "RESERVED_PROVENANCE_KEYS",
+    "RESERVED_SCOPE_KEYS",
     "Sanitiser",
     "default_trust_for",
 ]
