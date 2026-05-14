@@ -69,6 +69,11 @@ def default_trust_for(source: str) -> float:
     so operators can tighten or loosen the defaults without code changes.
     Falls back to :data:`DEFAULT_TRUST_LEVELS`. Unknown sources get
     ``0.5`` — a neutral middle.
+
+    Invalid entries (non-float values or values outside ``[0.0, 1.0]``)
+    are skipped with a logged warning so the operator can see what was
+    rejected — silently dropping bad values would let a typo like
+    ``mcp=99`` distort ranking without anyone noticing.
     """
     raw = os.environ.get("ENGRAMA_TRUST_LEVELS")
     if raw:
@@ -78,10 +83,25 @@ def default_trust_for(source: str) -> float:
             if not part or "=" not in part:
                 continue
             key, _, value = part.partition("=")
+            key = key.strip()
+            value = value.strip()
             try:
-                overrides[key.strip()] = float(value.strip())
+                parsed = float(value)
             except ValueError:
+                logger.warning(
+                    "Ignoring ENGRAMA_TRUST_LEVELS entry %r: %r is not a float",
+                    key,
+                    value,
+                )
                 continue
+            if not 0.0 <= parsed <= 1.0:
+                logger.warning(
+                    "Ignoring ENGRAMA_TRUST_LEVELS entry %r=%s: value must be in [0.0, 1.0]",
+                    key,
+                    parsed,
+                )
+                continue
+            overrides[key] = parsed
         if source in overrides:
             return overrides[source]
     return DEFAULT_TRUST_LEVELS.get(source, 0.5)

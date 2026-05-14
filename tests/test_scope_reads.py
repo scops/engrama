@@ -54,6 +54,34 @@ class TestScopeFilterHelpers:
         assert clause == "(node.user_id IS NULL OR node.user_id = $scope_user_id)"
         assert params == {"scope_user_id": "alice"}
 
+    @pytest.mark.parametrize(
+        "bad",
+        ["n.evil", "n; DROP TABLE nodes; --", "1node", "", "n)"],
+    )
+    def test_sql_rejects_non_identifier_alias(self, bad):
+        with pytest.raises(ValueError, match="table_alias"):
+            scope_filter_sql(MemoryScope(user_id="alice"), bad)
+
+    @pytest.mark.parametrize("bad", ["props.evil", "1col", "props'"])
+    def test_sql_rejects_non_identifier_json_column(self, bad):
+        with pytest.raises(ValueError, match="json_column"):
+            scope_filter_sql(MemoryScope(user_id="alice"), "n", json_column=bad)
+
+    def test_sql_validates_identifiers_even_for_empty_scope(self):
+        # Identifier validation runs before the scope-empty short-circuit
+        # so callers can't accidentally pass tainted strings on the
+        # "no-op" path either.
+        with pytest.raises(ValueError):
+            scope_filter_sql(None, "bad alias")
+
+    @pytest.mark.parametrize(
+        "bad",
+        ["node.evil", "node; MATCH (x) DELETE x; //", "1node", ""],
+    )
+    def test_cypher_rejects_non_identifier_node_var(self, bad):
+        with pytest.raises(ValueError, match="node_var"):
+            scope_filter_cypher(MemoryScope(user_id="alice"), bad)
+
 
 # ---------------------------------------------------------------------------
 # 2. End-to-end SQLite integration — visibility rule on fulltext_search

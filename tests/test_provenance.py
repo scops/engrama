@@ -79,14 +79,29 @@ class TestTrustEnvOverride:
         assert default_trust_for("sdk") == 0.9
         assert default_trust_for("mcp") == 0.3
 
-    def test_env_invalid_pair_is_ignored(self, monkeypatch):
+    def test_env_invalid_pair_is_ignored(self, monkeypatch, caplog):
         monkeypatch.setenv("ENGRAMA_TRUST_LEVELS", "mcp=not-a-float,sdk=0.7")
-        assert default_trust_for("mcp") == DEFAULT_TRUST_LEVELS["mcp"]
-        assert default_trust_for("sdk") == 0.7
+        with caplog.at_level("WARNING", logger="engrama.core.security"):
+            assert default_trust_for("mcp") == DEFAULT_TRUST_LEVELS["mcp"]
+            assert default_trust_for("sdk") == 0.7
+        assert "not a float" in caplog.text
 
     def test_env_blank_pair_is_ignored(self, monkeypatch):
         monkeypatch.setenv("ENGRAMA_TRUST_LEVELS", ",mcp=0.4,,")
         assert default_trust_for("mcp") == 0.4
+
+    @pytest.mark.parametrize("bad", ["-0.1", "1.5", "99", "-2.0"])
+    def test_env_out_of_range_is_ignored(self, monkeypatch, caplog, bad):
+        monkeypatch.setenv("ENGRAMA_TRUST_LEVELS", f"mcp={bad}")
+        with caplog.at_level("WARNING", logger="engrama.core.security"):
+            # Falls back to the built-in default for that source.
+            assert default_trust_for("mcp") == DEFAULT_TRUST_LEVELS["mcp"]
+        assert "[0.0, 1.0]" in caplog.text
+
+    @pytest.mark.parametrize("good", ["0.0", "1.0", "0.42"])
+    def test_env_boundary_values_accepted(self, monkeypatch, good):
+        monkeypatch.setenv("ENGRAMA_TRUST_LEVELS", f"mcp={good}")
+        assert default_trust_for("mcp") == float(good)
 
 
 # ---------------------------------------------------------------------------
