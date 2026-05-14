@@ -547,6 +547,68 @@ def cmd_search(args: argparse.Namespace) -> int:
         return 1
 
 
+# ---------------------------------------------------------------------------
+# Benchmark commands (Roadmap P15)
+# ---------------------------------------------------------------------------
+
+
+_BENCHMARKS = {"locomo"}
+
+
+def _load_benchmark(name: str, path: str) -> Any:
+    """Instantiate the named benchmark and load the dataset file at ``path``.
+
+    Kept tiny on purpose: the runner (PR-G3) and reporter (PR-G4) will
+    reuse this helper so each command has a single resolution point.
+    """
+    if name == "locomo":
+        from engrama.bench.locomo import LocomoBenchmark
+
+        bench = LocomoBenchmark()
+    else:
+        raise ValueError(f"Unknown benchmark: {name!r}. Known: {sorted(_BENCHMARKS)}")
+    bench.load(path)
+    return bench
+
+
+def cmd_bench_list(args: argparse.Namespace) -> int:
+    """Inspect a benchmark dataset without running anything against engrama.
+
+    Prints how many conversations and questions are in the file and the
+    first ``--limit`` questions so the operator can sanity-check the
+    loader picked the right fields.
+    """
+    try:
+        bench = _load_benchmark(args.benchmark, args.data_path)
+        n_convs = bench.conversation_count()
+        n_questions = bench.question_count()
+        print(f"benchmark: {bench.name}")
+        print(f"source: {args.data_path}")
+        print(f"conversations: {n_convs}")
+        print(f"questions: {n_questions}")
+        if args.limit > 0 and n_questions > 0:
+            print(f"\nfirst {min(args.limit, n_questions)} questions:")
+            for i, q in enumerate(bench.iter_questions()):
+                if i >= args.limit:
+                    break
+                category = f" [{q.category}]" if q.category else ""
+                print(
+                    f"  {q.question_id}{category}\n    Q: {q.question}\n    A: {q.expected_answer}"
+                )
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_bench(args: argparse.Namespace) -> int:
+    """Dispatch to the requested benchmark subcommand."""
+    if getattr(args, "bench_command", None) == "list":
+        return cmd_bench_list(args)
+    print("Error: missing bench subcommand (try `engrama bench list --help`)", file=sys.stderr)
+    return 1
+
+
 def main() -> None:
     """Entry point for ``engrama`` CLI."""
     parser = argparse.ArgumentParser(
@@ -691,6 +753,34 @@ def main() -> None:
         help="Wipe the destination graph + vectors before importing",
     )
 
+    # --- bench (Roadmap P15) ---
+    p_bench = sub.add_parser(
+        "bench",
+        help="Benchmark utilities (LOCOMO, LongMemEval — see DDR-003 Part 7)",
+    )
+    bench_sub = p_bench.add_subparsers(dest="bench_command")
+    p_bench_list = bench_sub.add_parser(
+        "list",
+        help="Print the conversation / question counts of a benchmark dataset",
+    )
+    p_bench_list.add_argument(
+        "--benchmark",
+        required=True,
+        choices=sorted(_BENCHMARKS),
+        help="Which benchmark dataset to load",
+    )
+    p_bench_list.add_argument(
+        "--data-path",
+        required=True,
+        help="Path to the benchmark source file (JSON for LOCOMO)",
+    )
+    p_bench_list.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="How many questions to preview (default: 5, 0 to skip preview)",
+    )
+
     args = parser.parse_args()
 
     handlers = {
@@ -702,6 +792,7 @@ def main() -> None:
         "decay": cmd_decay,
         "export": cmd_export,
         "import": cmd_import,
+        "bench": cmd_bench,
     }
 
     if args.command is None:

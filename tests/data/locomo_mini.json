@@ -1,0 +1,50 @@
+[
+  {
+    "sample_id": "mini-0",
+    "conversation": {
+      "speaker_a": "Caroline",
+      "speaker_b": "Melanie",
+      "session_1_date_time": "2023-05-05 09:00",
+      "session_1": [
+        {"speaker": "Caroline", "text": "Hi Melanie, I just got back from Lisbon.", "dia_id": "D1:1"},
+        {"speaker": "Melanie", "text": "Oh nice! How was the trip?", "dia_id": "D1:2"}
+      ],
+      "session_2_date_time": "2023-06-12 18:30",
+      "session_2": [
+        {"speaker": "Caroline", "text": "I'm thinking of going back next spring.", "dia_id": "D2:1"}
+      ]
+    },
+    "qa": [
+      {
+        "question": "When did Caroline first visit Lisbon?",
+        "answer": "On 5 May 2023.",
+        "evidence": ["D1:1"],
+        "category": 1
+      },
+      {
+        "question": "Is Caroline planning another trip?",
+        "answer": "Yes, next spring.",
+        "evidence": ["D2:1"],
+        "category": 2,
+        "adversarial_answer": "No, she said she's done with travelling."
+      }
+    ]
+  },
+  {
+    "sample_id": "mini-1",
+    "conversation": {
+      "speaker_a": "Sam",
+      "speaker_b": "Lee",
+      "session_1": [
+        {"speaker": "Sam", "text": "I started learning Go this week.", "dia_id": "D1:1"}
+      ]
+    },
+    "qa": [
+      {
+        "question": "What programming language did Sam start learning?",
+        "answer": "Go.",
+        "evidence": ["D1:1"]
+      }
+    ]
+  }
+]
