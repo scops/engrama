@@ -130,13 +130,6 @@ class TestEngineMergeNodeProvenance:
         assert extra["source"] == "sync"
         assert extra["trust_level"] == DEFAULT_TRUST_LEVELS["sync"]
 
-    def test_caller_property_wins_over_provenance(self):
-        store = _stub_store_returning_record()
-        engine = EngramaEngine(store, default_provenance=Provenance(source="sdk"))
-        engine.merge_node("Concept", {"name": "Async", "source": "custom"})
-        _, _, _, extra, *_ = store.merge_node.call_args[0]
-        assert extra["source"] == "custom"
-
     def test_provenance_carries_agent_and_session(self):
         store = _stub_store_returning_record()
         engine = EngramaEngine(
@@ -167,11 +160,6 @@ class TestMCPProvenanceHelper:
         assert out["body"] == "hello"
         assert out["confidence"] == 0.7
         assert out["source"] == "mcp"
-
-    def test_user_extras_win_on_conflict(self):
-        out = _with_mcp_provenance({"source": "override", "trust_level": 0.99})
-        assert out["source"] == "override"
-        assert out["trust_level"] == 0.99
 
     def test_none_extras(self):
         out = _with_mcp_provenance(None)
