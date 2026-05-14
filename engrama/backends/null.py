@@ -67,6 +67,7 @@ class NullGraphStore:
         key_value: str,
         hops: int = 1,
         limit: int = 50,
+        scope: Any = None,
     ) -> list[dict[str, Any]]:
         return []
 
@@ -74,6 +75,7 @@ class NullGraphStore:
         self,
         query: str,
         limit: int = 10,
+        scope: Any = None,
     ) -> list[dict[str, Any]]:
         return []
 

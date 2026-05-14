@@ -174,11 +174,16 @@ class HybridSearchEngine:
         vector_store: Any,
         embedder: Any,
         config: HybridConfig | None = None,
+        *,
+        scope: Any = None,
     ) -> None:
         self.graph = graph_store
         self.vector = vector_store
         self.embedder = embedder
         self.config = config or HybridConfig()
+        # DDR-003 Phase F: scope is forwarded verbatim to fulltext_search
+        # and search_vectors on every (a)search call.
+        self.scope = scope
 
         # Auto-detect when vector search is unavailable
         self._vector_enabled: bool = (
@@ -220,6 +225,7 @@ class HybridSearchEngine:
                     v_results = self.vector.search_vectors(
                         query_vec,
                         limit=self.config.vector_k,
+                        scope=self.scope,
                     )
                 else:
                     vector_reason = "embedder returned an empty vector"
@@ -232,7 +238,9 @@ class HybridSearchEngine:
             alpha = 0.0
 
         # --- Fulltext branch ---
-        f_results = self.graph.fulltext_search(query, limit=self.config.fulltext_k)
+        f_results = self.graph.fulltext_search(
+            query, limit=self.config.fulltext_k, scope=self.scope
+        )
 
         self.last_mode = self._compute_mode(vector_reason)
 
@@ -262,6 +270,7 @@ class HybridSearchEngine:
                     v_results = await self.vector.search_similar(
                         query_vec,
                         limit=self.config.vector_k,
+                        scope=self.scope,
                     )
                 else:
                     vector_reason = "embedder returned an empty vector"
@@ -274,7 +283,9 @@ class HybridSearchEngine:
             alpha = 0.0
 
         # --- Fulltext branch ---
-        f_results = await self.graph.fulltext_search(query, limit=self.config.fulltext_k)
+        f_results = await self.graph.fulltext_search(
+            query, limit=self.config.fulltext_k, scope=self.scope
+        )
 
         self.last_mode = self._compute_mode(vector_reason)
 

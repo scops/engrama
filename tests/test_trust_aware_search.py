@@ -46,7 +46,7 @@ class _MockGraph:
     def __init__(self, rows: list[dict[str, Any]]):
         self._rows = rows
 
-    def fulltext_search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    def fulltext_search(self, query: str, limit: int = 10, **kwargs) -> list[dict[str, Any]]:
         return self._rows[:limit]
 
 

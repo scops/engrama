@@ -23,6 +23,8 @@ from typing import Any
 
 import sqlite_vec
 
+from engrama.core.scope import MemoryScope, scope_filter_sql
+
 logger = logging.getLogger("engrama.backends.sqlite")
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
@@ -423,39 +425,58 @@ class SqliteGraphStore:
         key_value: str,
         hops: int = 1,
         limit: int = 50,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Return rows of ``{"start", "rel", "neighbour"}`` dicts.
 
         ``rel`` is a list of edge-dicts traversed (length == path depth).
         Walks edges in both directions to mirror Neo4j's undirected
         ``-[r*1..N]-`` pattern. Depth limited by *hops*.
+
+        DDR-003 Phase F: ``scope`` filters both the start node and each
+        returned neighbour. A caller that can't see the start node gets
+        an empty list, and neighbours outside the scope are excluded.
+        Intermediate hops are not filtered — only the edge ids/types
+        cross the boundary, not node data.
         """
-        cur = self._conn.execute(
-            "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
-            (label, key_value),
-        )
+        scope_clause, scope_params = scope_filter_sql(scope, "n", json_column="props")
+        # Start-node lookup: also enforce scope so a caller can't reach
+        # someone else's node by guessing its (label, key_value).
+        start_scope_clause, _ = scope_filter_sql(scope, "n", json_column="props")
+        if start_scope_clause:
+            start_sql = (
+                "SELECT id FROM nodes n "
+                "WHERE n.label = :label AND n.key_value = :key_value AND " + start_scope_clause
+            )
+        else:
+            start_sql = "SELECT id FROM nodes n WHERE n.label = :label AND n.key_value = :key_value"
+        start_params: dict[str, Any] = {
+            "label": label,
+            "key_value": key_value,
+            **scope_params,
+        }
+        cur = self._conn.execute(start_sql, start_params)
         start_row = cur.fetchone()
         if start_row is None:
             return []
         start_id = start_row["id"]
         # Recursive CTE walks both directions; we serialise rel ids and
         # types into JSON arrays so we can rebuild the rel chain client-side.
-        cur = self._conn.execute(
-            """
+        sql = """
             WITH RECURSIVE walk(start_id, current_id, depth, rel_ids, rel_types) AS (
-                SELECT ?, ?, 0, json('[]'), json('[]')
+                SELECT :start_id, :start_id, 0, json('[]'), json('[]')
                 UNION ALL
                 SELECT w.start_id, e.to_id, w.depth + 1,
                        json_insert(w.rel_ids,   '$[#]', e.id),
                        json_insert(w.rel_types, '$[#]', e.rel_type)
                 FROM walk w JOIN edges e ON e.from_id = w.current_id
-                WHERE w.depth < ?
+                WHERE w.depth < :hops
                 UNION ALL
                 SELECT w.start_id, e.from_id, w.depth + 1,
                        json_insert(w.rel_ids,   '$[#]', e.id),
                        json_insert(w.rel_types, '$[#]', e.rel_type)
                 FROM walk w JOIN edges e ON e.to_id = w.current_id
-                WHERE w.depth < ?
+                WHERE w.depth < :hops
             )
             SELECT s.id          AS start_id,
                    s.label       AS start_label,
@@ -474,11 +495,17 @@ class SqliteGraphStore:
             JOIN nodes s ON s.id = walk.start_id
             JOIN nodes n ON n.id = walk.current_id
             WHERE walk.depth > 0 AND n.id != walk.start_id
-            ORDER BY walk.depth
-            LIMIT ?
-            """,
-            (start_id, start_id, hops, hops, limit),
-        )
+        """
+        if scope_clause:
+            sql += f" AND {scope_clause}"
+        sql += " ORDER BY walk.depth LIMIT :limit"
+        params: dict[str, Any] = {
+            "start_id": start_id,
+            "hops": hops,
+            "limit": limit,
+            **scope_params,
+        }
+        cur = self._conn.execute(sql, params)
         results: list[dict[str, Any]] = []
         for r in cur.fetchall():
             start_props = json.loads(r["start_props"]) if r["start_props"] else {}
@@ -576,12 +603,16 @@ class SqliteGraphStore:
         self,
         query: str,
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """FTS5 search across the searchable text fields. Returns the
         same shape as the Neo4j store: ``[{type, name, score, summary,
         tags, confidence, updated_at}]``.
 
         ``score`` is the negated FTS5 ``rank`` so larger = better match.
+
+        DDR-003 Phase F: when ``scope`` is set, results are filtered by
+        the scope-visibility rule (see :mod:`engrama.core.scope`).
         """
         if not query.strip():
             return []
@@ -591,9 +622,8 @@ class SqliteGraphStore:
         match_expr = _sanitize_fts5_query(query)
         if not match_expr:
             return []
-        try:
-            cur = self._conn.execute(
-                """
+        scope_clause, scope_params = scope_filter_sql(scope, "n", json_column="props")
+        sql = """
                 SELECT n.label                                  AS type,
                        n.key_value                              AS name,
                        -nodes_fts.rank                          AS score,
@@ -601,15 +631,18 @@ class SqliteGraphStore:
                        json_extract(n.props, '$.description')   AS description,
                        json_extract(n.props, '$.tags')          AS tags,
                        json_extract(n.props, '$.confidence')    AS confidence,
+                       json_extract(n.props, '$.trust_level')   AS trust_level,
                        n.updated_at                             AS updated_at
                 FROM nodes_fts
                 JOIN nodes n ON n.id = nodes_fts.rowid
-                WHERE nodes_fts MATCH ?
-                ORDER BY rank
-                LIMIT ?
-                """,
-                (match_expr, limit),
-            )
+                WHERE nodes_fts MATCH :match_expr
+        """
+        if scope_clause:
+            sql += f" AND {scope_clause}"
+        sql += " ORDER BY rank LIMIT :limit"
+        params: dict[str, Any] = {"match_expr": match_expr, "limit": limit, **scope_params}
+        try:
+            cur = self._conn.execute(sql, params)
         except sqlite3.OperationalError as e:
             # FTS5 syntax errors on caller queries (e.g. unbalanced quotes
             # that survive sanitization) — return empty rather than
@@ -633,6 +666,7 @@ class SqliteGraphStore:
                     "summary": r["summary"] or r["description"] or "",
                     "tags": tags,
                     "confidence": r["confidence"],
+                    "trust_level": r["trust_level"],
                     "updated_at": r["updated_at"],
                 }
             )

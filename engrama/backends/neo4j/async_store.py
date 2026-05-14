@@ -20,6 +20,8 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
+from engrama.core.scope import MemoryScope, scope_filter_cypher
+
 logger = logging.getLogger("engrama.backends.neo4j.async_store")
 
 
@@ -276,6 +278,7 @@ class Neo4jAsyncStore:
         key_value: str,
         hops: int = 1,
         limit: int = 50,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Traverse N hops from a node.  Returns neighbour list.
 
@@ -287,19 +290,34 @@ class Neo4jAsyncStore:
         neighbour properties to keep the response compact — ``summary``
         and ``tags`` are kept so callers can decide whether to fetch a
         neighbour's full context.  Timestamps are also stripped.
+
+        DDR-003 Phase F: ``scope`` filters both the start node and each
+        returned neighbour against the scope-visibility rule.
         """
+        start_clause, start_params = scope_filter_cypher(scope, "start")
+        nb_clause, nb_params = scope_filter_cypher(scope, "neighbour")
+        where_parts: list[str] = []
+        if start_clause:
+            where_parts.append(start_clause)
+        # neighbour scope must be checked with neighbour IS NOT NULL guard
+        # so OPTIONAL MATCH rows with no neighbour aren't filtered out.
+        if nb_clause:
+            where_parts.append(f"(neighbour IS NULL OR ({nb_clause}))")
+        where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
         cypher = (
             f"MATCH (start:{label} {{{key_field}: $key_value}}) "
             f"OPTIONAL MATCH (start)-[r*1..{hops}]-(neighbour) "
+            f"{where_sql} "
             "RETURN start, "
             "  [rel IN r | type(rel)] AS rel_types, "
             "  labels(neighbour)[0] AS neighbour_label, "
             "  COALESCE(neighbour.name, neighbour.title) AS neighbour_name, "
             "  properties(neighbour) AS neighbour_props"
         )
+        params: dict[str, Any] = {"key_value": key_value, **start_params, **nb_params}
         records, _, _ = await self._driver.execute_query(
             cypher,
-            parameters_={"key_value": key_value},
+            parameters_=params,
             database_=self._database,
         )
         if not records:
@@ -402,10 +420,12 @@ class Neo4jAsyncStore:
         self,
         query: str,
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Keyword search across all text properties.
 
-        Returns ``[{type, name, score, summary, tags, confidence, updated_at}]``.
+        Returns ``[{type, name, score, summary, tags, confidence,
+        trust_level, updated_at}]``.
 
         BUG-006 fix: uses ``COALESCE(node.name, node.title)`` so that
         Decision/Problem nodes return their title as ``name``.
@@ -416,22 +436,30 @@ class Neo4jAsyncStore:
         can act on search results without a second ``engrama_context`` call.
         ``details`` is intentionally excluded to keep the response compact —
         use ``engrama_context`` when full context is needed.
+
+        DDR-003 Phase F: when ``scope`` is set, results are filtered by
+        the scope-visibility rule (see :mod:`engrama.core.scope`).
         """
+        scope_clause, scope_params = scope_filter_cypher(scope, "node")
+        where_sql = f"WHERE {scope_clause} " if scope_clause else ""
         cypher = (
             'CALL db.index.fulltext.queryNodes("memory_search", $query) '
             "YIELD node, score "
+            f"{where_sql}"
             "RETURN labels(node)[0] AS type, "
             "COALESCE(node.name, node.title) AS name, "
             "score, "
             "COALESCE(node.summary, node.description, '') AS summary, "
             "node.tags AS tags, "
             "node.confidence AS confidence, "
+            "node.trust_level AS trust_level, "
             "toString(node.updated_at) AS updated_at "
             "ORDER BY score DESC LIMIT $limit"
         )
+        params: dict[str, Any] = {"query": query, "limit": limit, **scope_params}
         records, _, _ = await self._driver.execute_query(
             cypher,
-            parameters_={"query": query, "limit": limit},
+            parameters_=params,
             database_=self._database,
         )
         return [dict(r) for r in records]
@@ -771,19 +799,26 @@ class Neo4jAsyncStore:
         self,
         query_embedding: list[float],
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """k-ANN similarity search using the Neo4j vector index.
 
         Returns ``[{node_id, label, name, score}]``.
         Gracefully returns empty if no vector index exists.
+
+        DDR-003 Phase F: when ``scope`` is set, hits are filtered by the
+        scope-visibility rule.
         """
         if self._vector_dimensions == 0:
             return []
+        scope_clause, scope_params = scope_filter_cypher(scope, "node")
+        where_sql = f"WHERE {scope_clause} " if scope_clause else ""
         try:
             cypher = (
                 f"CALL db.index.vector.queryNodes("
                 f"'{self._vector_index}', $k, $embedding) "
                 "YIELD node, score "
+                f"{where_sql}"
                 "WITH node, score, "
                 "[l IN labels(node) WHERE l <> 'Embedded'][0] AS primary_label "
                 "RETURN elementId(node) AS node_id, "
@@ -793,16 +828,19 @@ class Neo4jAsyncStore:
                 "COALESCE(node.summary, node.description, '') AS summary, "
                 "node.tags AS tags, "
                 "node.confidence AS confidence, "
+                "node.trust_level AS trust_level, "
                 "toString(node.updated_at) AS updated_at "
                 "ORDER BY score DESC LIMIT $limit"
             )
+            params: dict[str, Any] = {
+                "k": limit,
+                "embedding": query_embedding,
+                "limit": limit,
+                **scope_params,
+            }
             records, _, _ = await self._driver.execute_query(
                 cypher,
-                parameters_={
-                    "k": limit,
-                    "embedding": query_embedding,
-                    "limit": limit,
-                },
+                parameters_=params,
                 database_=self._database,
             )
             return [dict(r) for r in records]
