@@ -21,6 +21,7 @@ from typing import Any
 
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
+from engrama.core.scope import MemoryScope
 from engrama.core.security import Provenance, Sanitiser
 
 logger = logging.getLogger("engrama.core.engine")
@@ -53,6 +54,7 @@ class EngramaEngine:
         embedder: Any = None,
         *,
         default_provenance: Provenance | None = None,
+        default_scope: MemoryScope | None = None,
         sanitiser: Sanitiser | None = None,
     ) -> None:
         if isinstance(client_or_store, EngramaClient):
@@ -73,6 +75,7 @@ class EngramaEngine:
             and getattr(vector_store, "dimensions", 0) > 0
         )
         self.default_provenance: Provenance | None = default_provenance
+        self.default_scope: MemoryScope | None = default_scope
         self.sanitiser: Sanitiser = sanitiser or Sanitiser()
 
     # ------------------------------------------------------------------
@@ -85,6 +88,7 @@ class EngramaEngine:
         properties: dict[str, Any],
         *,
         provenance: Provenance | None = None,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Create or update a node using ``MERGE``.
 
@@ -94,8 +98,8 @@ class EngramaEngine:
 
         DDR-003 Phase E layer 1 (sanitiser): ``label`` is validated against
         the node-type whitelist; ``properties`` are cleaned (reserved
-        provenance keys stripped, control chars removed, long strings
-        truncated) before any further processing.
+        provenance + scope keys stripped, control chars removed, long
+        strings truncated) before any further processing.
 
         DDR-003 Phase E layer 2 (provenance): provenance flows through as
         four flat properties (``source``, ``source_agent``,
@@ -103,6 +107,13 @@ class EngramaEngine:
         wins over the engine's ``default_provenance``; if neither is set,
         no provenance is recorded. The sanitiser guarantees the caller's
         ``properties`` cannot smuggle provenance fields.
+
+        DDR-003 Phase F (scope): the active :class:`MemoryScope` is
+        tagged onto the node as up to four flat properties (``org_id``,
+        ``user_id``, ``agent_id``, ``session_id``) — only dimensions
+        whose scope value is non-``None`` are written. Explicit
+        ``scope`` wins over ``default_scope``. The sanitiser prevents
+        callers from smuggling scope keys.
         """
         self.sanitiser.validate_label(label)
         properties = self.sanitiser.sanitise_properties(properties)
@@ -120,6 +131,10 @@ class EngramaEngine:
         if effective_provenance is not None:
             prov_props = effective_provenance.to_properties()
             properties = {**properties, **prov_props}
+
+        effective_scope = scope or self.default_scope
+        if effective_scope is not None and not effective_scope.is_empty():
+            properties = {**properties, **effective_scope.to_properties()}
 
         extra_props = {
             k: v for k, v in properties.items() if k not in {merge_key, "created_at", "updated_at"}
