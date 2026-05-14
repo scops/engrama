@@ -28,6 +28,13 @@ logger = logging.getLogger("engrama.core.search")
 # halfway between high-trust (sync/cli) and low-trust hypotheticals.
 DEFAULT_TRUST_SCORE: float = 0.5
 
+# Default temporal score when ``updated_at`` is missing from a result.
+# Using 1.0 (the dataclass default for "fresh as today") would let a
+# vector-only hit with no freshness info pretend to be brand new and
+# steal an unfair recency boost from a legitimate hit. 0.5 is the same
+# neutral middle used everywhere else in this module for "unknown".
+DEFAULT_TEMPORAL_SCORE: float = 0.5
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -403,14 +410,21 @@ class HybridSearchEngine:
             from engrama.core.temporal import days_since, temporal_score
 
             for sr in by_name.values():
-                confidence = sr.properties.get("confidence", 1.0)
                 updated_at = sr.properties.get("updated_at")
-                days = days_since(updated_at) if updated_at else 0.0
-                sr.temporal_score = temporal_score(
-                    confidence if confidence is not None else 1.0,
-                    days,
-                    recency_half_life=self.config.recency_half_life,
-                )
+                if updated_at:
+                    confidence = sr.properties.get("confidence", 1.0)
+                    days = days_since(updated_at)
+                    sr.temporal_score = temporal_score(
+                        confidence if confidence is not None else 1.0,
+                        days,
+                        recency_half_life=self.config.recency_half_life,
+                    )
+                else:
+                    # No freshness info means "unknown", not "fresh as
+                    # today" — fall back to a neutral score so a
+                    # vector-only hit without ``updated_at`` doesn't
+                    # outrank a real hit by stealing the recency boost.
+                    sr.temporal_score = DEFAULT_TEMPORAL_SCORE
 
         # --- Trust scoring (Phase E layer 3) ---
         delta = self.config.trust_delta

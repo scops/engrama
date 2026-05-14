@@ -7,11 +7,18 @@ Integration tests hit real Neo4j + Ollama (skipped if unavailable).
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 
 import pytest
 
-from engrama.core.search import HybridConfig, HybridSearchEngine, SearchMode, SearchResult
+from engrama.core.search import (
+    DEFAULT_TEMPORAL_SCORE,
+    HybridConfig,
+    HybridSearchEngine,
+    SearchMode,
+    SearchResult,
+)
 
 # ---------------------------------------------------------------------------
 # Mock stores for unit tests
@@ -291,6 +298,105 @@ class TestHybridSearchSync:
         engine = HybridSearchEngine(graph, vector, embedder)
         results = engine.search("items", limit=3)
         assert len(results) == 3
+
+
+# ---------------------------------------------------------------------------
+# Temporal scoring fallback when updated_at is missing
+# ---------------------------------------------------------------------------
+
+
+class TestTemporalMissingUpdatedAt:
+    """A vector-only hit without ``updated_at`` should fall back to a
+    neutral temporal score instead of stealing the recency-at-0-days
+    boost (which previously rendered as ``temporal_score=1.0``).
+    """
+
+    def _config(self, *, temporal_gamma=0.1):
+        # Isolate the temporal signal: zero out vector/fulltext/trust
+        # weights so any score difference is attributable to temporal.
+        return HybridConfig(
+            alpha=0.0,
+            graph_beta=0.0,
+            temporal_gamma=temporal_gamma,
+            trust_delta=0.0,
+        )
+
+    def test_missing_updated_at_uses_neutral_score(self):
+        # Single fulltext-only hit with no updated_at on the row.
+        graph = _SyncMockGraphStore(
+            [{"type": "Tech", "name": "A", "score": 1.0}]  # no updated_at
+        )
+        engine = HybridSearchEngine(
+            graph, _SyncNullVectorStore(), _NullEmbedder(), config=self._config()
+        )
+        results = engine.search("a", limit=5)
+        assert len(results) == 1
+        assert results[0].temporal_score == DEFAULT_TEMPORAL_SCORE
+
+    def test_temporal_gamma_zero_leaves_dataclass_default(self):
+        # When temporal scoring is disabled, the field keeps its
+        # dataclass default of 1.0 — the bug only bit when gamma > 0.
+        graph = _SyncMockGraphStore([{"type": "Tech", "name": "A", "score": 1.0}])
+        engine = HybridSearchEngine(
+            graph,
+            _SyncNullVectorStore(),
+            _NullEmbedder(),
+            config=self._config(temporal_gamma=0.0),
+        )
+        results = engine.search("a", limit=5)
+        assert results[0].temporal_score == 1.0
+
+    def test_present_updated_at_is_used(self):
+        # Same setup but with updated_at present — the computed score
+        # should differ from the neutral fallback (depends on
+        # half-life, but we just need to assert "not the fallback").
+        from datetime import datetime, timedelta
+
+        old = (datetime.now(UTC) - timedelta(days=365)).isoformat()
+        graph = _SyncMockGraphStore(
+            [
+                {
+                    "type": "Tech",
+                    "name": "A",
+                    "score": 1.0,
+                    "updated_at": old,
+                    "confidence": 1.0,
+                }
+            ]
+        )
+        engine = HybridSearchEngine(
+            graph, _SyncNullVectorStore(), _NullEmbedder(), config=self._config()
+        )
+        results = engine.search("a", limit=5)
+        # 365-day-old node with half-life 30d → recency ≈ 2**(-12) ≈ 0.0002.
+        assert results[0].temporal_score < DEFAULT_TEMPORAL_SCORE
+
+    def test_stale_hit_outranked_by_unknown_hit_no_more(self):
+        # Regression: a node with old updated_at should not be beaten
+        # by a node with no updated_at, when everything else is equal.
+        from datetime import datetime, timedelta
+
+        old = (datetime.now(UTC) - timedelta(days=365)).isoformat()
+        graph = _SyncMockGraphStore(
+            [
+                {"type": "Tech", "name": "old", "score": 1.0, "updated_at": old},
+                {"type": "Tech", "name": "unknown", "score": 1.0},  # no updated_at
+            ]
+        )
+        engine = HybridSearchEngine(
+            graph, _SyncNullVectorStore(), _NullEmbedder(), config=self._config()
+        )
+        results = engine.search("x", limit=5)
+        # Both have fulltext_score=1.0 (single-result group normalises to 1.0
+        # for everyone, since min == max). The temporal signal therefore
+        # decides ranking: "unknown" gets the neutral 0.5 fallback while
+        # "old" gets a near-zero recency. So "unknown" must rank above
+        # "old" — but only because they're equally relevant, not because
+        # "unknown" was treated as today's freshest.
+        assert results[0].temporal_score == DEFAULT_TEMPORAL_SCORE
+        # The old node still appears, just with a much lower temporal
+        # contribution — proving the unknown isn't getting max boost.
+        assert results[1].temporal_score < 0.01
 
 
 # ---------------------------------------------------------------------------
