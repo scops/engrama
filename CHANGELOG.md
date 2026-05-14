@@ -46,10 +46,6 @@ dev environment.
   `pull_request_template.md`, structured issue templates, `SECURITY.md`
   (disclosure via GitHub private advisories), `lychee-action` weekly +
   per-PR link checker, `DDR-template.md`. (#22)
-- **`RELEASING.md`** — one-time PyPI trusted-publisher setup,
-  per-release runbook (bump three files, tag, push), and a manual
-  wheel-smoke procedure that catches packaging surprises the matrixed
-  `import-smoke` job can't see.
 
 ### Changed
 - **README embedder section** — expanded to a six-provider matrix
