@@ -21,6 +21,7 @@ from typing import Any
 
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
+from engrama.core.security import Provenance
 
 logger = logging.getLogger("engrama.core.engine")
 
@@ -50,6 +51,8 @@ class EngramaEngine:
         client_or_store: Any,
         vector_store: Any = None,
         embedder: Any = None,
+        *,
+        default_provenance: Provenance | None = None,
     ) -> None:
         if isinstance(client_or_store, EngramaClient):
             from engrama.backends.neo4j.backend import Neo4jGraphStore
@@ -68,17 +71,29 @@ class EngramaEngine:
             and getattr(embedder, "dimensions", 0) > 0
             and getattr(vector_store, "dimensions", 0) > 0
         )
+        self.default_provenance: Provenance | None = default_provenance
 
     # ------------------------------------------------------------------
     # Write operations
     # ------------------------------------------------------------------
 
-    def merge_node(self, label: str, properties: dict[str, Any]) -> list[dict[str, Any]]:
+    def merge_node(
+        self,
+        label: str,
+        properties: dict[str, Any],
+        *,
+        provenance: Provenance | None = None,
+    ) -> list[dict[str, Any]]:
         """Create or update a node using ``MERGE``.
 
         DDR-003 Phase D: temporal fields ``valid_from``, ``valid_to``,
         and ``confidence`` flow through to the backend.  Conflict detection
         (reviving expired nodes) is handled in the backend's ON MATCH clause.
+
+        DDR-003 Phase E: provenance flows through as four flat properties
+        (``source``, ``source_agent``, ``source_session``, ``trust_level``).
+        Explicit ``provenance`` wins over the engine's ``default_provenance``;
+        if neither is set, no provenance is recorded.
         """
         if "name" in properties:
             merge_key = "name"
@@ -88,6 +103,11 @@ class EngramaEngine:
             raise ValueError("properties must include 'name' or 'title' as a merge key")
 
         merge_value = properties[merge_key]
+
+        effective_provenance = provenance or self.default_provenance
+        if effective_provenance is not None:
+            prov_props = effective_provenance.to_properties()
+            properties = {**prov_props, **properties}
 
         extra_props = {
             k: v for k, v in properties.items() if k not in {merge_key, "created_at", "updated_at"}

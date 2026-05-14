@@ -41,6 +41,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
+from engrama.core.security import Provenance
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -51,6 +52,16 @@ logger.setLevel(logging.INFO)
 
 _VALID_LABELS: set[str] = {member.value for member in NodeType}
 _VALID_RELATIONS: set[str] = {member.value for member in RelationType}
+
+
+def _with_mcp_provenance(extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Merge MCP provenance fields into a ``store.merge_node`` extras dict.
+
+    Caller-supplied values win, so a sync handler or test can override
+    the default ``source="mcp"`` if a more specific origin applies.
+    """
+    return {**Provenance(source="mcp").to_properties(), **(extra or {})}
+
 
 # ---------------------------------------------------------------------------
 # Proactivity state (module-level — survives across tool calls within process)
@@ -629,7 +640,7 @@ def create_engrama_mcp(
 
         extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
 
-        result = await store.merge_node(label, merge_key, merge_value, extra)
+        result = await store.merge_node(label, merge_key, merge_value, _with_mcp_provenance(extra))
         node = result["node"]
 
         # --- DDR-003 Phase C: Embed on write (async) ---
@@ -686,9 +697,7 @@ def create_engrama_mcp(
                                 target_label,
                                 "name",
                                 target_name,
-                                {
-                                    "status": "stub",
-                                },
+                                _with_mcp_provenance({"status": "stub"}),
                             )
                         except Exception as e:
                             logger.warning("Could not create stub %s: %s", target_name, e)
@@ -844,7 +853,7 @@ def create_engrama_mcp(
                             params.from_label,
                             from_key,
                             params.from_name,
-                            {"obsidian_path": from_path, "obsidian_id": _eid},
+                            _with_mcp_provenance({"obsidian_path": from_path, "obsidian_id": _eid}),
                         )
                     except Exception as e:
                         logger.warning(
@@ -992,7 +1001,9 @@ def create_engrama_mcp(
         props["obsidian_id"] = engrama_id
 
         extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
-        result = await store.merge_node(node_label, merge_key, merge_value, extra)
+        result = await store.merge_node(
+            node_label, merge_key, merge_value, _with_mcp_provenance(extra)
+        )
         node = result["node"]
         created = result["created"]
 
@@ -1137,7 +1148,9 @@ def create_engrama_mcp(
                         for k, v in props.items()
                         if k not in {merge_key, "created_at", "updated_at"}
                     }
-                    result = await store.merge_node(node_label, merge_key, merge_value, extra)
+                    result = await store.merge_node(
+                        node_label, merge_key, merge_value, _with_mcp_provenance(extra)
+                    )
                     if result["created"]:
                         created_count += 1
                     else:
@@ -1406,12 +1419,14 @@ def create_engrama_mcp(
                     "Insight",
                     "title",
                     title,
-                    {
-                        "body": body,
-                        "confidence": 0.85,
-                        "status": "pending",
-                        "source_query": "cross_project_solution",
-                    },
+                    _with_mcp_provenance(
+                        {
+                            "body": body,
+                            "confidence": 0.85,
+                            "status": "pending",
+                            "source_query": "cross_project_solution",
+                        }
+                    ),
                 )
                 insights.append(
                     {"query": "cross_project_solution", "title": title, "confidence": 0.85}
@@ -1433,12 +1448,14 @@ def create_engrama_mcp(
                     "Insight",
                     "title",
                     title,
-                    {
-                        "body": body,
-                        "confidence": confidence,
-                        "status": "pending",
-                        "source_query": "shared_technology",
-                    },
+                    _with_mcp_provenance(
+                        {
+                            "body": body,
+                            "confidence": confidence,
+                            "status": "pending",
+                            "source_query": "shared_technology",
+                        }
+                    ),
                 )
                 insights.append(
                     {"query": "shared_technology", "title": title, "confidence": confidence}
@@ -1462,12 +1479,14 @@ def create_engrama_mcp(
                     "Insight",
                     "title",
                     title,
-                    {
-                        "body": body,
-                        "confidence": 0.65,
-                        "status": "pending",
-                        "source_query": "training_opportunity",
-                    },
+                    _with_mcp_provenance(
+                        {
+                            "body": body,
+                            "confidence": 0.65,
+                            "status": "pending",
+                            "source_query": "training_opportunity",
+                        }
+                    ),
                 )
                 insights.append(
                     {"query": "training_opportunity", "title": title, "confidence": 0.65}
@@ -1494,12 +1513,14 @@ def create_engrama_mcp(
                     "Insight",
                     "title",
                     title,
-                    {
-                        "body": body,
-                        "confidence": confidence,
-                        "status": "pending",
-                        "source_query": "technique_transfer",
-                    },
+                    _with_mcp_provenance(
+                        {
+                            "body": body,
+                            "confidence": confidence,
+                            "status": "pending",
+                            "source_query": "technique_transfer",
+                        }
+                    ),
                 )
                 insights.append(
                     {"query": "technique_transfer", "title": title, "confidence": confidence}
@@ -1523,12 +1544,14 @@ def create_engrama_mcp(
                     "Insight",
                     "title",
                     title,
-                    {
-                        "body": body,
-                        "confidence": confidence,
-                        "status": "pending",
-                        "source_query": "concept_clustering",
-                    },
+                    _with_mcp_provenance(
+                        {
+                            "body": body,
+                            "confidence": confidence,
+                            "status": "pending",
+                            "source_query": "concept_clustering",
+                        }
+                    ),
                 )
                 insights.append(
                     {"query": "concept_clustering", "title": title, "confidence": confidence}
@@ -1552,12 +1575,14 @@ def create_engrama_mcp(
                     "Insight",
                     "title",
                     title,
-                    {
-                        "body": body,
-                        "confidence": 0.5,
-                        "status": "pending",
-                        "source_query": "stale_knowledge",
-                    },
+                    _with_mcp_provenance(
+                        {
+                            "body": body,
+                            "confidence": 0.5,
+                            "status": "pending",
+                            "source_query": "stale_knowledge",
+                        }
+                    ),
                 )
                 insights.append({"query": "stale_knowledge", "title": title, "confidence": 0.5})
 
@@ -1592,12 +1617,14 @@ def create_engrama_mcp(
                 "Insight",
                 "title",
                 title,
-                {
-                    "body": body,
-                    "confidence": 0.4,
-                    "status": "pending",
-                    "source_query": "under_connected",
-                },
+                _with_mcp_provenance(
+                    {
+                        "body": body,
+                        "confidence": 0.4,
+                        "status": "pending",
+                        "source_query": "under_connected",
+                    }
+                ),
             )
             insights.append({"query": "under_connected", "title": title, "confidence": 0.4})
 
