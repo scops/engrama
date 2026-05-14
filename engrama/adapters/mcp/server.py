@@ -41,7 +41,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
-from engrama.core.security import Provenance
+from engrama.core.security import Provenance, Sanitiser
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -53,14 +53,23 @@ logger.setLevel(logging.INFO)
 _VALID_LABELS: set[str] = {member.value for member in NodeType}
 _VALID_RELATIONS: set[str] = {member.value for member in RelationType}
 
+# MCP talks to the store directly (it doesn't go through EngramaEngine
+# because the server is async-first while the engine is sync), so the
+# layer-1 sanitiser has to be applied at this boundary explicitly.
+_SANITISER = Sanitiser(valid_labels=_VALID_LABELS, valid_relations=_VALID_RELATIONS)
+_MCP_PROVENANCE_PROPS = Provenance(source="mcp").to_properties()
+
 
 def _with_mcp_provenance(extra: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Merge MCP provenance fields into a ``store.merge_node`` extras dict.
+    """Sanitise an MCP-supplied extras dict and stamp it with MCP provenance.
 
-    Caller-supplied values win, so a sync handler or test can override
-    the default ``source="mcp"`` if a more specific origin applies.
+    The caller's extras are cleaned first (reserved provenance keys
+    stripped, control chars removed, long strings truncated) and then
+    the MCP provenance fields are applied — they always win, so a
+    malicious agent cannot forge its own ``source`` or ``trust_level``.
     """
-    return {**Provenance(source="mcp").to_properties(), **(extra or {})}
+    cleaned = _SANITISER.sanitise_properties(extra or {})
+    return {**cleaned, **_MCP_PROVENANCE_PROPS}
 
 
 # ---------------------------------------------------------------------------

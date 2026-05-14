@@ -21,7 +21,7 @@ from typing import Any
 
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
-from engrama.core.security import Provenance
+from engrama.core.security import Provenance, Sanitiser
 
 logger = logging.getLogger("engrama.core.engine")
 
@@ -53,6 +53,7 @@ class EngramaEngine:
         embedder: Any = None,
         *,
         default_provenance: Provenance | None = None,
+        sanitiser: Sanitiser | None = None,
     ) -> None:
         if isinstance(client_or_store, EngramaClient):
             from engrama.backends.neo4j.backend import Neo4jGraphStore
@@ -72,6 +73,7 @@ class EngramaEngine:
             and getattr(vector_store, "dimensions", 0) > 0
         )
         self.default_provenance: Provenance | None = default_provenance
+        self.sanitiser: Sanitiser = sanitiser or Sanitiser()
 
     # ------------------------------------------------------------------
     # Write operations
@@ -90,11 +92,21 @@ class EngramaEngine:
         and ``confidence`` flow through to the backend.  Conflict detection
         (reviving expired nodes) is handled in the backend's ON MATCH clause.
 
-        DDR-003 Phase E: provenance flows through as four flat properties
-        (``source``, ``source_agent``, ``source_session``, ``trust_level``).
-        Explicit ``provenance`` wins over the engine's ``default_provenance``;
-        if neither is set, no provenance is recorded.
+        DDR-003 Phase E layer 1 (sanitiser): ``label`` is validated against
+        the node-type whitelist; ``properties`` are cleaned (reserved
+        provenance keys stripped, control chars removed, long strings
+        truncated) before any further processing.
+
+        DDR-003 Phase E layer 2 (provenance): provenance flows through as
+        four flat properties (``source``, ``source_agent``,
+        ``source_session``, ``trust_level``). Explicit ``provenance``
+        wins over the engine's ``default_provenance``; if neither is set,
+        no provenance is recorded. The sanitiser guarantees the caller's
+        ``properties`` cannot smuggle provenance fields.
         """
+        self.sanitiser.validate_label(label)
+        properties = self.sanitiser.sanitise_properties(properties)
+
         if "name" in properties:
             merge_key = "name"
         elif "title" in properties:
@@ -107,7 +119,7 @@ class EngramaEngine:
         effective_provenance = provenance or self.default_provenance
         if effective_provenance is not None:
             prov_props = effective_provenance.to_properties()
-            properties = {**prov_props, **properties}
+            properties = {**properties, **prov_props}
 
         extra_props = {
             k: v for k, v in properties.items() if k not in {merge_key, "created_at", "updated_at"}
@@ -178,7 +190,15 @@ class EngramaEngine:
         to_name: str,
         to_label: str,
     ) -> list[dict[str, Any]]:
-        """Create or update a relationship between two existing nodes."""
+        """Create or update a relationship between two existing nodes.
+
+        DDR-003 Phase E layer 1: ``from_label``, ``to_label`` and
+        ``rel_type`` are validated against the schema whitelists.
+        """
+        self.sanitiser.validate_label(from_label)
+        self.sanitiser.validate_label(to_label)
+        self.sanitiser.validate_relation(rel_type)
+
         from_key = "title" if from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if to_label in TITLE_KEYED_LABELS else "name"
 
