@@ -21,11 +21,20 @@ the SDK), not a code change.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
 # Ordered for stable parameter generation / readable WHERE clauses.
 _DIMENSIONS: tuple[str, ...] = ("org_id", "user_id", "agent_id", "session_id")
+
+# Operators set these to opt a deployment into multi-scope memory.
+_ENV_VARS: dict[str, str] = {
+    "org_id": "ENGRAMA_ORG_ID",
+    "user_id": "ENGRAMA_USER_ID",
+    "agent_id": "ENGRAMA_AGENT_ID",
+    "session_id": "ENGRAMA_SESSION_ID",
+}
 
 
 @dataclass(frozen=True)
@@ -77,6 +86,27 @@ class MemoryScope:
             and self.user_id is None
             and self.agent_id is None
             and self.session_id is None
+        )
+
+    @classmethod
+    def from_env(cls, environ: dict[str, str] | None = None) -> MemoryScope:
+        """Build a :class:`MemoryScope` from operator-set env vars.
+
+        Reads ``ENGRAMA_ORG_ID``, ``ENGRAMA_USER_ID``, ``ENGRAMA_AGENT_ID``
+        and ``ENGRAMA_SESSION_ID``. Unset variables stay ``None`` —
+        a deployment with no env vars set produces an empty scope, the
+        same as ``MemoryScope()``, which the engine then treats as a
+        no-op (no writes get tagged, no reads get filtered).
+
+        ``environ`` defaults to :data:`os.environ` but can be passed
+        explicitly for tests that prefer not to mutate global state.
+        """
+        env = os.environ if environ is None else environ
+        return cls(
+            org_id=env.get(_ENV_VARS["org_id"]) or None,
+            user_id=env.get(_ENV_VARS["user_id"]) or None,
+            agent_id=env.get(_ENV_VARS["agent_id"]) or None,
+            session_id=env.get(_ENV_VARS["session_id"]) or None,
         )
 
 

@@ -132,12 +132,22 @@ class Engrama:
             )
 
         self._store, self._vector_store = create_stores(config)
-        scope = MemoryScope(
-            org_id=org_id,
-            user_id=user_id,
-            agent_id=agent_id,
-            session_id=session_id,
-        )
+        # Scope resolution: if the caller passes *any* explicit scope kwarg
+        # (even an explicit ``None``-typed value with intent), honour that
+        # set exactly. Otherwise fall back to the operator-set env vars
+        # via :meth:`MemoryScope.from_env`. This keeps unscoped single-
+        # user deployments unchanged (no env → empty scope → no-op) while
+        # letting operators opt the whole process into multi-scope memory
+        # by just exporting ``ENGRAMA_USER_ID`` etc.
+        if any(v is not None for v in (org_id, user_id, agent_id, session_id)):
+            scope = MemoryScope(
+                org_id=org_id,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+            )
+        else:
+            scope = MemoryScope.from_env()
         self._engine = EngramaEngine(
             self._store,
             vector_store=self._vector_store,

@@ -262,11 +262,13 @@ class SqliteAsyncStore:
         key_field: str,
         key_value: str,
         hops: int = 1,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
         """Convenience: ``get_node`` + ``get_neighbours`` in one call.
 
         The sync store already returns the ``{"node", "neighbours"}``
-        shape that mirrors Neo4j async, so we just forward.
+        shape that mirrors Neo4j async, so we just forward (including
+        the DDR-003 Phase F ``scope`` filter).
         """
         return await self._run(
             self._sync.get_node_with_neighbours,
@@ -274,6 +276,7 @@ class SqliteAsyncStore:
             key_field,
             key_value,
             hops,
+            scope,
         )
 
     async def fulltext_search(
