@@ -642,6 +642,29 @@ def cmd_bench_run(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_bench_report(args: argparse.Namespace) -> int:
+    """Render a markdown report from a ``bench run`` JSON file.
+
+    Writes to ``--output`` when set, otherwise to stdout.
+    """
+    try:
+        from engrama.bench.report import load_report, render_markdown
+
+        data = load_report(args.input)
+        md = render_markdown(data, top_failures_limit=args.top_failures)
+        if args.output:
+            out = Path(args.output)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(md, encoding="utf-8")
+            print(f"wrote: {out}")
+        else:
+            print(md)
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     """Dispatch to the requested benchmark subcommand."""
     sub = getattr(args, "bench_command", None)
@@ -649,9 +672,11 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return cmd_bench_list(args)
     if sub == "run":
         return cmd_bench_run(args)
+    if sub == "report":
+        return cmd_bench_report(args)
     print(
-        "Error: missing bench subcommand (try `engrama bench list --help` "
-        "or `engrama bench run --help`)",
+        "Error: missing bench subcommand (try `engrama bench list --help`, "
+        "`engrama bench run --help`, or `engrama bench report --help`)",
         file=sys.stderr,
     )
     return 1
@@ -873,6 +898,27 @@ def main() -> None:
             "Optional persistent directory for per-cycle SQLite DBs. "
             "Default: a temp directory cleaned up after the run."
         ),
+    )
+
+    p_bench_report = bench_sub.add_parser(
+        "report",
+        help="Render a markdown report from a `bench run` JSON file",
+    )
+    p_bench_report.add_argument(
+        "input",
+        help="Path to a JSON report produced by `engrama bench run`",
+    )
+    p_bench_report.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="Write markdown to this path (default: stdout)",
+    )
+    p_bench_report.add_argument(
+        "--top-failures",
+        type=int,
+        default=10,
+        help="How many lowest-scoring questions to list (default: 10)",
     )
 
     args = parser.parse_args()

@@ -8,11 +8,11 @@ Datasets covered by this package — one loader module each:
   xiaowu0162/LongMemEval).
 
 PR-G1 + PR-G2 shipped the loaders and the ``engrama bench list`` CLI
-subcommand so the dataset shape can be inspected without engrama
-touching the data. PR-G3 adds the runner (replay conversation → query
-→ score) + recall-based scoring + the ``engrama bench run``
-subcommand. PR-G4 will layer the LLM-as-judge path and a markdown
-reporter on top.
+subcommand. PR-G3 added the runner (replay → query → score) +
+recall-based scoring + the ``engrama bench run`` subcommand. PR-G4
+adds the markdown reporter (``engrama bench report``) on top of the
+runner's JSON schema. LLM-as-judge is still stubbed — landing as a
+follow-up when an operator has a provider configured.
 """
 
 from __future__ import annotations
@@ -20,6 +20,13 @@ from __future__ import annotations
 from engrama.bench.core import Benchmark, BenchmarkConversation, BenchmarkQuestion
 from engrama.bench.locomo import LocomoBenchmark
 from engrama.bench.longmemeval import LongMemEvalBenchmark
+from engrama.bench.report import (
+    CategoryStat,
+    category_breakdown,
+    load_report,
+    render_markdown,
+    top_failures,
+)
 from engrama.bench.runner import (
     BenchmarkReport,
     BenchmarkRunner,
@@ -40,6 +47,7 @@ __all__ = [
     "BenchmarkQuestion",
     "BenchmarkReport",
     "BenchmarkRunner",
+    "CategoryStat",
     "LocomoBenchmark",
     "LongMemEvalBenchmark",
     "QuestionResult",
@@ -48,5 +56,9 @@ __all__ = [
     "ScoreReport",
     "Scorer",
     "build_scorer",
+    "category_breakdown",
+    "load_report",
+    "render_markdown",
     "run_benchmark",
+    "top_failures",
 ]

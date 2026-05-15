@@ -25,6 +25,12 @@ from engrama.bench import (
     LongMemEvalBenchmark,
 )
 from engrama.bench.core import BenchmarkTurn
+from engrama.bench.report import (
+    category_breakdown,
+    load_report,
+    render_markdown,
+    top_failures,
+)
 from engrama.bench.runner import (
     BenchmarkRunner,
     _or_join_tokens,
@@ -695,3 +701,255 @@ class TestBenchRunCli:
         assert data["benchmark"] == "locomo"
         assert data["config"]["limit"] == 1
         assert len(data["questions"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# 10. Reporter (PR-G4)
+# ---------------------------------------------------------------------------
+
+
+def _synthetic_report(tmp_path: Path) -> Path:
+    """Hand-rolled report file the renderer tests run against.
+
+    Built independently of the runner so a runner change can't silently
+    paper over a reporter regression.
+    """
+    payload = {
+        "benchmark": "locomo",
+        "run_id": "bench-locomo-deadbeef",
+        "started_at": "2026-05-15T12:00:00+00:00",
+        "completed_at": "2026-05-15T12:00:10+00:00",
+        "config": {
+            "limit": None,
+            "scorer": "recall@5",
+            "retrieval_limit": 10,
+            "lifecycle": "per-conversation",
+            "engrama_version": "0.10.0",
+        },
+        "summary": {
+            "questions_total": 4,
+            "questions_scored": 4,
+            "questions_with_evidence": 3,
+            "mean_score": 0.5,
+            "mean_latency_ms": 1.23,
+            "duration_seconds": 10.0,
+        },
+        "questions": [
+            {
+                "question_id": "c0:q0",
+                "conversation_id": "c0",
+                "category": "factual",
+                "expected_evidence": ["D1:1"],
+                "retrieved_ids": [],
+                "retrieved_names": ["D1:1"],
+                "score": 1.0,
+                "matched": ["D1:1"],
+                "missed": [],
+                "latency_ms": 1.0,
+            },
+            {
+                "question_id": "c0:q1",
+                "conversation_id": "c0",
+                "category": "factual",
+                "expected_evidence": ["D2:1"],
+                "retrieved_ids": [],
+                "retrieved_names": ["D3:1"],
+                "score": 0.0,
+                "matched": [],
+                "missed": ["D2:1"],
+                "latency_ms": 2.0,
+            },
+            {
+                "question_id": "c1:q0",
+                "conversation_id": "c1",
+                "category": "temporal",
+                "expected_evidence": ["D5:1", "D5:2"],
+                "retrieved_ids": [],
+                "retrieved_names": ["D5:1"],
+                "score": 0.5,
+                "matched": ["D5:1"],
+                "missed": ["D5:2"],
+                "latency_ms": 1.5,
+            },
+            {
+                "question_id": "c2:q0",
+                "conversation_id": "c2",
+                "category": None,
+                "expected_evidence": [],
+                "retrieved_ids": [],
+                "retrieved_names": [],
+                "score": 1.0,
+                "matched": [],
+                "missed": [],
+                "latency_ms": 0.5,
+            },
+        ],
+    }
+    path = tmp_path / "synth.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+class TestLoadReport:
+    def test_round_trip(self, tmp_path):
+        path = _synthetic_report(tmp_path)
+        data = load_report(path)
+        assert data["benchmark"] == "locomo"
+        assert len(data["questions"]) == 4
+
+    def test_rejects_non_object(self, tmp_path):
+        bad = tmp_path / "bad.json"
+        bad.write_text("[]", encoding="utf-8")
+        with pytest.raises(ValueError, match="object"):
+            load_report(bad)
+
+    def test_rejects_missing_keys(self, tmp_path):
+        bad = tmp_path / "bad.json"
+        bad.write_text('{"benchmark": "locomo"}', encoding="utf-8")
+        with pytest.raises(ValueError, match="missing"):
+            load_report(bad)
+
+
+class TestCategoryBreakdown:
+    def test_buckets_by_category(self, tmp_path):
+        data = load_report(_synthetic_report(tmp_path))
+        rows = category_breakdown(data["questions"])
+        # Sorted alphabetically; three buckets (factual, temporal, uncategorised).
+        cats = [r.category for r in rows]
+        assert cats == ["(uncategorised)", "factual", "temporal"]
+
+    def test_means_are_correct(self, tmp_path):
+        data = load_report(_synthetic_report(tmp_path))
+        rows = {r.category: r for r in category_breakdown(data["questions"])}
+        # Factual: scores [1.0, 0.0] → mean 0.5; latencies [1.0, 2.0] → 1.5
+        assert rows["factual"].count == 2
+        assert rows["factual"].mean_score == 0.5
+        assert rows["factual"].mean_latency_ms == 1.5
+        # Temporal: single question scoring 0.5
+        assert rows["temporal"].count == 1
+        assert rows["temporal"].mean_score == 0.5
+        # Uncategorised: the empty-category trivial pass
+        assert rows["(uncategorised)"].count == 1
+        assert rows["(uncategorised)"].mean_score == 1.0
+
+
+class TestTopFailures:
+    def test_excludes_perfect_scores(self, tmp_path):
+        data = load_report(_synthetic_report(tmp_path))
+        failures = top_failures(data["questions"])
+        # Only the two questions with score < 1.0 should show.
+        ids = [f["question_id"] for f in failures]
+        assert "c0:q1" in ids
+        assert "c1:q0" in ids
+        # Perfect-score questions are not failures, regardless of evidence.
+        assert "c0:q0" not in ids
+        assert "c2:q0" not in ids
+
+    def test_orders_lowest_first(self, tmp_path):
+        data = load_report(_synthetic_report(tmp_path))
+        failures = top_failures(data["questions"])
+        # c0:q1 (0.0) comes before c1:q0 (0.5)
+        assert failures[0]["question_id"] == "c0:q1"
+        assert failures[1]["question_id"] == "c1:q0"
+
+    def test_respects_limit(self, tmp_path):
+        data = load_report(_synthetic_report(tmp_path))
+        failures = top_failures(data["questions"], limit=1)
+        assert len(failures) == 1
+
+
+class TestRenderMarkdown:
+    def test_contains_headline_sections(self, tmp_path):
+        data = load_report(_synthetic_report(tmp_path))
+        md = render_markdown(data)
+        assert "# locomo benchmark report" in md
+        assert "## Headline" in md
+        assert "## Configuration" in md
+        assert "## Per-category breakdown" in md
+        assert "## Top 10 failures" in md
+        # Headline numbers come through.
+        assert "0.5000" in md  # mean_score
+        # Failures section enumerates the actual misses, not the passes.
+        assert "c0:q1" in md
+        assert "D2:1" in md
+        # Perfect-score questions are not listed in the failures block.
+        for line in md.splitlines():
+            if line.startswith("- **`c0:q0`**") or line.startswith("- **`c2:q0`**"):
+                pytest.fail(f"Perfect-score question listed as failure: {line}")
+
+    def test_no_failures_message_when_all_pass(self, tmp_path):
+        payload = json.loads(_synthetic_report(tmp_path).read_text(encoding="utf-8"))
+        # Force every score to a perfect pass.
+        for q in payload["questions"]:
+            q["score"] = 1.0
+            q["missed"] = []
+        md = render_markdown(payload)
+        assert "No scorable failures" in md
+
+    def test_top_failures_limit_propagates(self, tmp_path):
+        data = load_report(_synthetic_report(tmp_path))
+        md = render_markdown(data, top_failures_limit=5)
+        assert "## Top 5 failures" in md
+
+
+class TestBenchReportCli:
+    def test_stdout_render(self, tmp_path):
+        path = _synthetic_report(tmp_path)
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "engrama.cli",
+                "bench",
+                "report",
+                str(path),
+                "--top-failures",
+                "2",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "# locomo benchmark report" in proc.stdout
+        assert "## Top 2 failures" in proc.stdout
+
+    def test_output_file(self, tmp_path):
+        path = _synthetic_report(tmp_path)
+        out = tmp_path / "out.md"
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "engrama.cli",
+                "bench",
+                "report",
+                str(path),
+                "--output",
+                str(out),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert out.exists()
+        body = out.read_text(encoding="utf-8")
+        assert "# locomo benchmark report" in body
+
+    def test_missing_input_errors(self, tmp_path):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "engrama.cli",
+                "bench",
+                "report",
+                str(tmp_path / "does-not-exist.json"),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode != 0
+        assert "Error" in proc.stderr
