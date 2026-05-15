@@ -65,6 +65,14 @@ _MCP_PROVENANCE_PROPS = Provenance(source="mcp").to_properties()
 # (ENGRAMA_ORG_ID, ENGRAMA_USER_ID, ENGRAMA_AGENT_ID, ENGRAMA_SESSION_ID).
 # Empty when nothing is exported, so single-user deployments behave
 # exactly as before this PR.
+#
+# **Stability requirement:** the scope is captured ONCE at module
+# import time. Operators must export these env vars *before* the MCP
+# process starts (e.g. in the launching shell or the service unit
+# definition). Mutating ``os.environ`` after the server is loaded has
+# no effect on the live scope — the snapshot is already taken, and
+# the helpers below reuse :data:`_MCP_SCOPE_PROPS` directly. Restart
+# the MCP server to pick up changes.
 _MCP_SCOPE: MemoryScope = MemoryScope.from_env()
 _MCP_SCOPE_PROPS: dict[str, Any] = _MCP_SCOPE.to_properties()
 

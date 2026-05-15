@@ -36,6 +36,8 @@ turns in time when replaying them into engrama.
 
 from __future__ import annotations
 
+import hashlib
+import json as _json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -92,9 +94,16 @@ class LongMemEvalBenchmark(Benchmark):
     @staticmethod
     def _question_id(record: dict[str, Any]) -> str:
         # Records always carry ``question_id``; fall back to ``id`` for
-        # any fork that renames it, and to ``"?"`` only as last resort
-        # so iteration stays deterministic on malformed files.
-        return str(record.get("question_id") or record.get("id") or "?")
+        # forks that rename it. If neither is present, derive a stable
+        # hash from the record's content so multiple bad records remain
+        # distinguishable (a collision-prone ``"?"`` sentinel made every
+        # malformed row look identical to the runner and the reporter).
+        explicit = record.get("question_id") or record.get("id")
+        if explicit:
+            return str(explicit)
+        canonical = _json.dumps(record, sort_keys=True, ensure_ascii=False, default=str)
+        digest = hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:12]
+        return f"qsn_unknown_{digest}"
 
     def _to_conversation(self, record: dict[str, Any]) -> BenchmarkConversation:
         convo_id = self._question_id(record)

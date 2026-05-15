@@ -615,6 +615,22 @@ def cmd_bench_run(args: argparse.Namespace) -> int:
     try:
         from engrama.bench.runner import run_benchmark
 
+        # ``--limit 0`` means "no cap"; negative values are almost
+        # certainly a typo and would silently become "no cap" too —
+        # reject them with a user-facing error.
+        if args.limit is not None and args.limit < 0:
+            print(
+                f"Error: --limit must be >= 0 (got {args.limit}); use 0 for no limit",
+                file=sys.stderr,
+            )
+            return 1
+        if args.retrieval_limit < 1:
+            print(
+                f"Error: --retrieval-limit must be >= 1 (got {args.retrieval_limit})",
+                file=sys.stderr,
+            )
+            return 1
+
         bench = _load_benchmark(args.benchmark, args.data_path)
         report = run_benchmark(
             bench,
