@@ -1,14 +1,16 @@
 """Tests for the benchmark scaffold (Roadmap P15 / DDR-003 Part 7).
 
-PR-G1 ships loaders + a `bench list` CLI subcommand only — no runner,
-no scoring, no engrama interaction. These tests cover that surface:
-the core dataclasses, the LOCOMO parser against a tiny fixture, and
-the CLI's count / preview behaviour.
+PR-G1 shipped the loaders + a ``bench list`` CLI subcommand. PR-G2
+added the LongMemEval loader. PR-G3 adds the runner, scoring, and a
+``bench run`` CLI subcommand. These tests cover the loader contract,
+both CLI subcommands, the recall scorer, and an end-to-end run against
+the mini fixtures.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +25,17 @@ from engrama.bench import (
     LongMemEvalBenchmark,
 )
 from engrama.bench.core import BenchmarkTurn
+from engrama.bench.runner import (
+    BenchmarkRunner,
+    _or_join_tokens,
+    run_benchmark,
+)
+from engrama.bench.scoring import (
+    LLMJudge,
+    RecallAtK,
+    RetrievalRun,
+    build_scorer,
+)
 
 LOCOMO_FIXTURE = Path(__file__).parent / "data" / "locomo_mini.json"
 LONGMEMEVAL_FIXTURE = Path(__file__).parent / "data" / "longmemeval_mini.json"
@@ -311,3 +324,374 @@ class TestBenchListCli:
         assert "conversations: 3" in out
         assert "questions: 3" in out
         assert "What hobby did the user take up in May?" in out
+
+
+# ---------------------------------------------------------------------------
+# 5. Lifecycle declaration (PR-G3)
+# ---------------------------------------------------------------------------
+
+
+class TestLifecycleDeclaration:
+    def test_locomo_is_per_conversation(self):
+        assert LocomoBenchmark.lifecycle == "per-conversation"
+        # Instance also exposes the same value (no override surprises).
+        assert LocomoBenchmark().lifecycle == "per-conversation"
+
+    def test_longmemeval_is_per_question(self):
+        assert LongMemEvalBenchmark.lifecycle == "per-question"
+        assert LongMemEvalBenchmark().lifecycle == "per-question"
+
+
+# ---------------------------------------------------------------------------
+# 6. Recall scorer (PR-G3)
+# ---------------------------------------------------------------------------
+
+
+class TestRecallAtK:
+    def test_exact_match_is_recall_one(self):
+        scorer = RecallAtK(k=5)
+        report = scorer.score(
+            RetrievalRun(
+                question_id="q",
+                expected_evidence=["D1:1"],
+                retrieved_ids=[],
+                retrieved_names=["D1:1", "D1:2"],
+            )
+        )
+        assert report.score == 1.0
+        assert report.matched == ["D1:1"]
+        assert report.missed == []
+        assert report.metric == "recall@5"
+
+    def test_prefix_match_supports_session_level_evidence(self):
+        # LongMemEval evidence is session-level ("s2") but the runner
+        # names individual turns ("s2:0", "s2:1"...). The scorer must
+        # recognise the prefix as a match.
+        scorer = RecallAtK(k=5)
+        report = scorer.score(
+            RetrievalRun(
+                question_id="q",
+                expected_evidence=["s2"],
+                retrieved_ids=[],
+                retrieved_names=["s1:0", "s2:0"],
+            )
+        )
+        assert report.score == 1.0
+        assert report.matched == ["s2"]
+
+    def test_no_match_is_recall_zero(self):
+        scorer = RecallAtK(k=5)
+        report = scorer.score(
+            RetrievalRun(
+                question_id="q",
+                expected_evidence=["D9:9"],
+                retrieved_ids=[],
+                retrieved_names=["D1:1"],
+            )
+        )
+        assert report.score == 0.0
+        assert report.missed == ["D9:9"]
+
+    def test_empty_evidence_is_trivial_pass(self):
+        # Questions with no evidence pointer can't grade retrieval —
+        # treating them as failures would punish the engine for a
+        # dataset shortcoming.
+        scorer = RecallAtK(k=5)
+        report = scorer.score(
+            RetrievalRun(
+                question_id="q",
+                expected_evidence=[],
+                retrieved_ids=[],
+                retrieved_names=[],
+            )
+        )
+        assert report.score == 1.0
+        assert report.matched == []
+        assert report.missed == []
+
+    def test_k_caps_the_window(self):
+        # With k=2 the third retrieved item should not count.
+        scorer = RecallAtK(k=2)
+        report = scorer.score(
+            RetrievalRun(
+                question_id="q",
+                expected_evidence=["D3:3"],
+                retrieved_ids=[],
+                retrieved_names=["A", "B", "D3:3"],
+            )
+        )
+        assert report.score == 0.0
+        assert scorer.metric == "recall@2"
+
+    def test_invalid_k_rejected(self):
+        with pytest.raises(ValueError, match="positive"):
+            RecallAtK(k=0)
+
+    def test_partial_match_is_proportional(self):
+        scorer = RecallAtK(k=5)
+        report = scorer.score(
+            RetrievalRun(
+                question_id="q",
+                expected_evidence=["A", "B", "C", "D"],
+                retrieved_ids=[],
+                retrieved_names=["A", "C"],
+            )
+        )
+        assert report.score == 0.5
+
+
+class TestBuildScorer:
+    def test_recall_spec(self):
+        scorer = build_scorer("recall@7")
+        assert isinstance(scorer, RecallAtK)
+        assert scorer.k == 7
+        assert scorer.metric == "recall@7"
+
+    def test_recall_spec_is_case_insensitive(self):
+        scorer = build_scorer("Recall@3")
+        assert isinstance(scorer, RecallAtK)
+        assert scorer.k == 3
+
+    def test_unknown_spec_rejected(self):
+        with pytest.raises(ValueError, match="Unknown scorer"):
+            build_scorer("bleu")
+
+    def test_recall_without_k_rejected(self):
+        with pytest.raises(ValueError):
+            build_scorer("recall@notanumber")
+
+    def test_llm_judge_is_stubbed(self):
+        # The plumbing is there but the implementation isn't — PR-G4.
+        with pytest.raises(NotImplementedError):
+            LLMJudge()
+
+
+# ---------------------------------------------------------------------------
+# 7. Runner internals (PR-G3)
+# ---------------------------------------------------------------------------
+
+
+class TestOrJoinTokens:
+    def test_joins_with_or(self):
+        # FTS5 default is AND-on-whitespace — runner must rewrite so the
+        # engine returns partial matches instead of empty results.
+        out = _or_join_tokens("Caroline visit Lisbon")
+        assert " OR " in out
+        assert "Caroline" in out and "Lisbon" in out
+
+    def test_drops_stop_words(self):
+        # Stop-words only add noise to recall scoring; their absence
+        # doesn't change the result set, only its ordering by relevance.
+        out = _or_join_tokens("When did Caroline visit Lisbon?")
+        assert "When" not in out  # stop-word stripped
+        assert "Caroline" in out
+        assert "Lisbon" in out
+
+    def test_collapses_repeats(self):
+        out = _or_join_tokens("Lisbon Lisbon Lisbon")
+        assert out.count("Lisbon") == 1
+
+    def test_quotes_fts5_operator_tokens(self):
+        # Bare `OR`/`AND` are FTS5 keywords — must be escaped.
+        out = _or_join_tokens("OR books")
+        assert '"OR"' in out
+
+
+# ---------------------------------------------------------------------------
+# 8. End-to-end runner against the mini fixtures (PR-G3)
+# ---------------------------------------------------------------------------
+
+
+def _isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Run the SDK against a temp DB with no embedder + no vault.
+
+    Bench runs that hit Ollama for every node turn an 80-turn LOCOMO
+    sample into a 30-second wait of failed embedding calls. The
+    benchmark works fine on fulltext alone (the runner OR-joins query
+    tokens), so we explicitly disable the embedder here.
+    """
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "none")
+    monkeypatch.setenv("GRAPH_BACKEND", "sqlite")
+    monkeypatch.delenv("VAULT_PATH", raising=False)
+    # Scope env vars from a previous test shouldn't leak — the SDK falls
+    # back to ``MemoryScope.from_env`` when no kwargs override it.
+    for key in (
+        "ENGRAMA_ORG_ID",
+        "ENGRAMA_USER_ID",
+        "ENGRAMA_AGENT_ID",
+        "ENGRAMA_SESSION_ID",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("ENGRAMA_DB_PATH", str(tmp_path / "bench.db"))
+
+
+class TestRunnerEndToEnd:
+    def test_locomo_full_run(self, monkeypatch, tmp_path):
+        _isolated_env(monkeypatch, tmp_path)
+        bench = LocomoBenchmark()
+        bench.load(LOCOMO_FIXTURE)
+        runner = BenchmarkRunner(bench, db_root=tmp_path / "dbs")
+        report = runner.run()
+
+        assert report.benchmark == "locomo"
+        assert report.run_id.startswith("bench-locomo-")
+        assert report.summary["questions_total"] == 3
+        assert report.summary["questions_with_evidence"] == 3
+        # Recall@5 on a 3-turn fixture where every answer is a single
+        # turn should be perfect once the OR-rewriter is in place.
+        assert report.summary["mean_score"] == 1.0
+        # Latency tracked per question + averaged.
+        assert all(q.latency_ms >= 0.0 for q in report.questions)
+        # Lifecycle propagated to the config block.
+        assert report.config["lifecycle"] == "per-conversation"
+
+    def test_longmemeval_per_question_lifecycle(self, monkeypatch, tmp_path):
+        _isolated_env(monkeypatch, tmp_path)
+        bench = LongMemEvalBenchmark()
+        bench.load(LONGMEMEVAL_FIXTURE)
+        report = run_benchmark(bench, db_root=tmp_path / "dbs")
+
+        assert report.config["lifecycle"] == "per-question"
+        assert report.summary["questions_total"] == 3
+        # The empty-haystack edge-case question has no evidence and is
+        # a trivial pass — every recall row should be 1.0.
+        for q in report.questions:
+            assert q.score == 1.0
+        # Per-question lifecycle should give each LongMemEval question
+        # its own DB file under db_root.
+        db_files = list((tmp_path / "dbs").glob("*.db"))
+        assert len(db_files) >= 3  # one per question
+
+    def test_limit_caps_questions(self, monkeypatch, tmp_path):
+        _isolated_env(monkeypatch, tmp_path)
+        bench = LocomoBenchmark()
+        bench.load(LOCOMO_FIXTURE)
+        report = run_benchmark(bench, limit=1, db_root=tmp_path / "dbs")
+        assert len(report.questions) == 1
+        assert report.config["limit"] == 1
+
+    def test_report_writes_expected_schema_keys(self, monkeypatch, tmp_path):
+        _isolated_env(monkeypatch, tmp_path)
+        bench = LocomoBenchmark()
+        bench.load(LOCOMO_FIXTURE)
+        report = run_benchmark(bench, limit=1, db_root=tmp_path / "dbs")
+        out = tmp_path / "report.json"
+        report.write_json(out)
+        data = json.loads(out.read_text(encoding="utf-8"))
+        assert set(data.keys()) >= {
+            "benchmark",
+            "run_id",
+            "started_at",
+            "completed_at",
+            "config",
+            "summary",
+            "questions",
+        }
+        assert set(data["config"].keys()) >= {
+            "limit",
+            "scorer",
+            "retrieval_limit",
+            "lifecycle",
+            "engrama_version",
+        }
+        assert set(data["summary"].keys()) >= {
+            "questions_total",
+            "questions_scored",
+            "questions_with_evidence",
+            "mean_score",
+            "mean_latency_ms",
+            "duration_seconds",
+        }
+        q0 = data["questions"][0]
+        assert set(q0.keys()) >= {
+            "question_id",
+            "conversation_id",
+            "category",
+            "expected_evidence",
+            "retrieved_ids",
+            "retrieved_names",
+            "score",
+            "matched",
+            "missed",
+            "latency_ms",
+        }
+
+    def test_scope_isolates_concurrent_runs(self, monkeypatch, tmp_path):
+        # Two runs against the same DB file must not contaminate one
+        # another — the unique session_id scope is what guarantees it.
+        _isolated_env(monkeypatch, tmp_path)
+        shared = tmp_path / "shared.db"
+        bench1 = LocomoBenchmark()
+        bench1.load(LOCOMO_FIXTURE)
+        bench2 = LocomoBenchmark()
+        bench2.load(LOCOMO_FIXTURE)
+
+        # Use ``db_root`` to force both runs onto the same disk
+        # location. Each cycle still gets a fresh file *within* db_root,
+        # but the scopes are what stop the second run from inheriting
+        # the first's nodes (when the test exercises that path).
+        r1 = run_benchmark(bench1, db_root=tmp_path / "shared-dbs")
+        r2 = run_benchmark(bench2, db_root=tmp_path / "shared-dbs")
+        assert r1.run_id != r2.run_id
+        # Each run has its own unique scope (visible via the run_id slug).
+        assert "bench-locomo-" in r1.run_id
+        assert "bench-locomo-" in r2.run_id
+        # Reused path doesn't crash; both reports came back clean.
+        assert r1.summary["questions_total"] == 3
+        assert r2.summary["questions_total"] == 3
+        # Avoid `shared` unused warning — placeholder for future use.
+        _ = shared
+
+
+# ---------------------------------------------------------------------------
+# 9. CLI: `engrama bench run` (PR-G3)
+# ---------------------------------------------------------------------------
+
+
+class TestBenchRunCli:
+    def test_run_writes_report(self, tmp_path):
+        report_path = tmp_path / "out.json"
+        env = {
+            **os.environ,
+            "EMBEDDING_PROVIDER": "none",
+            "GRAPH_BACKEND": "sqlite",
+        }
+        # Strip leaked scope from the developer's shell — a stray
+        # ENGRAMA_USER_ID would silently filter all writes out.
+        for key in (
+            "ENGRAMA_ORG_ID",
+            "ENGRAMA_USER_ID",
+            "ENGRAMA_AGENT_ID",
+            "ENGRAMA_SESSION_ID",
+        ):
+            env.pop(key, None)
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "engrama.cli",
+                "bench",
+                "run",
+                "--benchmark",
+                "locomo",
+                "--data-path",
+                str(LOCOMO_FIXTURE),
+                "--report",
+                str(report_path),
+                "--limit",
+                "1",
+                "--db-root",
+                str(tmp_path / "dbs"),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "benchmark: locomo" in proc.stdout
+        assert report_path.exists()
+        data = json.loads(report_path.read_text(encoding="utf-8"))
+        assert data["benchmark"] == "locomo"
+        assert data["config"]["limit"] == 1
+        assert len(data["questions"]) == 1

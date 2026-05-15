@@ -80,6 +80,7 @@ class LocomoBenchmark(Benchmark):
     """LOCOMO long-conversation memory benchmark."""
 
     name = "locomo"
+    lifecycle = "per-conversation"
 
     def load(self, path: str | Path) -> None:
         data = _read_json(path)

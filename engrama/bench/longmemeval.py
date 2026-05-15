@@ -53,6 +53,7 @@ class LongMemEvalBenchmark(Benchmark):
     """LongMemEval long-term memory evaluation benchmark."""
 
     name = "longmemeval"
+    lifecycle = "per-question"
 
     def load(self, path: str | Path) -> None:
         data = _read_json(path)

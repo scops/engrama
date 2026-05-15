@@ -7,10 +7,12 @@ Datasets covered by this package — one loader module each:
 * :mod:`engrama.bench.longmemeval` — LongMemEval (500 Q from
   xiaowu0162/LongMemEval).
 
-PR-G1 + PR-G2 ship the loaders and the ``engrama bench list`` CLI
+PR-G1 + PR-G2 shipped the loaders and the ``engrama bench list`` CLI
 subcommand so the dataset shape can be inspected without engrama
-touching the data. The runner (replay conversation → query → score)
-and the LLM-as-judge scoring path land in PR-G3.
+touching the data. PR-G3 adds the runner (replay conversation → query
+→ score) + recall-based scoring + the ``engrama bench run``
+subcommand. PR-G4 will layer the LLM-as-judge path and a markdown
+reporter on top.
 """
 
 from __future__ import annotations
@@ -18,11 +20,33 @@ from __future__ import annotations
 from engrama.bench.core import Benchmark, BenchmarkConversation, BenchmarkQuestion
 from engrama.bench.locomo import LocomoBenchmark
 from engrama.bench.longmemeval import LongMemEvalBenchmark
+from engrama.bench.runner import (
+    BenchmarkReport,
+    BenchmarkRunner,
+    QuestionResult,
+    run_benchmark,
+)
+from engrama.bench.scoring import (
+    RecallAtK,
+    RetrievalRun,
+    Scorer,
+    ScoreReport,
+    build_scorer,
+)
 
 __all__ = [
     "Benchmark",
     "BenchmarkConversation",
     "BenchmarkQuestion",
+    "BenchmarkReport",
+    "BenchmarkRunner",
     "LocomoBenchmark",
     "LongMemEvalBenchmark",
+    "QuestionResult",
+    "RecallAtK",
+    "RetrievalRun",
+    "ScoreReport",
+    "Scorer",
+    "build_scorer",
+    "run_benchmark",
 ]
