@@ -171,9 +171,17 @@ class BenchmarkRunner:
         self.benchmark = benchmark
         self.scorer = scorer or RecallAtK(k=5)
         self.retrieval_limit = retrieval_limit
-        self.db_root = Path(db_root) if db_root is not None else None
+        # ``.resolve()`` collapses any ``..`` traversal so a misuse
+        # (intentional or otherwise) of ``--db-root ../../tmp`` can't
+        # silently mkdir outside the operator's intended tree.
+        self.db_root = Path(db_root).resolve() if db_root is not None else None
         self.engrama_version = engrama_version or self._lookup_engrama_version()
         self.run_id = f"bench-{benchmark.name}-{uuid.uuid4().hex[:8]}"
+        # Replay-time failure counter — incremented by ``_replay_conversation``
+        # whenever a ``remember()`` call raises so the run summary can
+        # surface partial-ingest runs instead of pretending a corrupted
+        # replay produced a clean baseline.
+        self._failed_turns: int = 0
 
     # ------------------------------------------------------------------
     # Public API
@@ -301,6 +309,7 @@ class BenchmarkRunner:
                 try:
                     eng.remember(_TURN_LABEL, name, observation, **extra)
                 except Exception:
+                    self._failed_turns += 1
                     logger.exception(
                         "remember failed for %s session_idx=%d turn_idx=%d",
                         convo.conversation_id,
@@ -368,6 +377,7 @@ class BenchmarkRunner:
                 "mean_score": 0.0,
                 "mean_latency_ms": 0.0,
                 "duration_seconds": (completed - started).total_seconds(),
+                "failed_turns": self._failed_turns,
             }
         with_evidence = sum(1 for q in results if q.expected_evidence)
         mean_score = sum(q.score for q in results) / len(results)
@@ -379,6 +389,11 @@ class BenchmarkRunner:
             "mean_score": round(mean_score, 4),
             "mean_latency_ms": round(mean_latency, 2),
             "duration_seconds": round((completed - started).total_seconds(), 2),
+            # Non-zero ``failed_turns`` means the replay loop swallowed
+            # an exception while ingesting one or more turns — the
+            # numbers above are still meaningful but the benchmark DB
+            # is incomplete.
+            "failed_turns": self._failed_turns,
         }
 
     # ------------------------------------------------------------------
@@ -574,6 +589,11 @@ def _session_dates_for(convo: BenchmarkConversation) -> dict[int, str]:
             parts = key.split("_")
             if len(parts) >= 2 and parts[0] == "session" and parts[1].isdigit():
                 idx = int(parts[1]) - 1
+                # ``session_0_date_time`` would yield idx=-1 which is
+                # silently wrap-around-valid on a Python list. Drop
+                # such entries instead of poisoning the session map.
+                if idx < 0:
+                    continue
                 iso = _to_iso_date(value)
                 if iso:
                     out[idx] = iso

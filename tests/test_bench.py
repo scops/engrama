@@ -953,3 +953,168 @@ class TestBenchReportCli:
         )
         assert proc.returncode != 0
         assert "Error" in proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# 11. Hardening fixes (follow-up to PR-G3/G2 code review)
+# ---------------------------------------------------------------------------
+
+
+class TestDbRootResolution:
+    def test_relative_db_root_is_resolved(self, monkeypatch, tmp_path):
+        # ``Path.resolve()`` collapses ``..`` so an operator can't
+        # accidentally mkdir outside the working tree.
+        monkeypatch.chdir(tmp_path)
+        bench = LocomoBenchmark()
+        bench.load(LOCOMO_FIXTURE)
+        runner = BenchmarkRunner(bench, db_root="sub/../resolved")
+        assert runner.db_root is not None
+        assert runner.db_root.is_absolute()
+        # ``..`` collapsed away.
+        assert ".." not in runner.db_root.parts
+
+
+class TestFailedTurnsSurface:
+    def test_summary_includes_failed_turns_zero_by_default(self, monkeypatch, tmp_path):
+        _isolated_env(monkeypatch, tmp_path)
+        bench = LocomoBenchmark()
+        bench.load(LOCOMO_FIXTURE)
+        report = run_benchmark(bench, limit=1, db_root=tmp_path / "dbs")
+        assert "failed_turns" in report.summary
+        assert report.summary["failed_turns"] == 0
+
+    def test_failed_remember_increments_counter(self, monkeypatch, tmp_path):
+        _isolated_env(monkeypatch, tmp_path)
+        bench = LocomoBenchmark()
+        bench.load(LOCOMO_FIXTURE)
+        runner = BenchmarkRunner(bench, db_root=tmp_path / "dbs")
+
+        # Patch the runner's open helper so the yielded Engrama-like
+        # object raises on remember() — exercises the except branch
+        # without needing a corrupted backend.
+        class _FailingEng:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def remember(self, *args, **kwargs):
+                raise RuntimeError("simulated ingest failure")
+
+            def search(self, query, limit=10):
+                return []
+
+        monkeypatch.setattr(runner, "_open_engrama", lambda db_path: _FailingEng())
+        report = runner.run(limit=1)
+        # Every turn in the replayed conversation fails.
+        assert report.summary["failed_turns"] > 0
+
+
+class TestLongMemEvalMissingId:
+    def test_missing_id_yields_deterministic_hash(self, tmp_path):
+        # Two identical no-id records produce the same id; two distinct
+        # no-id records produce different ones. That's the contract the
+        # previous "?" sentinel violated.
+        rec_a = {"question": "Q1", "answer": "A1"}
+        rec_b = {"question": "Q2", "answer": "A2"}
+        rec_a_copy = {"question": "Q1", "answer": "A1"}
+        path = tmp_path / "noids.json"
+        path.write_text(json.dumps([rec_a, rec_b, rec_a_copy]), encoding="utf-8")
+        bench = LongMemEvalBenchmark()
+        bench.load(path)
+        ids = [q.question_id for q in bench.iter_questions()]
+        assert all(qid.startswith("qsn_unknown_") for qid in ids)
+        # Identical content → identical id.
+        assert ids[0] == ids[2]
+        # Different content → different id.
+        assert ids[0] != ids[1]
+
+
+class TestLocomoSessionUnderflow:
+    def test_session_zero_dropped(self):
+        # ``session_0_date_time`` would yield idx=-1 which wraps to the
+        # last list element on Python indexing. Drop it instead.
+        from engrama.bench.runner import _session_dates_for
+
+        convo = BenchmarkConversation(
+            conversation_id="x",
+            sessions=[[], []],
+            metadata={
+                "session_dates": {
+                    "session_0_date_time": "2023-05-05 09:00",
+                    "session_1_date_time": "2023-06-12 18:30",
+                }
+            },
+        )
+        out = _session_dates_for(convo)
+        # Only session 1 (idx 0) survives; the zero entry is filtered.
+        assert -1 not in out
+        assert 0 in out
+
+
+class TestCliLimitValidation:
+    def test_negative_limit_rejected(self, tmp_path):
+        report_path = tmp_path / "out.json"
+        env = {**os.environ, "EMBEDDING_PROVIDER": "none", "GRAPH_BACKEND": "sqlite"}
+        for key in (
+            "ENGRAMA_ORG_ID",
+            "ENGRAMA_USER_ID",
+            "ENGRAMA_AGENT_ID",
+            "ENGRAMA_SESSION_ID",
+        ):
+            env.pop(key, None)
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "engrama.cli",
+                "bench",
+                "run",
+                "--benchmark",
+                "locomo",
+                "--data-path",
+                str(LOCOMO_FIXTURE),
+                "--report",
+                str(report_path),
+                "--limit",
+                "-5",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert proc.returncode != 0
+        assert "Error" in proc.stderr
+        assert "--limit" in proc.stderr
+        # Report file must not have been written.
+        assert not report_path.exists()
+
+    def test_invalid_retrieval_limit_rejected(self, tmp_path):
+        report_path = tmp_path / "out.json"
+        env = {**os.environ, "EMBEDDING_PROVIDER": "none", "GRAPH_BACKEND": "sqlite"}
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "engrama.cli",
+                "bench",
+                "run",
+                "--benchmark",
+                "locomo",
+                "--data-path",
+                str(LOCOMO_FIXTURE),
+                "--report",
+                str(report_path),
+                "--retrieval-limit",
+                "0",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert proc.returncode != 0
+        assert "Error" in proc.stderr
+        assert "--retrieval-limit" in proc.stderr
