@@ -76,6 +76,17 @@ class Benchmark(ABC):
 
     name: str = ""
 
+    #: How the runner (PR-G3) should partition the work for this dataset:
+    #:
+    #: * ``"per-conversation"`` — replay all of a conversation's sessions
+    #:   into one fresh DB, then iterate all of *its* questions before
+    #:   moving on. Right for LOCOMO, where every question is asked over
+    #:   the same multi-session conversation.
+    #: * ``"per-question"`` — replay the question's haystack into a fresh
+    #:   DB and ask just that one question. Right for LongMemEval, where
+    #:   each record ships its own self-contained haystack.
+    lifecycle: str = "per-conversation"
+
     def __init__(self) -> None:
         self._raw: Any = None
         self._path: Path | None = None

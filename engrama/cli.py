@@ -605,11 +605,55 @@ def cmd_bench_list(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_bench_run(args: argparse.Namespace) -> int:
+    """Execute a benchmark end-to-end and write a JSON report.
+
+    Replays each conversation/haystack into a fresh per-cycle SQLite
+    database, queries engrama for every question, scores the result,
+    and writes the consolidated report to ``--report``.
+    """
+    try:
+        from engrama.bench.runner import run_benchmark
+
+        bench = _load_benchmark(args.benchmark, args.data_path)
+        report = run_benchmark(
+            bench,
+            scorer=args.scorer,
+            limit=args.limit if args.limit and args.limit > 0 else None,
+            retrieval_limit=args.retrieval_limit,
+            db_root=args.db_root,
+        )
+        out_path = report.write_json(args.report)
+        summary = report.summary
+        print(f"benchmark: {report.benchmark}")
+        print(f"run_id: {report.run_id}")
+        print(f"scorer: {report.config['scorer']}")
+        print(
+            f"questions: {summary['questions_total']} "
+            f"(with evidence: {summary['questions_with_evidence']})"
+        )
+        print(f"mean_score: {summary['mean_score']}")
+        print(f"mean_latency_ms: {summary['mean_latency_ms']}")
+        print(f"duration_seconds: {summary['duration_seconds']}")
+        print(f"report: {out_path}")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     """Dispatch to the requested benchmark subcommand."""
-    if getattr(args, "bench_command", None) == "list":
+    sub = getattr(args, "bench_command", None)
+    if sub == "list":
         return cmd_bench_list(args)
-    print("Error: missing bench subcommand (try `engrama bench list --help`)", file=sys.stderr)
+    if sub == "run":
+        return cmd_bench_run(args)
+    print(
+        "Error: missing bench subcommand (try `engrama bench list --help` "
+        "or `engrama bench run --help`)",
+        file=sys.stderr,
+    )
     return 1
 
 
@@ -783,6 +827,52 @@ def main() -> None:
         type=int,
         default=5,
         help="How many questions to preview (default: 5, 0 to skip preview)",
+    )
+
+    p_bench_run = bench_sub.add_parser(
+        "run",
+        help="Replay a benchmark into engrama and score each question",
+    )
+    p_bench_run.add_argument(
+        "--benchmark",
+        required=True,
+        choices=sorted(_BENCHMARKS),
+        help="Which benchmark dataset to load",
+    )
+    p_bench_run.add_argument(
+        "--data-path",
+        required=True,
+        help="Path to the benchmark source file (JSON)",
+    )
+    p_bench_run.add_argument(
+        "--report",
+        required=True,
+        help="Where to write the JSON report (parent dirs are created)",
+    )
+    p_bench_run.add_argument(
+        "--scorer",
+        default="recall@5",
+        help="Scorer spec (default: recall@5). Use recall@K for any positive K.",
+    )
+    p_bench_run.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Cap questions scored (default: 0 = all)",
+    )
+    p_bench_run.add_argument(
+        "--retrieval-limit",
+        type=int,
+        default=10,
+        help="How many search hits to pull per question (default: 10)",
+    )
+    p_bench_run.add_argument(
+        "--db-root",
+        default=None,
+        help=(
+            "Optional persistent directory for per-cycle SQLite DBs. "
+            "Default: a temp directory cleaned up after the run."
+        ),
     )
 
     args = parser.parse_args()
