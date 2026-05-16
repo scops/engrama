@@ -10,7 +10,7 @@ Karpathy built his second brain in Markdown and wikis — that works for humans 
 
 **Engrama** is a plug-and-play Python framework that gives any AI agent persistent, structured memory backed by a knowledge graph. The agent can remember, associate, forget, and reason about its accumulated knowledge — exactly as a human with good memory would.
 
-The graph runs on either **SQLite + sqlite-vec** (default since 0.9 — single file, zero external services, `git clone` + `uv sync` and you're running; Engrama is not yet on PyPI) or **Neo4j 5.26 LTS** (opt-in for multi-process production, large vector indexes, or teams already invested in Cypher). Both expose the same data model and the same eleven MCP tools — see [BACKENDS.md](BACKENDS.md) for the decision guide.
+The graph runs on either **SQLite + sqlite-vec** (default since 0.9 — single file, zero external services, `git clone` + `uv sync` and you're running; Engrama is not yet on PyPI) or **Neo4j 5.26 LTS** (opt-in for multi-process production, large vector indexes, or teams already invested in Cypher). Both expose the same data model and the same twelve MCP tools — see [BACKENDS.md](BACKENDS.md) for the decision guide.
 
 ## What makes it different
 

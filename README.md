@@ -380,16 +380,17 @@ the server reads them from `.env` when running against Neo4j.
 
 **3. Restart Claude Desktop** completely (quit and reopen).
 
-You should now see the eleven Engrama tools:
+You should now see the twelve Engrama tools:
 
 | Tool | Description |
 |------|-------------|
+| `engrama_status` | Read-only introspection (vault path, backend, embedder, search mode, version). Call at session start when other Obsidian-capable MCPs are connected. |
 | `engrama_search` | Hybrid search (vector + fulltext + graph boost + temporal) |
 | `engrama_remember` | Create or update a node (always MERGE) |
 | `engrama_relate` | Create a relationship between two nodes |
 | `engrama_context` | Retrieve the neighbourhood of a node |
-| `engrama_sync_note` | Sync a single Obsidian note to the graph |
-| `engrama_sync_vault` | Full vault scan, reconcile all notes |
+| `engrama_sync_note` | Sync a single Obsidian note to the graph. Supports `dry_run=true` to preview the impact. |
+| `engrama_sync_vault` | Full vault scan, reconcile all notes. Supports `dry_run=true` to preview create/update counts + files that would receive `engrama_id`. |
 | `engrama_ingest` | Read content + extract knowledge automatically |
 | `engrama_reflect` | Adaptive cross-entity pattern detection → Insights |
 | `engrama_surface_insights` | Read pending Insights for review |

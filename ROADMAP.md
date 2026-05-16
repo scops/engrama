@@ -28,7 +28,7 @@
 > Goal: use the graph from Claude Desktop via MCP without writing Cypher manually.
 
 - [x] `engrama/adapters/mcp/server.py` — native MCP server via FastMCP + async Neo4j driver
-- [x] Ten MCP tools: search, remember, relate, context, sync_note, sync_vault, reflect, surface_insights, approve_insight, write_insight_to_vault
+- [x] Ten MCP tools: search, remember, relate, context, sync_note, sync_vault, reflect, surface_insights, approve_insight, write_insight_to_vault (the set has since grown to twelve — `engrama_ingest` landed in Phase 9 and `engrama_status` in #52; see ARCHITECTURE.md for the current list)
 - [x] `examples/claude_desktop/config.json` — ready-to-paste config
 - [x] `examples/claude_desktop/system-prompt.md` — memory system prompt
 - [ ] End-to-end test: Claude Desktop → MCP → Neo4j → response (manual verification done, automated test pending)
@@ -217,31 +217,44 @@
 - [x] **FTS5 query sanitization** — user queries containing hyphens, colons, parentheses, quotes, etc. are now routed through a sanitizer in `SqliteGraphStore.fulltext_search` (each unsafe token wrapped as a quoted phrase, embedded `"` doubled per FTS5 grammar). Closes the `engrama-mcp-server` miss; operator keywords (`AND`/`OR`/`NOT`/`NEAR`) keep their semantics.
 - [x] **Follow-ups** (non-blocking): first-class `engrama export` / `engrama import` cross-backend migration tool (#30) and README embedder matrix with worked examples per provider (#29).
 
-## Phase 13 · Security hardening
+## Phase 13 · Security hardening ✅
 
 > DDR-003 Phase E — input sanitization, provenance tracking, trust-aware retrieval.
 
-- [ ] Input sanitisation layer
-- [ ] Provenance fields: source, source_agent, source_session, trust_level
-- [ ] Trust-aware retrieval weighting
-- [ ] Scope isolation (Phase F)
+- [x] Input sanitisation layer (`engrama/core/security.py::Sanitiser`, applied at every engine + MCP write boundary)
+- [x] Provenance fields: `source`, `source_agent`, `source_session`, `trust_level` flow through `merge_node` and are sanitiser-protected against spoofing
+- [x] Trust-aware retrieval weighting in `HybridSearchEngine`
+- [x] Scope isolation: `MemoryScope` (`org_id` / `user_id` / `agent_id` / `session_id`) enforced on reads and writes (shipped in Phase 14)
 
-## Phase 14 · Multi-scope memory
+## Phase 14 · Multi-scope memory ✅
 
 > DDR-003 Phase F — scope hierarchy: org_id → user_id → agent_id → session_id.
 
-- [ ] Scope model definition
-- [ ] Scope-filtered queries
-- [ ] Cross-scope sharing policies
+- [x] Scope model: `engrama/core/scope.py::MemoryScope`, env-driven (`ENGRAMA_ORG_ID` / `ENGRAMA_USER_ID` / `ENGRAMA_AGENT_ID` / `ENGRAMA_SESSION_ID`) or per-instance via `Engrama(..., user_id=...)` kwargs
+- [x] Scope-filtered queries on every store read path (`fulltext_search`, `get_neighbours`, vector lookups)
+- [x] Scope-smuggling guard: sanitiser strips caller-supplied scope keys, engine re-applies the active scope
 
-## Phase 15 · Standard benchmarks
+## Phase 15 · Standard benchmarks (in progress)
 
 > DDR-003 Phase G — LOCOMO (target 70–80%) and LongMemEval (target 75–85%).
 
-- [ ] LOCOMO harness
-- [ ] LongMemEval harness
-- [ ] Baseline measurements
+- [x] Bench scaffold + LOCOMO loader (#46)
+- [x] LongMemEval loader (#47)
+- [x] Runner + recall@k scorer + `engrama bench run` CLI (#48)
+- [x] Markdown reporter + `engrama bench report` CLI (#49)
+- [x] Hardening pass on the bench CLI (#50)
+- [ ] Baseline measurements on full datasets
 - [ ] Iterative improvement
+
+## Phase post-#52 · Dual-vault contract ✅
+
+> Hardening of the multi-MCP coexistence story so agents have a server-side signal to disambiguate Engrama's vault from a user's `obsidian-mcp` vault. Closes #52.
+
+- [x] Tool docstrings for `engrama_sync_vault` / `engrama_sync_note` / `engrama_ingest` declare their vault scope (#55, Phase A)
+- [x] `Concept:dual-vault-routing-rule` populated in the graph and linked to `Decision:dual-vault-architecture` (Phase B, 2026-05-16)
+- [x] `engrama_status` MCP tool returning vault path, backend, embedder, search mode, version (#56, Phase C)
+- [x] `dry_run` parameter on `engrama_sync_vault` and `engrama_sync_note` for preview-before-write (#57, Phase D)
+- [x] System prompt v0.5.2 references `engrama_status` + `dry_run` in §3
 
 ## Phase 16 · Backend ecosystem (post-DDR-004)
 
@@ -261,28 +274,25 @@
 3. Documented in the relevant reference file (README, ARCHITECTURE, BACKENDS, or DDR depending on scope)
 4. Conventional commit message
 
-## Test suite status
+## Test suite
 
-421 passing / 1 skipped across 19 test files (post-DDR-004):
+Live counts go stale fast; the CI dashboards on `main` are the source
+of truth. Two jobs run on every PR:
 
-- `test_core.py` — core engine integration tests
-- `test_adapters.py` — MCP server integration
-- `test_obsidian_sync.py` — adapter, parser, engrama_id injection
-- `test_skills.py` — reflect skill (cross-project, shared tech, training, adaptive patterns)
-- `test_phase4_skills.py` — remember, recall, associate, forget
-- `test_proactive.py` — surface, approve/dismiss, write to vault
-- `test_sdk.py` — SDK public API
-- `test_cli.py` — CLI commands
-- `test_composable.py` — profile merge logic, codegen, CLI
-- `test_embeddings.py` — NullProvider, OllamaProvider (mocked+live), text, factory
-- `test_protocols.py` — protocol conformance
-- `test_neo4j_store.py` — async store integration
-- `test_hybrid_search.py` — HybridSearchEngine sync+async, scoring, degradation
-- `test_vector_store.py` — Neo4j vector index operations
-- `test_temporal.py` — confidence decay, valid_to, temporal queries, CLI decay
-- `test_openai_compat_embedder.py` — OpenAI-compat embedder (DDR-004)
-- `backends/test_sqlite.py` — SqliteGraphStore behaviours (DDR-004)
-- `backends/test_sqlite_async.py` — SqliteAsyncStore rich-shape contract (DDR-004)
-- `backends/test_sqlite_vector.py` — sqlite-vec virtual table operations (DDR-004)
-- `contracts/test_graphstore_contract.py` — sync stores, parameterised SQLite + Neo4j
-- `contracts/test_async_graphstore_contract.py` — async stores, parameterised SQLite + Neo4j (DDR-004)
+- **Tests (SQLite, no Docker)** — the contract Engrama promises to
+  anyone running `pip install engrama` with no Neo4j and no `.env`.
+  Matrix on Python 3.11 / 3.12 / 3.13.
+- **Tests (Neo4j integration)** — everything excluded from the SQLite
+  job, against a `neo4j:5.26.4-community` service container.
+
+Tests are organised by concern:
+
+- `tests/contracts/` — protocol contracts parameterised over both
+  backends (the *behavioural* baseline; everything else builds on this).
+- `tests/backends/` — backend-specific behaviour (FTS5, sqlite-vec,
+  Neo4j async store).
+- `tests/test_*.py` — feature integration: skills, adapters, SDK, CLI,
+  MCP tools, sanitiser, scope, provenance, temporal, hybrid search,
+  benchmarks, dry-run, etc.
+
+`pytest --collect-only -q | tail -1` gives the current count.
