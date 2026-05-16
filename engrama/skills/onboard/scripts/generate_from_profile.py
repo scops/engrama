@@ -258,8 +258,12 @@ def generate_schema(profile: dict[str, Any]) -> str:
     lines.append('"""Maps each ``NodeType`` enum member to its corresponding dataclass."""')
     lines.append("")
 
-    # Title-keyed labels helper
+    # Title-keyed labels helper. ``Insight`` is auto-injected by this
+    # codegen with ``title`` as its merge key, so it must always appear
+    # in the set even when the source profile didn't define it.
     title_labels = [n["label"] for n in all_nodes if _merge_key(n) == "title"]
+    if "Insight" not in title_labels:
+        title_labels.append("Insight")
     lines.append("")
     lines.append(f"TITLE_KEYED_LABELS: frozenset[str] = frozenset({set(title_labels)!r})")
     lines.append('"""Node labels that use ``title`` instead of ``name`` as merge key."""')

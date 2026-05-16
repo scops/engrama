@@ -554,6 +554,11 @@ NODE_DATACLASS_MAP: dict[NodeType, type] = {
 
 
 TITLE_KEYED_LABELS: frozenset[str] = frozenset(
-    {"Experiment", "Vulnerability", "Decision", "Problem", "Exercise", "Photo"}
+    {"Experiment", "Vulnerability", "Decision", "Problem", "Exercise", "Photo", "Insight"}
 )
-"""Node labels that use ``title`` instead of ``name`` as merge key."""
+"""Node labels that use ``title`` instead of ``name`` as merge key.
+
+``Insight`` is auto-injected by the codegen for every profile, so it
+must be listed here regardless of whether the source profile mentioned
+it. The generator's ``title_labels`` only inspects user-defined nodes
+and would otherwise omit it — see ``scripts/generate_from_profile.py``."""
