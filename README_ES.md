@@ -418,16 +418,17 @@ Codex, pero **todavía no** como integración directa de ChatGPT Desktop.
 Para usar Engrama desde ChatGPT habría que exponer un endpoint MCP
 remoto y empaquetarlo como conector personalizado de ChatGPT.
 
-Ahora deberías ver las once herramientas:
+Ahora deberías ver las doce herramientas:
 
 | Herramienta | Descripción |
 |------|-------------|
+| `engrama_status` | Introspección de solo lectura (vault path, backend, embedder, modo de búsqueda, versión). Llámala al inicio de sesión cuando hay otros MCPs de Obsidian conectados. |
 | `engrama_search` | Búsqueda híbrida (vector + fulltext + boost de grafo + temporal) |
 | `engrama_remember` | Crear o actualizar un nodo (siempre MERGE) |
 | `engrama_relate` | Crear una relación entre dos nodos |
 | `engrama_context` | Recuperar el vecindario de un nodo |
-| `engrama_sync_note` | Sincronizar una sola nota de Obsidian con el grafo |
-| `engrama_sync_vault` | Escaneo completo del vault, reconciliar todas las notas |
+| `engrama_sync_note` | Sincronizar una sola nota de Obsidian con el grafo. Acepta `dry_run=true` para previsualizar el impacto. |
+| `engrama_sync_vault` | Escaneo completo del vault, reconciliar todas las notas. Acepta `dry_run=true` para previsualizar create/update counts + ficheros que recibirían `engrama_id`. |
 | `engrama_ingest` | Leer contenido + extraer conocimiento automáticamente |
 | `engrama_reflect` | Detección adaptativa de patrones entre entidades → Insights |
 | `engrama_surface_insights` | Leer Insights pendientes para revisión |

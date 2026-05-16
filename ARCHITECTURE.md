@@ -548,8 +548,11 @@ Twelve tools:
 - `engrama_remember` — create or update a node (always MERGE)
 - `engrama_relate` — create a relationship (handles title-keyed nodes)
 - `engrama_context` — retrieve the neighbourhood of a node up to N hops
-- `engrama_sync_note` — sync a single Obsidian note to the graph
-- `engrama_sync_vault` — full vault scan, reconcile all notes
+- `engrama_sync_note` — sync a single Obsidian note to the graph;
+  accepts `dry_run=true` to preview the impact without writing
+- `engrama_sync_vault` — full vault scan, reconcile all notes;
+  accepts `dry_run=true` to project create/update counts and list the
+  files that would receive an `engrama_id` injection
 - `engrama_ingest` — read content and return extraction guidance
 - `engrama_reflect` — adaptive cross-entity pattern detection → Insight nodes
 - `engrama_surface_insights` — read pending Insights for agent presentation

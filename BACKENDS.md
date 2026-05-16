@@ -164,7 +164,7 @@ You can, but a single Engrama process binds to one. Different processes
 can target different backends — useful for testing or migrations.
 
 **Does SQLite support all the features Neo4j has?**
-For the public Engrama API (the 11 MCP tools, the SDK, the CLI), yes —
+For the public Engrama API (the 12 MCP tools, the SDK, the CLI), yes —
 they're feature-equivalent and exercised by the same parameterised
 contract suite. The only thing SQLite cannot do is execute raw Cypher
 patterns; it uses pre-translated SQL queries instead. If a future

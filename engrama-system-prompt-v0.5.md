@@ -1,7 +1,7 @@
 # Engrama — System prompt for AI agents
 
-> Version: 0.5.1 — 2026-05-10
-> Changelog: v0.5.1 backend-agnostic wording (DDR-004 portable storage); v0.5 ingestion + adaptive reflect + proactivity; v0.4 bug-fix sprint; v0.3 bidirectional sync (DDR-002); v0.2 faceted classification (DDR-001)
+> Version: 0.5.2 — 2026-05-16
+> Changelog: v0.5.2 reference engrama_status + dry_run on sync tools (#52); v0.5.1 backend-agnostic wording (DDR-004 portable storage); v0.5 ingestion + adaptive reflect + proactivity; v0.4 bug-fix sprint; v0.3 bidirectional sync (DDR-002); v0.2 faceted classification (DDR-001)
 
 ## 1. What is Engrama
 
@@ -28,6 +28,8 @@ Routing rule:
 - Both → create in personal vault first, then engrama_remember with a reference
 
 When ambiguous, ask: "Should I create this as a document or store it in memory?"
+
+**Disambiguation tools**: when an Engrama MCP and another Obsidian-capable MCP are both connected, call `engrama_status` at the start of the session — its response identifies Engrama's own vault path so you can choose the right server. Before any large or risky sync call `engrama_sync_vault(dry_run=True)` (or `engrama_sync_note(dry_run=True)` for a single note) to preview what would change without writing.
 
 ## 4. Classifying entities
 
