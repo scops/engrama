@@ -9,6 +9,16 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Changed
+- **MCP tool descriptions for sync/ingest declare their vault scope.**
+  `engrama_sync_vault`, `engrama_sync_note` and `engrama_ingest` now
+  state that they operate against Engrama's internal vault
+  (`VAULT_PATH`), distinct from any user-managed Obsidian vault
+  exposed by a separate `obsidian-mcp` server. Pure docstring change —
+  no behavioural difference, but gives the agent a server-side signal
+  to disambiguate when multiple Obsidian-capable MCPs are connected.
+  First step of the multi-phase contract hardening tracked in #52.
+
 ### Fixed
 - **Engine `merge_node` honours `TITLE_KEYED_LABELS` regardless of the
   caller's property bag.** Previously the engine picked the merge key

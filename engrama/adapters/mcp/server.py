@@ -963,11 +963,19 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_sync_note(params: SyncNoteInput, ctx: Context) -> str:
-        """Sync a single Obsidian note to the graph.
+        """Sync a single note from Engrama's internal Obsidian vault to the graph.
+
+        **Vault scope.** This tool operates on the Obsidian vault that
+        Engrama owns — the path configured via ``VAULT_PATH`` (or the
+        ``--vault-path`` flag on ``engrama-mcp``). It is distinct from
+        any user-managed Obsidian vault exposed by a separate
+        ``obsidian-mcp`` (or equivalent) server: never use this tool to
+        sync notes that live outside Engrama's vault. ``params.path``
+        is resolved relative to ``VAULT_PATH``.
 
         Reads the note via ObsidianAdapter, parses entities via NoteParser,
-        merges the node into Neo4j, and injects ``engrama_id`` back into
-        the note's YAML frontmatter.
+        merges the node into the active backend, and injects
+        ``engrama_id`` back into the note's YAML frontmatter.
 
         Returns JSON with status, label, name, engrama_id, and
         whether the node was created or updated.
@@ -1106,11 +1114,21 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_sync_vault(params: SyncVaultInput, ctx: Context) -> str:
-        """Scan the Obsidian vault and reconcile all documentable notes.
+        """Scan Engrama's internal Obsidian vault and reconcile all notes.
+
+        **Vault scope.** This tool operates on the Obsidian vault that
+        Engrama owns — the path configured via ``VAULT_PATH`` (or the
+        ``--vault-path`` flag on ``engrama-mcp``). It is distinct from
+        any user-managed Obsidian vault exposed by a separate
+        ``obsidian-mcp`` (or equivalent) server: if the user says
+        "sync the vault" while both MCPs are connected, disambiguate
+        before running this tool — never assume it refers to the
+        external vault. ``params.folder`` is resolved relative to
+        ``VAULT_PATH``.
 
         Iterates over all ``.md`` files (optionally restricted to a folder),
-        parses entities, and merges nodes into Neo4j.  Injects ``engrama_id``
-        into notes that don't have one yet.
+        parses entities, and merges nodes into the active backend.  Injects
+        ``engrama_id`` into notes that don't have one yet.
 
         Returns JSON with created, updated, and skipped counts.
         """
@@ -1251,6 +1269,13 @@ def create_engrama_mcp(
         entity extraction guidance.  After calling this tool, use the returned
         content and extraction prompt to identify entities and relationships,
         then call ``engrama_remember`` with inline relations for each entity.
+
+        **Vault scope (when ``source_type='note'``).** ``params.source``
+        is resolved relative to Engrama's internal vault
+        (``VAULT_PATH``). To pull content from a user-managed Obsidian
+        vault exposed by a separate ``obsidian-mcp`` server, read it
+        with that server's tools first and pass the result to this
+        one as ``source_type='text'``.
 
         This is the primary way to populate the graph from existing content.
         """
