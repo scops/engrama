@@ -748,14 +748,30 @@ def create_engrama_mcp(
             valid = ", ".join(sorted(_VALID_LABELS))
             return f"Error: Invalid label '{label}'. Must be one of: {valid}."
 
-        # Determine merge key
-        if "name" in props:
-            merge_key = "name"
-        elif "title" in props:
-            merge_key = "title"
-        else:
-            return "Error: properties must include 'name' or 'title' as a merge key."
+        # Canonicalise the merge key per TITLE_KEYED_LABELS regardless of
+        # what the caller put in the property bag. ``engrama_remember``
+        # bypasses the engine and writes to the async store directly, so
+        # the engine-level canonicalisation from #51 doesn't reach this
+        # path — agents that send {"name": ...} for a title-keyed label
+        # would otherwise create rows under the wrong column and diverge
+        # from SDK writes. Drop the non-canonical alias when both are
+        # present; canonical wins (matches Sanitiser behaviour with
+        # reserved keys).
+        canonical_key = "title" if label in TITLE_KEYED_LABELS else "name"
+        other_key = "name" if canonical_key == "title" else "title"
+        if other_key in props:
+            if canonical_key in props:
+                props.pop(other_key)
+            else:
+                props[canonical_key] = props.pop(other_key)
 
+        if canonical_key not in props:
+            return (
+                f"Error: properties must include {canonical_key!r} as a merge key "
+                f"for label {label!r}."
+            )
+
+        merge_key = canonical_key
         merge_value = props[merge_key]
 
         # --- Vault note creation (BUG-002 / DDR-002) ---

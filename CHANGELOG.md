@@ -10,6 +10,17 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **MCP `engrama_remember` now canonicalises the merge key the same
+  way the engine does (#51 / #53).** The handler writes to the async
+  store directly and was carrying its own pre-#51 `if "name" in props
+  else "title"` selection, so an agent calling
+  `engrama_remember(label="Experiment", properties={"name": "X"})`
+  via MCP still landed on a `name`-keyed row even after the engine
+  was fixed. Now the handler runs the same `TITLE_KEYED_LABELS`
+  canonicalisation as `EngramaEngine.merge_node`; the non-canonical
+  alias is silently dropped (matching the sanitiser pattern). New
+  `tests/test_mcp_remember_merge_key.py` pins the MCP-boundary
+  contract that #51's engine-level tests didn't cover.
 - **`engrama_sync_vault` iteration shape.** `ObsidianAdapter.list_notes()`
   returns `[{"path": ..., "name": ...}, ...]` but the MCP handler was
   iterating those entries as if they were strings, so every note path
