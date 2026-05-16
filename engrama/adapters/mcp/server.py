@@ -221,6 +221,16 @@ class SyncNoteInput(BaseModel):
         description="Vault-relative path to the note, e.g. '10-projects/engrama.md'.",
         min_length=1,
     )
+    dry_run: bool = Field(
+        default=False,
+        description=(
+            "When true, do not write to the graph or inject `engrama_id` "
+            "into the note's frontmatter. Return the same JSON shape as a "
+            "real sync, with a `would_*` view of what the operation would "
+            "have done. Useful to preview a sync against a different vault "
+            "before committing."
+        ),
+    )
 
 
 class SyncVaultInput(BaseModel):
@@ -232,6 +242,17 @@ class SyncVaultInput(BaseModel):
         default="",
         description="Optional folder to restrict the scan (vault-relative). "
         "Empty string scans the entire vault.",
+    )
+    dry_run: bool = Field(
+        default=False,
+        description=(
+            "When true, do not write to the graph or inject `engrama_id` "
+            "into any note's frontmatter. Return the same JSON shape as a "
+            "real sync, with counts of what *would* be created/updated/"
+            "skipped and the list of files that would receive an "
+            "`engrama_id` injection. Useful to preview the impact before "
+            "committing to a full scan."
+        ),
     )
 
 
@@ -1116,8 +1137,17 @@ def create_engrama_mcp(
         merges the node into the active backend, and injects
         ``engrama_id`` back into the note's YAML frontmatter.
 
-        Returns JSON with status, label, name, engrama_id, and
-        whether the node was created or updated.
+        Pass ``dry_run=True`` to preview the effect without writing to
+        the graph or to the note's frontmatter. The response keeps the
+        same envelope (``status``, ``label``, ``name``, ``engrama_id``,
+        ``dry_run``) and replaces ``created`` / ``node`` with
+        ``would_create`` and ``would_inject_engrama_id`` booleans, so a
+        caller can pre-check the impact of a sync against a vault it is
+        not yet sure belongs to Engrama.
+
+        Returns JSON with status, label, name, engrama_id, dry_run, and
+        either ``created`` + ``node`` (real run) or ``would_create`` +
+        ``would_inject_engrama_id`` (dry run).
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -1169,6 +1199,26 @@ def create_engrama_mcp(
 
         merge_value = props[merge_key]
         store = _store(ctx)
+
+        # Dry-run path: predict create/inject decisions without writing.
+        # Uses ``get_node`` (read-only) to figure out whether a real run
+        # would create or update the row; reports whether ``engrama_id``
+        # would be injected based on the note's current frontmatter.
+        if params.dry_run:
+            existing = await store.get_node(node_label, merge_key, merge_value)
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "dry_run": True,
+                    "label": node_label,
+                    "name": merge_value,
+                    "engrama_id": engrama_id,
+                    "would_create": existing is None,
+                    "would_inject_engrama_id": not frontmatter.get("engrama_id"),
+                },
+                default=str,
+                indent=2,
+            )
 
         # Merge the node
         props["obsidian_path"] = params.path
@@ -1230,6 +1280,7 @@ def create_engrama_mcp(
         return json.dumps(
             {
                 "status": "ok",
+                "dry_run": False,
                 "label": node_label,
                 "name": merge_value,
                 "engrama_id": engrama_id,
@@ -1269,7 +1320,17 @@ def create_engrama_mcp(
         parses entities, and merges nodes into the active backend.  Injects
         ``engrama_id`` into notes that don't have one yet.
 
-        Returns JSON with created, updated, and skipped counts.
+        Pass ``dry_run=True`` to preview the impact of a full scan
+        without touching the graph or any frontmatter. The response keeps
+        the ``status`` / ``errors`` envelope and replaces the
+        ``created`` / ``updated`` counts with ``would_create`` /
+        ``would_update`` plus ``would_inject_engrama_id`` (count) and
+        ``files_would_receive_engrama_id`` (list of paths that don't
+        yet carry an ``engrama_id`` and would have one injected on a
+        real run). Use this to confirm a sync targets the right vault.
+
+        Returns JSON with status, dry_run, and either the live counts
+        or the ``would_*`` projection.
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -1288,13 +1349,24 @@ def create_engrama_mcp(
         created_count = 0
         updated_count = 0
         skipped_count = 0
+        would_create_count = 0
+        would_update_count = 0
+        files_would_receive_engrama_id: list[str] = []
         errors: list[str] = []
 
         try:
-            # Get list of notes in the vault
+            # Get list of notes in the vault. ``list_notes`` returns
+            # ``[{"path": ..., "name": ...}, ...]``; pull the relative
+            # path string out of each entry. (Pre-existing iteration
+            # over the dict treated it as a path, so the real-sync code
+            # path had been silently producing "Error syncing note
+            # {'path': ...}: unsupported operand type(s) for / ..." for
+            # every note — surfaced by the dry-run tests added with
+            # this change.)
             notes = obsidian.list_notes(params.folder if params.folder else "")
 
-            for note_path in notes:
+            for note_entry in notes:
+                note_path = note_entry["path"] if isinstance(note_entry, dict) else note_entry
                 try:
                     note_data = obsidian.read_note(note_path)
                     if not note_data["success"]:
@@ -1324,6 +1396,20 @@ def create_engrama_mcp(
                         props[merge_key] = filename
 
                     merge_value = props[merge_key]
+
+                    # Dry-run path: peek at the store to predict create vs
+                    # update, record which files would gain an engrama_id,
+                    # and skip every write.
+                    if params.dry_run:
+                        existing = await store.get_node(node_label, merge_key, merge_value)
+                        if existing is None:
+                            would_create_count += 1
+                        else:
+                            would_update_count += 1
+                        if not frontmatter.get("engrama_id"):
+                            files_would_receive_engrama_id.append(note_path)
+                        continue
+
                     props["obsidian_path"] = note_path
                     props["obsidian_id"] = engrama_id
 
@@ -1379,9 +1465,26 @@ def create_engrama_mcp(
                 indent=2,
             )
 
+        if params.dry_run:
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "dry_run": True,
+                    "would_create": would_create_count,
+                    "would_update": would_update_count,
+                    "skipped": skipped_count,
+                    "would_inject_engrama_id": len(files_would_receive_engrama_id),
+                    "files_would_receive_engrama_id": files_would_receive_engrama_id,
+                    "errors": errors,
+                },
+                default=str,
+                indent=2,
+            )
+
         return json.dumps(
             {
                 "status": "ok",
+                "dry_run": False,
                 "created": created_count,
                 "updated": updated_count,
                 "skipped": skipped_count,

@@ -9,7 +9,28 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+- **`engrama_sync_vault` iteration shape.** `ObsidianAdapter.list_notes()`
+  returns `[{"path": ..., "name": ...}, ...]` but the MCP handler was
+  iterating those entries as if they were strings, so every note path
+  reaching `obsidian.read_note()` was a dict — the resulting
+  `WindowsPath / dict` `TypeError` was logged at WARNING level and the
+  note was bumped into the `skipped` bucket. Vault sync had been a
+  no-op end-to-end for some time without a regression test. Surfaced
+  while writing the Phase D dry-run tests; iteration now unpacks the
+  dict at the top of the loop.
+
 ### Added
+- **`dry_run` parameter on `engrama_sync_vault` and `engrama_sync_note`.**
+  When `true`, neither tool writes to the graph or injects `engrama_id`
+  into note frontmatter. They return the same JSON envelope as a real
+  run, with `created`/`updated` counts replaced by `would_create` /
+  `would_update`. The vault response also includes
+  `files_would_receive_engrama_id` — the explicit list of notes that
+  would be modified. Gives operators a cheap way to confirm a sync
+  targets the intended vault before it commits any writes, and is the
+  natural pair to `engrama_status` (Phase C) when reasoning about a
+  multi-MCP setup. Phase D of #52.
 - **`engrama_status` MCP tool** — read-only introspection that returns
   the running server's vault path, backend, embedder, search mode and
   engrama version. Designed to be called at session start when Engrama
