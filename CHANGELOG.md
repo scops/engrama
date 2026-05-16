@@ -32,6 +32,18 @@ Versioning: [Semantic Versioning](https://semver.org/)
   dict at the top of the loop.
 
 ### Added
+- **`engrama migrate keys` CLI command** — one-shot migration that
+  heals rows whose `key_field` doesn't match `TITLE_KEYED_LABELS`,
+  the residue from pre-#53 / pre-#59 writes that picked the wrong
+  merge key from the caller's property bag. Default is a dry-run
+  that prints the plan and exits; `--apply` rewrites the rows. On
+  SQLite the migration is a rename-in-place because `UNIQUE(label,
+  key_value)` already collapsed the two writes onto a single row at
+  write time. On Neo4j the migrator detects sibling-collision cases
+  (where a canonical-keyed node already carries the same identity)
+  and skips them with an actionable error rather than tripping the
+  uniqueness constraint. Optional `--labels Foo,Bar` scopes the run;
+  `--report PATH` writes a full JSON audit trail. Closes #54.
 - **`dry_run` parameter on `engrama_sync_vault` and `engrama_sync_note`.**
   When `true`, neither tool writes to the graph or injects `engrama_id`
   into note frontmatter. They return the same JSON envelope as a real

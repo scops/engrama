@@ -39,6 +39,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -529,6 +530,83 @@ def cmd_import(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_migrate(args: argparse.Namespace) -> int:
+    """Dispatcher for ``engrama migrate <subcommand>``."""
+    if args.migrate_command == "keys":
+        return cmd_migrate_keys(args)
+    print(
+        "Usage: engrama migrate <keys>",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def cmd_migrate_keys(args: argparse.Namespace) -> int:
+    """Heal rows whose ``key_field`` doesn't match ``TITLE_KEYED_LABELS``.
+
+    Default is a dry-run that prints the migration plan and exits.
+    Pass ``--apply`` to actually rewrite the rows.
+    """
+    try:
+        from engrama.backends import create_stores
+        from engrama.migrate import migrate_keys
+
+        graph_store, _ = create_stores()
+        try:
+            labels = args.labels.split(",") if args.labels else None
+            summary = migrate_keys(graph_store, labels=labels, apply=args.apply)
+        finally:
+            close = getattr(graph_store, "close", None)
+            if callable(close):
+                close()
+
+        # Compact summary line first, then per-entry detail (helpful for
+        # operators reviewing a prod migration plan).
+        verb = "Would rename" if summary["dry_run"] else "Renamed"
+        skip_verb = (
+            "would skip due to conflict" if summary["dry_run"] else "skipped due to conflict"
+        )
+        print(
+            f"{verb} {summary['renamed']} row(s); {summary['skipped_conflict']} "
+            f"{skip_verb}.  Scanned labels: {len(summary['scanned_labels'])}."
+        )
+        if summary["errors"]:
+            print(f"Errors ({len(summary['errors'])}):", file=sys.stderr)
+            for err in summary["errors"]:
+                print(f"  - {err}", file=sys.stderr)
+        if args.report:
+            Path(args.report).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.report).write_text(
+                json.dumps(summary, indent=2, default=str),
+                encoding="utf-8",
+            )
+            print(f"Report written to {args.report}")
+        elif summary["plan"]:
+            # Print per-entry detail when no report path was given; keep
+            # the volume bounded so operators don't have to skim 1000s
+            # of lines on a large graph.
+            for entry in summary["plan"][:20]:
+                tag = "conflict" if entry.get("conflict") else "rename"
+                print(
+                    f"  [{tag}] {entry['label']} "
+                    f"({entry['current_key_field']}→{entry['canonical_key_field']}) "
+                    f"key_value={entry['key_value']!r}"
+                )
+            if len(summary["plan"]) > 20:
+                print(
+                    f"  … ({len(summary['plan']) - 20} more — re-run with "
+                    "--report PATH for the full list)"
+                )
+        # Non-zero exit when the plan has unresolved conflicts so CI / scripts
+        # notice they need to act, but only when the user asked for --apply.
+        if args.apply and summary["skipped_conflict"]:
+            return 2
+        return 0
+    except Exception as e:
+        print(f"migrate keys failed: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_search(args: argparse.Namespace) -> int:
     """Fulltext search."""
     try:
@@ -842,6 +920,43 @@ def main() -> None:
         help="Wipe the destination graph + vectors before importing",
     )
 
+    # --- migrate ---
+    p_migrate = sub.add_parser(
+        "migrate",
+        help="One-shot graph migrations (key canonicalisation, etc.)",
+    )
+    migrate_sub = p_migrate.add_subparsers(dest="migrate_command")
+    p_migrate_keys = migrate_sub.add_parser(
+        "keys",
+        help=(
+            "Heal rows whose key_field doesn't match TITLE_KEYED_LABELS "
+            "(follow-up to #51 / #53). Default is a dry-run."
+        ),
+    )
+    p_migrate_keys.add_argument(
+        "--apply",
+        action="store_true",
+        help=(
+            "Actually rewrite the rows. Without this flag the command prints the plan and exits."
+        ),
+    )
+    p_migrate_keys.add_argument(
+        "--labels",
+        default=None,
+        help=(
+            "Comma-separated list of labels to scope the migration to "
+            "(e.g. 'Experiment,Decision'). Default scans every label."
+        ),
+    )
+    p_migrate_keys.add_argument(
+        "--report",
+        default=None,
+        help=(
+            "Write the full plan + per-entry outcomes as JSON to this path. "
+            "Useful for prod runs where you want an auditable record."
+        ),
+    )
+
     # --- bench (Roadmap P15) ---
     p_bench = sub.add_parser(
         "bench",
@@ -948,6 +1063,7 @@ def main() -> None:
         "decay": cmd_decay,
         "export": cmd_export,
         "import": cmd_import,
+        "migrate": cmd_migrate,
         "bench": cmd_bench,
     }
 
