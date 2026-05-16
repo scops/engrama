@@ -118,13 +118,27 @@ class EngramaEngine:
         self.sanitiser.validate_label(label)
         properties = self.sanitiser.sanitise_properties(properties)
 
-        if "name" in properties:
-            merge_key = "name"
-        elif "title" in properties:
-            merge_key = "title"
-        else:
-            raise ValueError("properties must include 'name' or 'title' as a merge key")
+        # Canonicalise the merge key per ``TITLE_KEYED_LABELS`` regardless
+        # of which key the caller supplied. The MCP adapter forwards
+        # ``params.properties`` verbatim, so an agent that puts ``name``
+        # in the bag for a title-keyed label would otherwise create a
+        # second row separate from SDK writes that correctly use
+        # ``title`` (issue #51). Drop the non-canonical alias when both
+        # are present; the canonical value wins.
+        canonical_key = "title" if label in TITLE_KEYED_LABELS else "name"
+        other_key = "name" if canonical_key == "title" else "title"
+        if other_key in properties:
+            if canonical_key in properties:
+                properties.pop(other_key)
+            else:
+                properties[canonical_key] = properties.pop(other_key)
 
+        if canonical_key not in properties:
+            raise ValueError(
+                f"properties must include {canonical_key!r} as a merge key for label {label!r}"
+            )
+
+        merge_key = canonical_key
         merge_value = properties[merge_key]
 
         effective_provenance = provenance or self.default_provenance

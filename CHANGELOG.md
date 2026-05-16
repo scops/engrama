@@ -7,6 +7,25 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **Engine `merge_node` honours `TITLE_KEYED_LABELS` regardless of the
+  caller's property bag.** Previously the engine picked the merge key
+  from whichever of `name` or `title` was present in `properties`, so a
+  caller that put `name` in the bag for a title-keyed label (notably
+  the MCP `engrama_remember` tool, which forwards `params.properties`
+  verbatim) bypassed the schema convention. The result was duplicate
+  rows on Neo4j and silent property-key divergence on SQLite between
+  SDK and MCP writes of the same logical node. The engine now
+  canonicalises the merge key after sanitisation; the non-canonical
+  alias is silently dropped (matching the sanitiser's behaviour with
+  reserved keys). Existing duplicate rows from earlier writes are not
+  healed — a one-shot `engrama migrate keys` command is tracked as a
+  follow-up. (#51)
+
+---
+
 ## [0.10.0] — 2026-05-14
 
 CI maturity + supply-chain hardening for the first public PyPI publish.
