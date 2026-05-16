@@ -23,6 +23,15 @@ Versioning: [Semantic Versioning](https://semver.org/)
   reserved keys). Existing duplicate rows from earlier writes are not
   healed — a one-shot `engrama migrate keys` command is tracked as a
   follow-up. (#51)
+- **`Insight` added to `TITLE_KEYED_LABELS`.** The auto-injected
+  `Insight` dataclass uses `title` as its merge key (Neo4j constraint
+  enforces `n.title IS UNIQUE`, every `reflect`/`proactive` query
+  filters by `title`), but the codegen only added user-defined nodes
+  to `TITLE_KEYED_LABELS`, so `Insight` was missing. The engine fix
+  above exposed the mismatch by canonicalising `title → name` for any
+  label not in the set, breaking every Cypher `MATCH (i:Insight
+  {title: ...})`. Patched both `engrama/core/schema.py` and the
+  generator scripts so future regenerations include `Insight`.
 
 ---
 

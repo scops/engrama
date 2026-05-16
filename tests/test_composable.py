@@ -220,6 +220,25 @@ class TestMergeCodegen:
         assert "target_name" in cypher
         assert "insight_title" in cypher
 
+    def test_generated_title_keyed_labels_includes_insight(
+        self, base_profile: dict, module_a: dict
+    ) -> None:
+        """The auto-injected Insight dataclass uses ``title`` as its merge
+        key (matches the ``insight_title`` Neo4j constraint). The
+        codegen must always include it in ``TITLE_KEYED_LABELS`` — even
+        when the source profile doesn't define an Insight node — so the
+        engine's canonicalisation keeps Insight title-keyed across
+        SDK/MCP write paths. Regression test for #51 follow-up."""
+        merged = merge_profiles(base_profile, [module_a])
+        schema = generate_schema(merged)
+        # Extract the rendered TITLE_KEYED_LABELS frozenset literal.
+        marker = "TITLE_KEYED_LABELS: frozenset[str] = frozenset("
+        idx = schema.index(marker)
+        line = schema[idx : schema.index(")", idx) + 1]
+        assert "'Insight'" in line or '"Insight"' in line, (
+            f"Insight missing from generated TITLE_KEYED_LABELS line: {line!r}"
+        )
+
     def test_merged_summary_lists_all(
         self, base_profile: dict, module_a: dict, module_b: dict
     ) -> None:
