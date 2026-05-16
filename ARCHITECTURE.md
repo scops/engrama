@@ -538,8 +538,12 @@ Native MCP server built with FastMCP and the matching async store. All
 storage logic lives in `*AsyncStore`; the MCP tool handlers handle
 orchestration, validation, vault I/O, and response formatting only.
 
-Eleven tools:
+Twelve tools:
 
+- `engrama_status` — read-only introspection: vault path, backend,
+  embedder, search mode, version. Agents should call this at session
+  start when Engrama coexists with other Obsidian-capable MCPs so they
+  can disambiguate which server "the vault" refers to before any sync.
 - `engrama_search` — hybrid search across the memory graph
 - `engrama_remember` — create or update a node (always MERGE)
 - `engrama_relate` — create a relationship (handles title-keyed nodes)
@@ -551,6 +555,46 @@ Eleven tools:
 - `engrama_surface_insights` — read pending Insights for agent presentation
 - `engrama_approve_insight` — human approves or dismisses an Insight
 - `engrama_write_insight_to_vault` — append approved Insight to Obsidian note
+
+### `engrama_status` response shape
+
+Stable JSON contract. Fields are absent (rather than `null`) when the
+corresponding subsystem is disabled, so an agent can `if "path" in
+payload["vault"]:` reliably.
+
+```json
+{
+  "version": "0.10.0",
+  "backend": {
+    "name": "sqlite",
+    "ok": true,
+    "node_count": 1234
+  },
+  "vault": {
+    "configured": true,
+    "path": "/abs/path/to/engrama/vault",
+    "note_count": 87
+  },
+  "embedder": {
+    "configured": true,
+    "provider": "ollama",
+    "model": "nomic-embed-text",
+    "dimensions": 768
+  },
+  "search": {
+    "mode": "hybrid",
+    "degraded": false,
+    "reason": ""
+  }
+}
+```
+
+`backend.name` is normalised — the underlying async stores report
+`sqlite-async` / `neo4j-async`, but the tool strips the `-async`
+suffix since agents reason about which database is running, not the
+SDK shape. `search.degraded` is always `false` for status calls
+(degradation is detected mid-`engrama_search`); use this field to
+predict what the next search *would* attempt.
 
 The MCP server CLI accepts a `--backend` flag (`sqlite` or `neo4j`)
 plus per-backend overrides (`--db-path`, `--neo4j-uri`,

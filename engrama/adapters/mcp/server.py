@@ -401,6 +401,145 @@ def create_engrama_mcp(
             raise RuntimeError("Async store not initialised")
         return store
 
+    # -- Tool: engrama_status -----
+
+    @mcp.tool(
+        name="engrama_status",
+        annotations=ToolAnnotations(
+            title="Engrama Status",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def engrama_status(ctx: Context) -> str:
+        """Return a snapshot of the running Engrama MCP server's configuration.
+
+        **Call this at session start** when Engrama is one of multiple
+        Obsidian-capable MCP servers connected to the agent — the
+        response identifies Engrama's own vault path (`VAULT_PATH`),
+        so the agent can disambiguate which server "the vault" refers
+        to before any sync or ingest call. It is also useful for
+        confirming the active backend, embedding model, and whether
+        hybrid search is wired up.
+
+        Pure introspection — no graph writes, no embedding calls.
+
+        Returns JSON with this shape (fields may be absent when the
+        corresponding subsystem is disabled):
+
+        ```
+        {
+          "version": "0.10.0",
+          "backend": {
+            "name": "sqlite" | "neo4j",
+            "ok": bool,
+            "node_count": int   // present when the backend reports it
+          },
+          "vault": {
+            "configured": bool,
+            "path": "/absolute/path/to/engrama/vault",   // when configured
+            "note_count": int                            // when configured
+          },
+          "embedder": {
+            "configured": bool,
+            "provider": "ollama" | "openai-compatible" | "none" | ...,
+            "model": "nomic-embed-text",
+            "dimensions": 768
+          },
+          "search": {
+            "mode": "hybrid" | "fulltext_only",
+            "degraded": bool,
+            "reason": ""   // non-empty when degraded or fulltext-only
+          },
+          "startup_error": "..."   // present only when something failed at boot
+        }
+        ```
+        """
+        state = ctx.request_context.lifespan_context
+        store = state.get("async_store")
+        obsidian: ObsidianAdapter | None = state.get("obsidian")
+        embedder = state.get("embedder")
+        startup_error = state.get("startup_error", "")
+
+        # --- Version ---
+        from engrama import __version__ as engrama_version
+
+        # --- Backend ---
+        # health_check() returns ``sqlite-async`` / ``neo4j-async`` because
+        # the MCP server only ever talks to the async flavours. Strip the
+        # ``-async`` suffix in the response — agents care about which
+        # database is on the other end, not the SDK shape.
+        backend_info: dict[str, Any] = {"ok": False}
+        if store is not None:
+            try:
+                h = await store.health_check()
+                raw_name = h.get("backend") or ""
+                backend_info["name"] = raw_name.removesuffix("-async") if raw_name else None
+                backend_info["ok"] = bool(h.get("status") == "ok" or h.get("ok"))
+                if "node_count" in h:
+                    backend_info["node_count"] = h["node_count"]
+            except Exception as e:
+                backend_info["error"] = str(e)
+        else:
+            backend_info["error"] = "store not initialised"
+
+        # --- Vault ---
+        vault_info: dict[str, Any] = {"configured": obsidian is not None}
+        if obsidian is not None:
+            vault_info["path"] = str(obsidian.vault_path.resolve())
+            try:
+                notes = obsidian.list_notes("")
+                vault_info["note_count"] = len(notes)
+            except Exception as e:
+                vault_info["error"] = str(e)
+
+        # --- Embedder ---
+        embedder_info: dict[str, Any] = {"configured": embedder is not None}
+        if embedder is not None:
+            cls_name = type(embedder).__name__
+            provider_label = {
+                "OllamaProvider": "ollama",
+                "OpenAICompatibleProvider": "openai-compatible",
+                "NullProvider": "none",
+            }.get(cls_name, cls_name)
+            embedder_info["provider"] = provider_label
+            model = getattr(embedder, "model", None)
+            if model is not None:
+                embedder_info["model"] = model
+            embedder_info["dimensions"] = int(getattr(embedder, "dimensions", 0))
+
+        # --- Search mode (what the next engrama_search would attempt) ---
+        # Mirrors the gate in engrama_search above: hybrid only when a
+        # functional async embedder is wired up. ``degraded`` here is
+        # always False because no search has been *attempted* yet at the
+        # time of the status call — runtime degradation (provider
+        # unreachable mid-search) only surfaces on engrama_search's
+        # response.
+        would_hybrid = (
+            embedder is not None
+            and int(getattr(embedder, "dimensions", 0)) > 0
+            and hasattr(embedder, "aembed")
+        )
+        search_info: dict[str, Any] = {
+            "mode": "hybrid" if would_hybrid else "fulltext_only",
+            "degraded": False,
+            "reason": "" if would_hybrid else "embedder unavailable or dimensions=0",
+        }
+
+        response: dict[str, Any] = {
+            "version": engrama_version,
+            "backend": backend_info,
+            "vault": vault_info,
+            "embedder": embedder_info,
+            "search": search_info,
+        }
+        if startup_error:
+            response["startup_error"] = startup_error
+
+        return json.dumps(response, default=str, indent=2)
+
     # -- Tool: engrama_search -----
 
     @mcp.tool(

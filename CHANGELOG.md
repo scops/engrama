@@ -9,6 +9,17 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+- **`engrama_status` MCP tool** — read-only introspection that returns
+  the running server's vault path, backend, embedder, search mode and
+  engrama version. Designed to be called at session start when Engrama
+  coexists with other Obsidian-capable MCPs (e.g. `obsidian-mcp`) so
+  the agent can disambiguate which server "the vault" refers to before
+  any sync or ingest call — a server-side signal that doesn't rely on
+  docstrings being read or on `engrama-system-prompt-v0.5.md` being
+  installed. JSON contract documented in `ARCHITECTURE.md`. Phase C of
+  #52.
+
 ### Changed
 - **MCP tool descriptions for sync/ingest declare their vault scope.**
   `engrama_sync_vault`, `engrama_sync_note` and `engrama_ingest` now
