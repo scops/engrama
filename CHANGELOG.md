@@ -7,7 +7,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [Unreleased]
+## [0.11.0] — 2026-05-16
+
+Dual-vault contract hardening (#52 Phases A–D), engine + MCP
+canonicalisation of the merge key against `TITLE_KEYED_LABELS` (#51,
+#53, #59), and the one-shot `engrama migrate keys` command (#54) for
+healing rows that pre-date the canonicalisation fix.
 
 ### Fixed
 - **MCP `engrama_remember` now canonicalises the merge key the same
