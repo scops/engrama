@@ -16,7 +16,6 @@ import pytest
 
 from engrama.adapters.mcp.server import create_engrama_mcp
 
-
 pytestmark = pytest.mark.asyncio
 
 
@@ -56,9 +55,7 @@ async def _call_status(server) -> dict:
         return json.loads(text)
 
 
-async def test_status_reports_vault_path_and_note_count(
-    tmp_path: Path, vault: Path
-) -> None:
+async def test_status_reports_vault_path_and_note_count(tmp_path: Path, vault: Path) -> None:
     """The vault path is the contract — it lets agents distinguish
     Engrama's vault from an external obsidian-mcp vault before any
     sync call."""

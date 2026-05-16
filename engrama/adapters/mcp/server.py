@@ -476,9 +476,7 @@ def create_engrama_mcp(
             try:
                 h = await store.health_check()
                 raw_name = h.get("backend") or ""
-                backend_info["name"] = (
-                    raw_name.removesuffix("-async") if raw_name else None
-                )
+                backend_info["name"] = raw_name.removesuffix("-async") if raw_name else None
                 backend_info["ok"] = bool(h.get("status") == "ok" or h.get("ok"))
                 if "node_count" in h:
                     backend_info["node_count"] = h["node_count"]
