@@ -219,7 +219,7 @@ jobs:
           path: dist/
 
       - name: Attest wheel + sdist
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/*.whl
