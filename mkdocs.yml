@@ -51,6 +51,32 @@ markdown_extensions:
 
 plugins:
   - search
+  - i18n:
+      languages:
+        - locale: en
+          name: English
+          default: true
+        - locale: es
+          name: Español
+          nav_translations:
+            Home: Inicio
+            Architecture: Arquitectura
+            Vision: Visión
+            Backends: Backends
+            Graph Schema: Esquema de Grafo
+            Roadmap: Hoja de Ruta
+            Guides: Guías
+            Contributing: Contribución
+            Releasing: Publicación
+            Security: Seguridad
+            Glossary: Glosario
+            Design Decisions (DDRs): Decisiones de Diseño (DDRs)
+            Reference: Referencia
+            Changelog: Registro de Cambios
+            Portable Storage Spec: Espec. de Almacenamiento Portable
+            System Prompts: Prompts del Sistema
+            Version 0.4: Versión 0.4
+            Version 0.5: Versión 0.5
   - mkdocstrings:
       handlers:
         python:
@@ -67,8 +93,7 @@ nav:
       - Contributing: contributing.md
       - Releasing: releasing.md
       - Security: security.md
-      - Glossary (ES): glosario_es.md
-      - Spanish Readme: readme_es.md
+      - Glossary: glosario.md
   - Design Decisions (DDRs):
       - DDR-001: ddr-001.md
       - DDR-002: ddr-002.md

@@ -702,7 +702,7 @@ freelance.
 - [DDR-002](ddr-002.md) — sincronización bidireccional vault ↔ grafo
 - [DDR-003](ddr-003.md) — capa de protocolos, embeddings, búsqueda híbrida, razonamiento temporal
 - [DDR-004](ddr-004.md) — almacenamiento portátil (SQLite por defecto)
-- [Glosario](glosario_es.md) — términos clave
+- [Glosario](glosario.md) — términos clave
 
 ---
 
