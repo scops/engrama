@@ -1,0 +1,2316 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Graph-based long-term memory framework for AI agents.">
+      
+      
+      
+        <link rel="canonical" href="https://scops.github.io/engrama/roadmap/">
+      
+      
+        <link rel="prev" href="../graph-schema/">
+      
+      
+        <link rel="next" href="../contributing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Roadmap - Engrama</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#roadmap" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Engrama" class="md-header__button md-logo" aria-label="Engrama" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Engrama
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Roadmap
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/scops/engrama" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    scops/engrama
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../vision/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Vision
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../backends/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Backends
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../graph-schema/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Graph Schema
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../ddr-001/" class="md-tabs__link">
+          
+  
+  
+  Design Decisions (DDRs)
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../changelog/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Engrama" class="md-nav__button md-logo" aria-label="Engrama" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Engrama
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/scops/engrama" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    scops/engrama
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../graph-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graph Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-setup-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 · Setup &amp; design ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-core-mvp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 · Core (MVP) ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-mcp-adapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 · MCP adapter ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-obsidian-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 · Obsidian sync ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-skills-base" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 · Skills base ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-reflect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 · reflect ✅
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5 · reflect ✅">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bugs-fixed-during-phase-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bugs fixed during Phase 5
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-proactive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 · proactive ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-7-python-sdk-pypi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 · Python SDK + PyPI ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-8-composable-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 · Composable profiles ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-9-core-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9 · Core features ✅
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 9 · Core features ✅">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#9a-ingestion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9a — Ingestion ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9b-adaptive-reflect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9b — Adaptive Reflect ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9c-proactivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9c — Proactivity ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9d-bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9d — Bug fixes ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#system-prompt-v05-reference-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System prompt v0.5 + reference docs ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-10-additional-adapters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 10 · Additional adapters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-11-vectors-v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 11 · Vectors (v2) ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-12-portable-storage-ddr-004" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 12 · Portable storage (DDR-004) ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-13-security-hardening" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 13 · Security hardening ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-14-multi-scope-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 14 · Multi-scope memory ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-15-standard-benchmarks-in-progress" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 15 · Standard benchmarks (in progress)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-post-52-dual-vault-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase post-#52 · Dual-vault contract ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-16-backend-ecosystem-post-ddr-004" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 16 · Backend ecosystem (post-DDR-004)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#definition-of-done" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Definition of done
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test suite
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glosario_es/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary (ES)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../readme_es/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spanish Readme
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Decisions (DDRs)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Decisions (DDRs)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-001/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-001
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-002/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-002
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-003/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-003
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-004/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-004
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../portable-storage-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Portable Storage Spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_3" id="__nav_9_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Prompts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    System Prompts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/system-prompts/v0.4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version 0.4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/system-prompts/v0.5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version 0.5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-setup-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 · Setup &amp; design ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-core-mvp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 · Core (MVP) ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-mcp-adapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 · MCP adapter ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-obsidian-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 · Obsidian sync ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-skills-base" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 · Skills base ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-reflect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 · reflect ✅
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5 · reflect ✅">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bugs-fixed-during-phase-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bugs fixed during Phase 5
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-proactive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 · proactive ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-7-python-sdk-pypi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 · Python SDK + PyPI ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-8-composable-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 · Composable profiles ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-9-core-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9 · Core features ✅
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 9 · Core features ✅">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#9a-ingestion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9a — Ingestion ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9b-adaptive-reflect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9b — Adaptive Reflect ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9c-proactivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9c — Proactivity ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9d-bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9d — Bug fixes ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#system-prompt-v05-reference-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System prompt v0.5 + reference docs ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-10-additional-adapters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 10 · Additional adapters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-11-vectors-v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 11 · Vectors (v2) ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-12-portable-storage-ddr-004" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 12 · Portable storage (DDR-004) ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-13-security-hardening" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 13 · Security hardening ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-14-multi-scope-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 14 · Multi-scope memory ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-15-standard-benchmarks-in-progress" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 15 · Standard benchmarks (in progress)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-post-52-dual-vault-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase post-#52 · Dual-vault contract ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-16-backend-ecosystem-post-ddr-004" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 16 · Backend ecosystem (post-DDR-004)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#definition-of-done" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Definition of done
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test suite
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/scops/engrama/edit/main/docs/roadmap.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+    
+      
+    
+    <a href="https://github.com/scops/engrama/raw/main/docs/roadmap.md" title="View source of this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 18c.56 0 1 .44 1 1s-.44 1-1 1-1-.44-1-1 .44-1 1-1m0-3c-2.73 0-5.06 1.66-6 4 .94 2.34 3.27 4 6 4s5.06-1.66 6-4c-.94-2.34-3.27-4-6-4m0 6.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5M9.27 20H6V4h7v5h5v4.07c.7.08 1.36.25 2 .49V8l-6-6H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4.5a8.2 8.2 0 0 1-1.23-2"/></svg>
+    </a>
+  
+
+
+<h1 id="roadmap">Roadmap<a class="headerlink" href="#roadmap" title="Permanent link">&para;</a></h1>
+<h2 id="phase-0-setup-design">Phase 0 · Setup &amp; design ✅<a class="headerlink" href="#phase-0-setup-design" title="Permanent link">&para;</a></h2>
+<ul>
+<li>[x] Full architecture design</li>
+<li>[x] Name chosen — <code>engrama</code> (available on PyPI)</li>
+<li>[x] Initial documentation written</li>
+<li>[x] Project structure created at <code>C:\Proyectos\engrama</code></li>
+<li>[x] Neo4j running via Docker Desktop</li>
+<li>[x] Obsidian MCP integration designed</li>
+<li>[x] First memories loaded from Obsidian notes</li>
+<li>[x] Bug found: <code>engrama_relate</code> fails for Decision/Problem nodes</li>
+<li>[ ] Create repo <code>github.com/scops/engrama</code> → see Phase 7 for push checklist</li>
+</ul>
+<h2 id="phase-1-core-mvp">Phase 1 · Core (MVP) ✅<a class="headerlink" href="#phase-1-core-mvp" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: Claude Desktop reads and writes the graph from within the conversation.</p>
+</blockquote>
+<ul>
+<li>[x] <code>engrama/core/client.py</code> — Neo4j driver, connection pool, health check</li>
+<li>[x] <code>scripts/init-schema.cypher</code> — constraints + fulltext index</li>
+<li>[x] <code>engrama/core/engine.py</code> — write pipeline (MERGE + timestamps), basic query</li>
+<li>[x] <code>engrama/core/schema.py</code> — Python dataclasses for nodes and relations</li>
+<li>[x] <code>profiles/developer.yaml</code> — complete profile with node descriptions</li>
+<li>[x] Basic integration tests against real Neo4j</li>
+</ul>
+<h2 id="phase-2-mcp-adapter">Phase 2 · MCP adapter ✅<a class="headerlink" href="#phase-2-mcp-adapter" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: use the graph from Claude Desktop via MCP without writing Cypher manually.</p>
+</blockquote>
+<ul>
+<li>[x] <code>engrama/adapters/mcp/server.py</code> — native MCP server via FastMCP + async Neo4j driver</li>
+<li>[x] Ten MCP tools: search, remember, relate, context, sync_note, sync_vault, reflect, surface_insights, approve_insight, write_insight_to_vault (the set has since grown to twelve — <code>engrama_ingest</code> landed in Phase 9 and <code>engrama_status</code> in #52; see architecture.md for the current list)</li>
+<li>[x] <code>examples/claude_desktop/config.json</code> — ready-to-paste config</li>
+<li>[x] <code>examples/claude_desktop/system-prompt.md</code> — memory system prompt</li>
+<li>[ ] End-to-end test: Claude Desktop → MCP → Neo4j → response (manual verification done, automated test pending)</li>
+</ul>
+<blockquote>
+<p><strong>Architectural decision (2026-04-11):</strong> dropped <code>scops/mcp-neo4j</code> fork.
+The server talks to Neo4j directly via the official <code>neo4j</code> async driver —
+no intermediate MCP-to-Cypher layer needed.  This eliminates a dependency,
+removes a layer of indirection, and gives full control over MERGE logic,
+parameter handling, and the title-vs-name key distinction.</p>
+</blockquote>
+<h2 id="phase-3-obsidian-sync">Phase 3 · Obsidian sync ✅<a class="headerlink" href="#phase-3-obsidian-sync" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: Obsidian vault ↔ Neo4j graph stay in sync automatically.</p>
+</blockquote>
+<ul>
+<li>[x] <code>engrama/adapters/obsidian/adapter.py</code> — vault file I/O wrapper</li>
+<li>[x] <code>engrama/adapters/obsidian/parser.py</code> — entity extraction from notes</li>
+<li>[x] <code>engrama/adapters/obsidian/sync.py</code> — bidirectional sync via engrama_id</li>
+<li>[x] <code>tests/test_obsidian_sync.py</code> — adapter + parser tests (11 tests)</li>
+<li>[x] <code>engrama_sync_note</code> + <code>engrama_sync_vault</code> MCP tools</li>
+<li>[x] ~~<code>has_document</code> flags~~ — superseded: sync parses note content directly, no per-type flag needed</li>
+<li>[x] ~~<code>full_scan()</code>~~ — superseded by <code>engrama_sync_vault</code> MCP tool (iterates all notes)</li>
+<li>[x] ~~<code>archive_missing()</code>~~ — superseded by <code>ForgetSkill</code> (Phase 4) which handles archiving by name or TTL</li>
+</ul>
+<h2 id="phase-4-skills-base">Phase 4 · Skills base ✅<a class="headerlink" href="#phase-4-skills-base" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: four composable skill classes that agents can call directly.</p>
+</blockquote>
+<ul>
+<li>[x] <code>skills/remember.py</code> — <code>RememberSkill.run(engine, label, name, observation, extra)</code></li>
+<li>Auto-detects merge key (name vs title) via <code>TITLE_KEYED_LABELS</code></li>
+<li>Returns created/updated status</li>
+<li>[x] <code>skills/recall.py</code> — <code>RecallSkill.run(engine, query, limit, hops)</code></li>
+<li>Fulltext search → seed nodes → graph expansion up to N hops</li>
+<li>Deduplicates neighbours, returns <code>RecallResult</code> dataclasses with properties + neighbour chain</li>
+<li>[x] <code>skills/associate.py</code> — <code>AssociateSkill.run(engine, from_name, from_label, rel_type, to_name, to_label)</code></li>
+<li>Validates labels and relationship types against schema enums</li>
+<li>Delegates to <code>engine.merge_relation()</code></li>
+<li>[x] <code>skills/forget.py</code> — <code>ForgetSkill.forget_by_name()</code> + <code>forget_by_ttl()</code></li>
+<li>Soft-delete (archive) by default — sets <code>status: "archived"</code> + <code>archived_at</code></li>
+<li><code>purge=True</code> for permanent <code>DETACH DELETE</code></li>
+<li>TTL mode: archive/purge nodes older than N days by <code>updated_at</code></li>
+<li>[x] Integration tests: 19 tests in <code>tests/test_phase4_skills.py</code></li>
+</ul>
+<h2 id="phase-5-reflect">Phase 5 · reflect ✅<a class="headerlink" href="#phase-5-reflect" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: cross-entity pattern detection without being asked.</p>
+</blockquote>
+<ul>
+<li>[x] <code>skills/reflect.py</code> — <code>ReflectSkill</code> with three multi-hop Cypher queries:</li>
+<li>Cross-project solution transfer (Problem ↔ Concept ↔ Decision)</li>
+<li>Shared technology between active Projects</li>
+<li>Training opportunity (Problem ↔ Concept ↔ Course)</li>
+<li>[x] <code>Insight</code> node type added to schema + fulltext index + constraint</li>
+<li>[x] reflect writes Insight nodes with confidence score + status: "pending"</li>
+<li>[x] <code>engrama_reflect</code> MCP tool — agents can trigger reflect on demand</li>
+<li>[x] Tests with seeded graph data (4 tests in <code>test_skills.py</code>)</li>
+</ul>
+<h3 id="bugs-fixed-during-phase-5">Bugs fixed during Phase 5<a class="headerlink" href="#bugs-fixed-during-phase-5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] <code>engrama_relate</code> — now matches by <code>title</code> for Decision/Problem nodes
+      (fixed in both <code>server.py</code> and <code>engine.py</code>)</li>
+<li>[x] <code>test_obsidian_sync.py</code> — fixed walrus operator syntax error on line 62</li>
+<li>[x] Tests: 3 tests in <code>test_adapters.py</code> for relate title-key fix</li>
+</ul>
+<h2 id="phase-6-proactive">Phase 6 · proactive ✅<a class="headerlink" href="#phase-6-proactive" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: surface Insights to the agent + write them back to Obsidian.</p>
+</blockquote>
+<ul>
+<li>[x] <code>skills/proactive.py</code> — <code>ProactiveSkill</code> with four methods:</li>
+<li><code>surface(engine, limit)</code> — reads pending Insights, newest first</li>
+<li><code>approve(engine, title)</code> — sets status to "approved" + <code>approved_at</code></li>
+<li><code>dismiss(engine, title)</code> — sets status to "dismissed" + <code>dismissed_at</code></li>
+<li><code>write_to_vault(engine, obsidian, title, target_note)</code> — appends approved Insight as markdown section</li>
+<li>[x] Three new MCP tools:</li>
+<li><code>engrama_surface_insights</code> — read pending Insights for agent presentation</li>
+<li><code>engrama_approve_insight</code> — human approves or dismisses (action: "approve" | "dismiss")</li>
+<li><code>engrama_write_insight_to_vault</code> — append approved Insight to Obsidian note</li>
+<li>[x] Insight lifecycle enforced: only approved Insights can be written to vault</li>
+<li>[x] Synced Insights get <code>obsidian_path</code> + <code>synced_at</code> in Neo4j</li>
+<li>[x] Integration tests: 12 tests in <code>tests/test_proactive.py</code></li>
+</ul>
+<h2 id="phase-7-python-sdk-pypi">Phase 7 · Python SDK + PyPI ✅<a class="headerlink" href="#phase-7-python-sdk-pypi" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: clean public API + CLI for non-MCP usage.</p>
+</blockquote>
+<ul>
+<li>[x] <code>engrama/adapters/sdk/__init__.py</code> — <code>Engrama</code> class wrapping all skills:</li>
+<li><code>remember()</code>, <code>recall()</code>, <code>search()</code>, <code>associate()</code></li>
+<li><code>forget()</code>, <code>forget_by_ttl()</code></li>
+<li><code>reflect()</code>, <code>surface_insights()</code>, <code>approve_insight()</code>, <code>dismiss_insight()</code></li>
+<li><code>write_insight_to_vault()</code> (requires Obsidian)</li>
+<li>Context manager, <code>verify()</code>, <code>has_vault</code>, <code>repr()</code></li>
+<li>[x] <code>engrama/__init__.py</code> — top-level re-export: <code>from engrama import Engrama</code></li>
+<li>[x] <code>engrama/cli.py</code> — four CLI commands:</li>
+<li><code>engrama init --profile developer [--dry-run] [--no-apply]</code> — codegen + schema apply</li>
+<li><code>engrama verify</code> — Neo4j connectivity check</li>
+<li><code>engrama reflect</code> — run pattern detection, print results</li>
+<li><code>engrama search &lt;query&gt;</code> — fulltext search</li>
+<li>[x] Integration tests: <code>test_sdk.py</code> (14 tests) + <code>test_cli.py</code> (6 tests)</li>
+<li>[ ] Manual end-to-end test: <code>engrama init --profile developer</code>, verify MCP tools in Claude Desktop</li>
+<li>[ ] Push to <code>github.com/scops/engrama</code> (phases 1–7 accumulated, not yet pushed)</li>
+<li>[ ] Publish <code>engrama</code> to PyPI (v0.1.0) — after repo push</li>
+</ul>
+<h2 id="phase-8-composable-profiles">Phase 8 · Composable profiles ✅<a class="headerlink" href="#phase-8-composable-profiles" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: support multi-role users with modular, composable graph schemas.</p>
+</blockquote>
+<ul>
+<li>[x] <code>profiles/base.yaml</code> — universal base with Project, Concept, Decision, Problem, Technology, Person</li>
+<li>[x] <code>profiles/modules/hacking.yaml</code> — Target, Vulnerability, Technique, Tool, CTF</li>
+<li>[x] <code>profiles/modules/teaching.yaml</code> — Course, Client, Exercise, Material</li>
+<li>[x] <code>profiles/modules/photography.yaml</code> — Photo, Location, Species, Gear</li>
+<li>[x] <code>profiles/modules/ai.yaml</code> — Model, Dataset, Experiment, Pipeline</li>
+<li>[x] <code>scripts/generate_from_profile.py</code> — <code>merge_profiles()</code> function + <code>--modules</code> flag</li>
+<li>Merges nodes by label (property union, longer description wins)</li>
+<li>Deduplicates relations by (type, from, to)</li>
+<li>Validates all relation endpoints exist in merged node set</li>
+<li>[x] CLI: <code>uv run engrama init --profile base --modules hacking teaching photography ai</code></li>
+<li>[x] Backward compatible: standalone <code>--profile developer</code> still works</li>
+<li>[x] Onboard skill updated: documents composable approach + module YAML template</li>
+<li>[x] <code>example-profiles.md</code> updated with composable section</li>
+<li>[x] Integration tests: <code>tests/test_composable.py</code> — merge logic (9), codegen (3), real files (5), CLI (4)</li>
+</ul>
+<h2 id="phase-9-core-features">Phase 9 · Core features ✅<a class="headerlink" href="#phase-9-core-features" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: make Engrama discover what the user didn't know they knew.</p>
+</blockquote>
+<h3 id="9a-ingestion">9a — Ingestion ✅<a class="headerlink" href="#9a-ingestion" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] <code>engrama_ingest</code> MCP tool — reads vault note, raw text, or conversation transcript</li>
+<li>[x] Returns content + extraction guidance with existing-node deduplication hints</li>
+<li>[x] Agent-driven (Option B): tool reads, agent extracts and calls <code>engrama_remember</code></li>
+</ul>
+<h3 id="9b-adaptive-reflect">9b — Adaptive Reflect ✅<a class="headerlink" href="#9b-adaptive-reflect" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] Reflect inspects graph profile before generating queries</li>
+<li>[x] Four new detection patterns: technique transfer, concept clustering, stale knowledge, under-connected nodes</li>
+<li>[x] Dismissed Insights never re-surfaced</li>
+<li>[x] Confidence scoring: path-based, scaled by connection strength and entity count</li>
+<li>[x] Reflect skill and MCP tool both updated</li>
+</ul>
+<h3 id="9c-proactivity">9c — Proactivity ✅<a class="headerlink" href="#9c-proactivity" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] Session state tracks <code>engrama_remember</code> calls</li>
+<li>[x] Proactive hint after 10+ entities stored since last reflect</li>
+<li>[x] <code>engrama_search</code> surfaces pending Insights related to search query</li>
+<li>[x] Reflect resets proactivity counter</li>
+</ul>
+<h3 id="9d-bug-fixes">9d — Bug fixes ✅<a class="headerlink" href="#9d-bug-fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] Proactivity counter moved from lifespan context to module-level <code>_proactive_state</code> (cross-call persistence)</li>
+<li>[x] <code>_run_pattern</code> supports <code>any_labels</code> for OR-logic activation (Problem OR Vulnerability + Course, Project OR Course)</li>
+<li>[x] <code>training_opportunity</code> broadened: matches Vulnerability OR Problem</li>
+<li>[x] <code>shared_technology</code> broadened: any entity via USES/TEACHES/COMPOSED_OF, activation needs only Technology</li>
+<li>[x] <code>stale_knowledge</code> broadened: activates on Project OR Course</li>
+</ul>
+<h3 id="system-prompt-v05-reference-docs">System prompt v0.5 + reference docs ✅<a class="headerlink" href="#system-prompt-v05-reference-docs" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] System prompt slimmed to ~100 lines (token-efficient)</li>
+<li>[x] Detailed content extracted to <code>docs/reference/</code> (faceted-classification, query-patterns, node-schema, sync-contract)</li>
+<li>[x] Dual-vault routing (obsidian-mcp vs engrama) added to prompt</li>
+</ul>
+<h2 id="phase-10-additional-adapters">Phase 10 · Additional adapters<a class="headerlink" href="#phase-10-additional-adapters" title="Permanent link">&para;</a></h2>
+<ul>
+<li>[ ] <code>adapters/langchain/</code> — LangChain Memory + Tool</li>
+<li>[ ] <code>adapters/rest/</code> — FastAPI HTTP endpoints</li>
+</ul>
+<h2 id="phase-11-vectors-v2">Phase 11 · Vectors (v2) ✅<a class="headerlink" href="#phase-11-vectors-v2" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>DDR-003 Phases A–D complete.</p>
+</blockquote>
+<ul>
+<li>[x] Protocol-based architecture — <code>GraphStore</code>, <code>VectorStore</code>, <code>EmbeddingProvider</code> (DDR-003 Phase A)</li>
+<li>[x] Local embeddings — <code>OllamaProvider</code> with <code>nomic-embed-text</code> (DDR-003 Phase B)</li>
+<li>[x] <code>node_to_text()</code> — canonical text representation for embedding</li>
+<li>[x] Embedding factory — <code>create_provider()</code> reads <code>.env</code>, supports <code>ollama</code> and <code>none</code></li>
+<li>[x] 27 embedding tests (mocked + live integration)</li>
+<li>[x] <code>Neo4jVectorStore</code> with <code>:Embedded</code> secondary label strategy (DDR-003 Phase C)</li>
+<li>[x] <code>HybridSearchEngine</code> — alpha=0.6 vector / 0.4 fulltext + graph boost (DDR-003 Phase C)</li>
+<li>[x] Embed-on-write in <code>EngramaEngine.merge_node()</code> (DDR-003 Phase C)</li>
+<li>[x] <code>engrama reindex</code> CLI command (DDR-003 Phase C)</li>
+<li>[x] 18 new tests: vector store, hybrid search, engine embed, factory (DDR-003 Phase C)</li>
+<li>[x] Temporal reasoning — confidence decay, valid_to, query_at_date, enhanced stale_knowledge (DDR-003 Phase D) ✅</li>
+</ul>
+<h2 id="phase-12-portable-storage-ddr-004">Phase 12 · Portable storage (DDR-004) ✅<a class="headerlink" href="#phase-12-portable-storage-ddr-004" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Goal: zero-dependency install. Engrama runs on SQLite + sqlite-vec by default; Neo4j becomes an opt-in extra. The data model and the public API stay identical on both backends. Merged 2026-05-10 via PR #5.</p>
+</blockquote>
+<ul>
+<li>[x] <strong>Phase 1</strong> — <code>Neo4jGraphStore</code> (sync) converts driver Records / Nodes / Relationships to plain Python dicts at the boundary. <code>EngramaEngine</code> and <code>recall.py</code> consume dicts.</li>
+<li>[x] <strong>Phase 2</strong> — Full SQLite backend: <code>engrama/backends/sqlite/{store,async_store,vector,schema.sql}.py</code>. 36+ protocol methods, FTS5 fulltext, sqlite-vec vector search.</li>
+<li>[x] <strong>Phase 3</strong> — <code>create_stores()</code> / <code>create_async_stores()</code> factory dispatches CLI, SDK and MCP server. Default <code>GRAPH_BACKEND=sqlite</code>. Neo4j moved to <code>[project.optional-dependencies]</code>.</li>
+<li>[x] <strong>Phase 4</strong> — <code>OpenAICompatibleProvider</code> covers OpenAI, Ollama, LM Studio, vLLM, llama.cpp, Jina with one client. <code>httpx</code> promoted to base dep.</li>
+<li>[x] <strong>Async contract suite</strong> — <code>tests/contracts/test_async_graphstore_contract.py</code> parameterised over both async backends. 421 tests passing total (was 393 before this phase).</li>
+<li>[x] <strong>Bugs surfaced &amp; fixed pre-merge:</strong> async-store contract drift on SQLite (commit <code>23d5537</code>), reflect re-pinning approved Insights to pending (<code>e1a0d4e</code>), hybrid search dropping enrichment on pure-vector hits (<code>156fbf5</code>).</li>
+<li>[x] <strong>Public-facing decision guide</strong> — <code>backends.md</code> with FAQ and decision tree; <code>ddr-004.md</code> with the formal record.</li>
+<li>[x] <strong>FTS5 query sanitization</strong> — user queries containing hyphens, colons, parentheses, quotes, etc. are now routed through a sanitizer in <code>SqliteGraphStore.fulltext_search</code> (each unsafe token wrapped as a quoted phrase, embedded <code>"</code> doubled per FTS5 grammar). Closes the <code>engrama-mcp-server</code> miss; operator keywords (<code>AND</code>/<code>OR</code>/<code>NOT</code>/<code>NEAR</code>) keep their semantics.</li>
+<li>[x] <strong>Follow-ups</strong> (non-blocking): first-class <code>engrama export</code> / <code>engrama import</code> cross-backend migration tool (#30) and README embedder matrix with worked examples per provider (#29).</li>
+</ul>
+<h2 id="phase-13-security-hardening">Phase 13 · Security hardening ✅<a class="headerlink" href="#phase-13-security-hardening" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>DDR-003 Phase E — input sanitization, provenance tracking, trust-aware retrieval.</p>
+</blockquote>
+<ul>
+<li>[x] Input sanitisation layer (<code>engrama/core/security.py::Sanitiser</code>, applied at every engine + MCP write boundary)</li>
+<li>[x] Provenance fields: <code>source</code>, <code>source_agent</code>, <code>source_session</code>, <code>trust_level</code> flow through <code>merge_node</code> and are sanitiser-protected against spoofing</li>
+<li>[x] Trust-aware retrieval weighting in <code>HybridSearchEngine</code></li>
+<li>[x] Scope isolation: <code>MemoryScope</code> (<code>org_id</code> / <code>user_id</code> / <code>agent_id</code> / <code>session_id</code>) enforced on reads and writes (shipped in Phase 14)</li>
+</ul>
+<h2 id="phase-14-multi-scope-memory">Phase 14 · Multi-scope memory ✅<a class="headerlink" href="#phase-14-multi-scope-memory" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>DDR-003 Phase F — scope hierarchy: org_id → user_id → agent_id → session_id.</p>
+</blockquote>
+<ul>
+<li>[x] Scope model: <code>engrama/core/scope.py::MemoryScope</code>, env-driven (<code>ENGRAMA_ORG_ID</code> / <code>ENGRAMA_USER_ID</code> / <code>ENGRAMA_AGENT_ID</code> / <code>ENGRAMA_SESSION_ID</code>) or per-instance via <code>Engrama(..., user_id=...)</code> kwargs</li>
+<li>[x] Scope-filtered queries on every store read path (<code>fulltext_search</code>, <code>get_neighbours</code>, vector lookups)</li>
+<li>[x] Scope-smuggling guard: sanitiser strips caller-supplied scope keys, engine re-applies the active scope</li>
+</ul>
+<h2 id="phase-15-standard-benchmarks-in-progress">Phase 15 · Standard benchmarks (in progress)<a class="headerlink" href="#phase-15-standard-benchmarks-in-progress" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>DDR-003 Phase G — LOCOMO (target 70–80%) and LongMemEval (target 75–85%).</p>
+</blockquote>
+<ul>
+<li>[x] Bench scaffold + LOCOMO loader (#46)</li>
+<li>[x] LongMemEval loader (#47)</li>
+<li>[x] Runner + recall@k scorer + <code>engrama bench run</code> CLI (#48)</li>
+<li>[x] Markdown reporter + <code>engrama bench report</code> CLI (#49)</li>
+<li>[x] Hardening pass on the bench CLI (#50)</li>
+<li>[ ] Baseline measurements on full datasets</li>
+<li>[ ] Iterative improvement</li>
+</ul>
+<h2 id="phase-post-52-dual-vault-contract">Phase post-#52 · Dual-vault contract ✅<a class="headerlink" href="#phase-post-52-dual-vault-contract" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Hardening of the multi-MCP coexistence story so agents have a server-side signal to disambiguate Engrama's vault from a user's <code>obsidian-mcp</code> vault. Closes #52.</p>
+</blockquote>
+<ul>
+<li>[x] Tool docstrings for <code>engrama_sync_vault</code> / <code>engrama_sync_note</code> / <code>engrama_ingest</code> declare their vault scope (#55, Phase A)</li>
+<li>[x] <code>Concept:dual-vault-routing-rule</code> populated in the graph and linked to <code>Decision:dual-vault-architecture</code> (Phase B, 2026-05-16)</li>
+<li>[x] <code>engrama_status</code> MCP tool returning vault path, backend, embedder, search mode, version (#56, Phase C)</li>
+<li>[x] <code>dry_run</code> parameter on <code>engrama_sync_vault</code> and <code>engrama_sync_note</code> for preview-before-write (#57, Phase D)</li>
+<li>[x] System prompt v0.5.2 references <code>engrama_status</code> + <code>dry_run</code> in §3</li>
+</ul>
+<h2 id="phase-16-backend-ecosystem-post-ddr-004">Phase 16 · Backend ecosystem (post-DDR-004)<a class="headerlink" href="#phase-16-backend-ecosystem-post-ddr-004" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Now that the protocol layer is proven across two backends, additional backends can be added without touching the engine, skills, or MCP server. Each lands behind its own <code>[project.optional-dependencies]</code> extra.</p>
+</blockquote>
+<ul>
+<li>[ ] <code>engrama[arcadedb]</code> — multi-model database (graph + document + vector)</li>
+<li>[ ] <code>engrama[chroma]</code> — Chroma as a dedicated vector store while keeping SQLite or Neo4j for graph</li>
+<li>[ ] <code>engrama[leann]</code> — LEANN for very large embedding indexes</li>
+<li>[ ] <code>engrama[pgvector]</code> — Postgres + pgvector for teams already on Postgres</li>
+<li>[x] First-class <code>engrama export</code> / <code>engrama import</code> cross-backend migration tool (#30)</li>
+</ul>
+<h2 id="definition-of-done">Definition of done<a class="headerlink" href="#definition-of-done" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Code committed to repo</li>
+<li>Tests pass on both backends (the contract suite in <code>tests/contracts/</code> is parameterised over SQLite and Neo4j; Neo4j-only tests skip when <code>NEO4J_PASSWORD</code> is unset, but every behaviour they assert must also hold on SQLite via the contract suite)</li>
+<li>Documented in the relevant reference file (README, ARCHITECTURE, BACKENDS, or DDR depending on scope)</li>
+<li>Conventional commit message</li>
+</ol>
+<h2 id="test-suite">Test suite<a class="headerlink" href="#test-suite" title="Permanent link">&para;</a></h2>
+<p>Live counts go stale fast; the CI dashboards on <code>main</code> are the source
+of truth. Two jobs run on every PR:</p>
+<ul>
+<li><strong>Tests (SQLite, no Docker)</strong> — the contract Engrama promises to
+  anyone running <code>pip install engrama</code> with no Neo4j and no <code>.env</code>.
+  Matrix on Python 3.11 / 3.12 / 3.13.</li>
+<li><strong>Tests (Neo4j integration)</strong> — everything excluded from the SQLite
+  job, against a <code>neo4j:5.26.4-community</code> service container.</li>
+</ul>
+<p>Tests are organised by concern:</p>
+<ul>
+<li><code>tests/contracts/</code> — protocol contracts parameterised over both
+  backends (the <em>behavioural</em> baseline; everything else builds on this).</li>
+<li><code>tests/backends/</code> — backend-specific behaviour (FTS5, sqlite-vec,
+  Neo4j async store).</li>
+<li><code>tests/test_*.py</code> — feature integration: skills, adapters, SDK, CLI,
+  MCP tools, sanitiser, scope, provenance, temporal, hybrid search,
+  benchmarks, dry-run, etc.</li>
+</ul>
+<p><code>pytest --collect-only -q | tail -1</code> gives the current count.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit", "content.action.view"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

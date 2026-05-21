@@ -1,0 +1,2731 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Graph-based long-term memory framework for AI agents.">
+      
+      
+      
+        <link rel="canonical" href="https://scops.github.io/engrama/architecture/">
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../vision/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Architecture - Engrama</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#architecture" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Engrama" class="md-header__button md-logo" aria-label="Engrama" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Engrama
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/scops/engrama" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    scops/engrama
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../vision/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Vision
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../backends/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Backends
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../graph-schema/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Graph Schema
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../ddr-001/" class="md-tabs__link">
+          
+  
+  
+  Design Decisions (DDRs)
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../changelog/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Engrama" class="md-nav__button md-logo" aria-label="Engrama" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Engrama
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/scops/engrama" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    scops/engrama
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stack
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-makes-engrama-different" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What makes Engrama different
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow-reflect-insight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data flow: reflect → Insight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#graph-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graph schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#directory-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Directory structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#protocol-layer-and-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Protocol layer and backends
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Protocol layer and backends">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sync-stores-used-by-the-sdk-and-cli-through-engramaengine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync stores (used by the SDK and CLI through EngramaEngine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async-stores-used-by-the-mcp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async stores (used by the MCP server)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-contract-suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The contract suites
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#embeddings-ddr-003-phase-b-ddr-004" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Embeddings (DDR-003 Phase B + DDR-004)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hybrid-search-ddr-003-phase-c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hybrid search (DDR-003 Phase C)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#temporal-reasoning-ddr-003-phase-d" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Temporal reasoning (DDR-003 Phase D)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#obsidian-integration-ddr-002" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Obsidian integration (DDR-002)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Obsidian integration (DDR-002)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#referential-integrity-via-engrama_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Referential integrity via engrama_id
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bidirectional-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bidirectional sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-distinctive-skills-reflect-proactive-ingest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The distinctive skills: reflect + proactive + ingest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-adapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP adapter
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MCP adapter">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#engrama_status-response-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        engrama_status response shape
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#profile-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Profile system
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-reference-env" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration reference (.env)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-repositories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related repositories
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../graph-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graph Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glosario_es/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary (ES)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../readme_es/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spanish Readme
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Decisions (DDRs)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Decisions (DDRs)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-001/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-001
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-002/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-002
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-003/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-003
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-004/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-004
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../portable-storage-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Portable Storage Spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_3" id="__nav_9_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Prompts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    System Prompts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/system-prompts/v0.4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version 0.4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/system-prompts/v0.5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version 0.5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stack
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-makes-engrama-different" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What makes Engrama different
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow-reflect-insight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data flow: reflect → Insight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#graph-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graph schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#directory-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Directory structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#protocol-layer-and-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Protocol layer and backends
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Protocol layer and backends">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sync-stores-used-by-the-sdk-and-cli-through-engramaengine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync stores (used by the SDK and CLI through EngramaEngine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async-stores-used-by-the-mcp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async stores (used by the MCP server)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-contract-suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The contract suites
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#embeddings-ddr-003-phase-b-ddr-004" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Embeddings (DDR-003 Phase B + DDR-004)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hybrid-search-ddr-003-phase-c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hybrid search (DDR-003 Phase C)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#temporal-reasoning-ddr-003-phase-d" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Temporal reasoning (DDR-003 Phase D)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#obsidian-integration-ddr-002" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Obsidian integration (DDR-002)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Obsidian integration (DDR-002)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#referential-integrity-via-engrama_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Referential integrity via engrama_id
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bidirectional-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bidirectional sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-distinctive-skills-reflect-proactive-ingest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The distinctive skills: reflect + proactive + ingest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-adapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP adapter
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MCP adapter">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#engrama_status-response-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        engrama_status response shape
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#profile-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Profile system
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-reference-env" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration reference (.env)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-repositories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related repositories
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/scops/engrama/edit/main/docs/architecture.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+    
+      
+    
+    <a href="https://github.com/scops/engrama/raw/main/docs/architecture.md" title="View source of this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 18c.56 0 1 .44 1 1s-.44 1-1 1-1-.44-1-1 .44-1 1-1m0-3c-2.73 0-5.06 1.66-6 4 .94 2.34 3.27 4 6 4s5.06-1.66 6-4c-.94-2.34-3.27-4-6-4m0 6.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5M9.27 20H6V4h7v5h5v4.07c.7.08 1.36.25 2 .49V8l-6-6H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4.5a8.2 8.2 0 0 1-1.23-2"/></svg>
+    </a>
+  
+
+
+<h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>Primary technical briefing document. Claude Code (and any other coding
+agent) must read this before writing any code.</p>
+</blockquote>
+<h2 id="stack">Stack<a class="headerlink" href="#stack" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Technology</th>
+<th>Version</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Default backend</td>
+<td>SQLite + <code>sqlite-vec</code></td>
+<td>3.40+ / 0.1+</td>
+<td>Zero-dep portable storage (DDR-004)</td>
+</tr>
+<tr>
+<td>Optional backend</td>
+<td>Neo4j Community</td>
+<td>5.26.24 LTS</td>
+<td>Multi-process production, large vector indexes</td>
+</tr>
+<tr>
+<td>Language</td>
+<td>Python</td>
+<td>≥ 3.11</td>
+<td>Agent ecosystem, FastMCP compatibility</td>
+</tr>
+<tr>
+<td>Dependency mgmt</td>
+<td>uv</td>
+<td>latest</td>
+<td>Modern standard, fast</td>
+</tr>
+<tr>
+<td>MCP adapter</td>
+<td>FastMCP + async stores</td>
+<td>native</td>
+<td>Protocol-based stores, zero Cypher in tools</td>
+</tr>
+<tr>
+<td>Obsidian adapter</td>
+<td>local stdio</td>
+<td>—</td>
+<td>Document ↔ graph sync</td>
+</tr>
+<tr>
+<td>Embeddings</td>
+<td>OpenAI-compat HTTP</td>
+<td>—</td>
+<td>Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina (DDR-004)</td>
+</tr>
+<tr>
+<td>Async HTTP</td>
+<td>httpx</td>
+<td>≥ 0.27</td>
+<td>Non-blocking embedding calls in MCP server</td>
+</tr>
+<tr>
+<td>Container (Neo4j only)</td>
+<td>Docker Desktop</td>
+<td>latest</td>
+<td>Reproducible Neo4j infrastructure</td>
+</tr>
+<tr>
+<td>CI/CD</td>
+<td>GitHub Actions</td>
+<td>—</td>
+<td>Tests and PyPI publishing</td>
+</tr>
+<tr>
+<td>Packaging</td>
+<td>pyproject.toml</td>
+<td>—</td>
+<td><code>uv sync</code> (base) / <code>uv sync --extra neo4j</code> (opt-in); PyPI publication planned</td>
+</tr>
+</tbody>
+</table>
+<h2 id="what-makes-engrama-different">What makes Engrama different<a class="headerlink" href="#what-makes-engrama-different" title="Permanent link">&para;</a></h2>
+<p>Engrama is not another MCP wrapper for a single database. It is a
+<strong>cognitive framework</strong> combining two complementary memory layers:</p>
+<ul>
+<li><strong>Obsidian vault</strong> — narrative memory (documents, reasoning, full
+  context).</li>
+<li><strong>Knowledge graph</strong> — relational memory (entities, relationships,
+  patterns). Backed by SQLite by default, or Neo4j when scale demands
+  it. Identical data model on both.</li>
+</ul>
+<p>The <code>reflect</code> and <code>proactive</code> skills traverse the graph to surface
+connections that neither layer could find alone. Example: a Problem in
+Project B shares a Concept with a resolved Problem in Project A —
+Engrama detects this and proposes the existing Decision as a solution
+candidate, without being asked.</p>
+<h2 id="layer-diagram">Layer diagram<a class="headerlink" href="#layer-diagram" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>block-beta
+  columns 1
+
+  block:adapters["Layer 1 · Adapters"]
+    columns 5
+    MCP["🔌 MCP Server\n(FastMCP)"]
+    Obsidian["📓 Obsidian\nSync"]
+    LangChain["🦜 LangChain"]
+    REST["🌐 REST API"]
+    SDK["📦 SDK"]
+  end
+
+  block:skills["Layer 2 · Skills"]
+    columns 6
+    remember["remember"]
+    recall["recall"]
+    associate["associate"]
+    forget["forget"]
+    reflect["⭐ reflect"]
+    proactive["⭐ proactive"]
+  end
+
+  block:engine["Layer 3 · Engine"]
+    columns 5
+    hybrid["HybridSearch\nEngine"]
+    temporal["Temporal\n(decay, valid_to)"]
+    security["Security\n(planned)"]
+    write["Write Pipeline\n(MERGE)"]
+    query["Query"]
+  end
+
+  block:protocols["Layer 4 · Protocols"]
+    columns 3
+    gs["GraphStore"]
+    vs["VectorStore"]
+    ep["EmbeddingProvider"]
+  end
+
+  block:backends["Layer 5 · Backends + Embeddings"]
+    columns 5
+    sqlite_be["sqlite/\n(default)"]
+    neo4j_be["neo4j/\n(opt-in)"]
+    null_be["null/\n(testing)"]
+    openai_compat["OpenAI-compat\n(Ollama, OpenAI, ...)"]
+    null_embed["NullProvider"]
+  end
+
+  block:storage["Storage"]
+    columns 3
+    sqlite[("SQLite + sqlite-vec\n~/.engrama/engrama.db")]
+    neo4j[("Neo4j 5.26 LTS\nbolt://7687")]
+    vault[("Obsidian Vault\nVAULT_PATH")]
+  end
+
+  adapters --&gt; skills
+  skills --&gt; engine
+  engine --&gt; protocols
+  protocols --&gt; backends
+  backends --&gt; storage</code></pre>
+<p>The factory in <code>engrama/backends/__init__.py</code> reads <code>GRAPH_BACKEND</code> and
+returns the matching implementation. Skills, adapters, and the engine
+talk only to the protocols — they don't know which backend is
+underneath. See <a href="../ddr-004/">DDR-004</a> for the rationale and <a href="../backends/">backends.md</a>
+for the user-facing decision guide.</p>
+<h2 id="data-flow-reflect-insight">Data flow: reflect → Insight<a class="headerlink" href="#data-flow-reflect-insight" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart LR
+  subgraph Graph["Knowledge graph (SQLite or Neo4j)"]
+    P1[Project A] --&gt;|HAS| RP[Problem\nresolved]
+    P2[Project B] --&gt;|HAS| OP[Problem\nopen]
+    RP --&gt;|APPLIES| C((Concept))
+    OP --&gt;|APPLIES| C
+    RP --&gt;|SOLVED_BY| D[Decision]
+    P1 --&gt;|INFORMED_BY| D
+  end
+
+  subgraph Reflect["⭐ reflect skill"]
+    Q1["Query 1\nCross-project\nsolution"]
+    Q2["Query 2\nShared\ntechnology"]
+    Q3["Query 3\nTraining\nopportunity"]
+  end
+
+  subgraph Output["Output"]
+    I[/"💡 Insight node\nstatus: pending\nconfidence: 0.8"/]
+  end
+
+  Graph -.-&gt;|pattern\ndetected| Reflect
+  Reflect --&gt;|MERGE| Output
+
+  style C fill:#f9d71c,stroke:#333,color:#333
+  style I fill:#a8e6cf,stroke:#333,color:#333
+  style D fill:#ffd3b6,stroke:#333,color:#333</code></pre>
+<p>The reflect skill emits identical Insight nodes regardless of backend.
+Pattern detection on Neo4j uses Cypher; on SQLite each pattern is a
+hand-translated SQL query that yields the same rows. The contract suite
+in <code>tests/contracts/</code> enforces equivalence.</p>
+<h2 id="graph-schema">Graph schema<a class="headerlink" href="#graph-schema" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>erDiagram
+  Project ||--o{ Technology : USES
+  Project ||--o{ Decision : INFORMED_BY
+  Project ||--o{ Problem : HAS
+  Project ||--o{ Client : FOR
+  Problem ||--o{ Concept : APPLIES
+  Problem ||--o{ Decision : SOLVED_BY
+  Course ||--o{ Concept : COVERS
+  Course ||--o{ Technology : TEACHES
+  Course ||--o{ Client : FOR
+
+  Project {
+    string name PK
+    string status
+    string repo
+    string stack
+    string description
+  }
+  Decision {
+    string title PK
+    string rationale
+    string alternatives
+  }
+  Problem {
+    string title PK
+    string status
+    string solution
+    string context
+  }
+  Technology {
+    string name PK
+    string version
+    string type
+  }
+  Concept {
+    string name PK
+    string domain
+  }
+  Course {
+    string name PK
+    string cohort
+    string level
+  }
+  Client {
+    string name PK
+    string sector
+  }
+  Insight {
+    string title PK
+    string body
+    float confidence
+    string status
+    string source_query
+  }</code></pre>
+<p>The schema is defined in <code>profiles/*.yaml</code> and applied to whichever
+backend is active. SQLite encodes labels in a <code>label</code> column on the
+<code>nodes</code> table; Neo4j uses native node labels. From the application's
+point of view this is invisible.</p>
+<h2 id="directory-structure">Directory structure<a class="headerlink" href="#directory-structure" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>engrama/
+├── README.md
+├── README_ES.md
+├── vision.md
+├── architecture.md
+├── backends.md              # ★ NEW (DDR-004) — backend decision guide
+├── graph-schema.md
+├── roadmap.md
+├── contributing.md
+├── changelog.md
+├── ddr-001.md … ddr-004.md
+├── pyproject.toml
+├── docker-compose.yml       # Neo4j only — not needed for SQLite default
+├── .env.example
+│
+├── engrama/
+│   ├── __init__.py
+│   │
+│   ├── core/
+│   │   ├── client.py        # Neo4j driver wrapper (sync)
+│   │   ├── engine.py        # Sync write pipeline (MERGE+timestamps)
+│   │   ├── protocols.py     # GraphStore / VectorStore / EmbeddingProvider
+│   │   ├── schema.py        # Python dataclasses for nodes and relations
+│   │   ├── search.py        # HybridSearchEngine — multi-signal scoring
+│   │   ├── temporal.py      # Confidence decay, days_since, temporal_score
+│   │   └── text.py          # Re-export of node_to_text
+│   │
+│   ├── backends/            # ★ DDR-004: pluggable backends
+│   │   ├── __init__.py      # create_stores() / create_async_stores() factory
+│   │   ├── null.py          # NullGraphStore / NullVectorStore (testing)
+│   │   ├── sqlite/          # ★ NEW — default backend
+│   │   │   ├── store.py     # SqliteGraphStore (sync)
+│   │   │   ├── async_store.py # SqliteAsyncStore — mirrors Neo4jAsyncStore contract
+│   │   │   ├── vector.py    # SqliteVecStore — sqlite-vec virtual table
+│   │   │   └── schema.sql   # Applied automatically on first connect
+│   │   └── neo4j/           # Opt-in via `uv sync --extra neo4j`
+│   │       ├── backend.py   # Neo4jGraphStore (sync) — SDK / CLI
+│   │       ├── async_store.py # Neo4jAsyncStore (async) — MCP server
+│   │       └── vector.py    # Neo4jVectorStore — vector index ops
+│   │
+│   ├── embeddings/
+│   │   ├── __init__.py        # create_provider() factory
+│   │   ├── null.py            # NullProvider (no embeddings)
+│   │   ├── ollama.py          # Legacy convenience wrapper
+│   │   ├── openai_compat.py   # ★ NEW — OpenAI / Ollama / LM Studio / vLLM / Jina (DDR-004)
+│   │   └── text.py            # node_to_text() — canonical text for embedding
+│   │
+│   ├── skills/
+│   │   ├── remember.py      # MERGE entity + observation
+│   │   ├── recall.py        # fulltext search + graph traversal
+│   │   ├── associate.py     # create relationships between entities
+│   │   ├── reflect.py       # ★ cross-entity pattern detection
+│   │   ├── proactive.py     # ★ surfaces Insights without being asked
+│   │   └── forget.py        # decay, archiving, TTL
+│   │
+│   ├── adapters/
+│   │   ├── mcp/             # FastMCP server (zero Cypher in tool handlers)
+│   │   ├── obsidian/        # ★ vault ↔ graph bidirectional sync (DDR-002)
+│   │   └── sdk/             # Engrama Python SDK (context manager)
+│   │
+│   └── ingest/
+│       ├── conversation.py
+│       └── web.py
+│
+├── profiles/
+│   ├── base.yaml            # Universal base
+│   ├── developer.yaml       # Standalone example
+│   └── modules/             # Composable domain modules
+│
+├── scripts/
+│   └── init-schema.cypher   # Neo4j-only; SQLite uses backends/sqlite/schema.sql
+│
+├── examples/
+│   ├── claude_desktop/
+│   └── langchain_agent/
+│
+└── tests/
+    ├── conftest.py
+    ├── contracts/           # ★ Parametrised over both backends
+    │   ├── test_graphstore_contract.py        # sync stores
+    │   └── test_async_graphstore_contract.py  # async stores (DDR-004)
+    ├── backends/
+    │   ├── test_sqlite.py
+    │   ├── test_sqlite_async.py
+    │   └── test_sqlite_vector.py
+    ├── test_core.py
+    ├── test_skills.py
+    ├── test_adapters.py
+    ├── test_obsidian_sync.py
+    ├── test_phase4_skills.py
+    ├── test_proactive.py
+    ├── test_protocols.py
+    ├── test_sdk.py
+    ├── test_cli.py
+    ├── test_composable.py
+    ├── test_embeddings.py
+    ├── test_openai_compat_embedder.py  # ★ NEW
+    ├── test_hybrid_search.py
+    ├── test_neo4j_store.py             # async Neo4j integration
+    ├── test_temporal.py
+    └── test_vector_store.py
+</code></pre></div>
+<h2 id="protocol-layer-and-backends">Protocol layer and backends<a class="headerlink" href="#protocol-layer-and-backends" title="Permanent link">&para;</a></h2>
+<p>All storage operations go through abstract protocols defined in
+<code>core/protocols.py</code>: <code>GraphStore</code>, <code>VectorStore</code>, and
+<code>EmbeddingProvider</code>. No adapter, skill, or tool writes Cypher or SQL
+directly — everything goes through a backend implementation.</p>
+<p>There are <strong>two pairs</strong> of backend implementations:</p>
+<h3 id="sync-stores-used-by-the-sdk-and-cli-through-engramaengine">Sync stores (used by the SDK and CLI through <code>EngramaEngine</code>)<a class="headerlink" href="#sync-stores-used-by-the-sdk-and-cli-through-engramaengine" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>SqliteGraphStore</code> (<code>backends/sqlite/store.py</code>) — default. Pure
+  Python around <code>sqlite3</code>. The <code>SqliteVecStore</code> shares the same
+  connection so vectors live in the same <code>.db</code> file.</li>
+<li><code>Neo4jGraphStore</code> (<code>backends/neo4j/backend.py</code>) — wraps
+  <code>EngramaClient</code> (sync <code>neo4j</code> driver).</li>
+</ul>
+<h3 id="async-stores-used-by-the-mcp-server">Async stores (used by the MCP server)<a class="headerlink" href="#async-stores-used-by-the-mcp-server" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>SqliteAsyncStore</code> (<code>backends/sqlite/async_store.py</code>) — wraps the
+  sync SQLite store and translates each method's return shape so the
+  MCP handlers receive the same dict shape regardless of backend.</li>
+<li><code>Neo4jAsyncStore</code> (<code>backends/neo4j/async_store.py</code>) — wraps
+  <code>neo4j.AsyncDriver</code>. Contains <strong>all</strong> Cypher for the MCP tools.
+  <code>server.py</code> itself contains zero Cypher strings.</li>
+</ul>
+<p><code>NullGraphStore</code> and <code>NullVectorStore</code> exist for testing and dry-run
+mode. New backends (NebulaGraph, ArcadeDB, pgvector, Chroma, LEANN, ...)
+can be added by implementing the same protocols.</p>
+<p>The <code>create_stores()</code> and <code>create_async_stores()</code> factories in
+<code>backends/__init__.py</code> read <code>GRAPH_BACKEND</code> / <code>VECTOR_BACKEND</code> from
+environment (or an explicit config dict) and return the appropriate
+implementations.</p>
+<h3 id="the-contract-suites">The contract suites<a class="headerlink" href="#the-contract-suites" title="Permanent link">&para;</a></h3>
+<p>Two parameterised pytest suites live in <code>tests/contracts/</code>:</p>
+<ul>
+<li><code>test_graphstore_contract.py</code> — runs every behavioural test against
+  both sync stores.</li>
+<li><code>test_async_graphstore_contract.py</code> — runs every behavioural test
+  against both async stores.</li>
+</ul>
+<p>Neo4j tests are skipped when <code>NEO4J_PASSWORD</code> is not configured, so the
+SQLite-only suite (76 tests) passes on a fresh checkout with no <code>.env</code>.
+Together they pinned three drift bugs that were caught and fixed during
+DDR-004 implementation; the suites exist to make sure they stay fixed.</p>
+<h2 id="embeddings-ddr-003-phase-b-ddr-004">Embeddings (DDR-003 Phase B + DDR-004)<a class="headerlink" href="#embeddings-ddr-003-phase-b-ddr-004" title="Permanent link">&para;</a></h2>
+<p><code>EmbeddingProvider</code> is implemented by:</p>
+<ul>
+<li><code>OpenAICompatibleProvider</code> (<code>embeddings/openai_compat.py</code>) —
+  speaks the OpenAI <code>/v1/embeddings</code> HTTP shape. Drives OpenAI proper,
+  Ollama (<code>OPENAI_BASE_URL=http://localhost:11434/v1</code>), LM Studio, vLLM,
+  llama.cpp, Jina, or any other compatible service. Sync (<code>embed</code>,
+  <code>embed_batch</code>) and async (<code>aembed</code>, <code>aembed_batch</code>) methods both use
+  <code>httpx</code>.</li>
+<li><code>OllamaProvider</code> (<code>embeddings/ollama.py</code>) — legacy convenience
+  wrapper. Uses Ollama's native <code>/api/embeddings</code> endpoint. Kept for
+  backwards compatibility with existing <code>.env</code> files.</li>
+<li><code>NullProvider</code> (<code>embeddings/null.py</code>) — no-op, <code>dimensions=0</code>. Used
+  when <code>EMBEDDING_PROVIDER=none</code> (default). Has both sync and async
+  methods.</li>
+</ul>
+<p><code>node_to_text()</code> in <code>embeddings/text.py</code> builds the text string that
+gets embedded.</p>
+<p><strong>Embed-on-write</strong>: when an embedding provider is active,
+<code>engrama_remember</code> and <code>engrama_sync_note</code> automatically embed each
+node after merging. The vector is stored:</p>
+<ul>
+<li><strong>SQLite:</strong> in the <code>node_embeddings</code> <code>vec0</code> virtual table (same
+  <code>.db</code> file).</li>
+<li><strong>Neo4j:</strong> as a <code>n.embedding</code> property; nodes get an <code>:Embedded</code>
+  secondary label so the vector index covers all node types.</li>
+</ul>
+<h2 id="hybrid-search-ddr-003-phase-c">Hybrid search (DDR-003 Phase C)<a class="headerlink" href="#hybrid-search-ddr-003-phase-c" title="Permanent link">&para;</a></h2>
+<p><code>HybridSearchEngine</code> (<code>core/search.py</code>) fuses fulltext + vector +
+graph-boost + temporal signals. Both sync (<code>search()</code>) and async
+(<code>asearch()</code>) methods are available. Scoring formula:</p>
+<pre><code>final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal
+</code></pre>
+<p>When <code>EMBEDDING_PROVIDER=none</code>, α is forced to 0 — pure fulltext with
+optional graph-boost. Graceful degradation: if the embedding service is
+unreachable, the vector branch is skipped silently.</p>
+<p>Both sync and async stores expose <code>search_similar</code> returning a uniform
+shape <code>{node_id, label, name, score, summary, tags, confidence,
+updated_at}</code> so the scorer can populate enrichment fields without a
+second round trip — a regression discovered during DDR-004 testing
+(see <a href="../ddr-004/">DDR-004</a> "Risks").</p>
+<h2 id="temporal-reasoning-ddr-003-phase-d">Temporal reasoning (DDR-003 Phase D)<a class="headerlink" href="#temporal-reasoning-ddr-003-phase-d" title="Permanent link">&para;</a></h2>
+<p>Every node carries temporal metadata enabling confidence decay, fact
+supersession, and time-travel queries:</p>
+<ul>
+<li><code>valid_from</code> (datetime) — when the fact became true. Auto-set on
+  creation.</li>
+<li><code>valid_to</code> (datetime) — when the fact was superseded. <code>null</code> = still
+  true.</li>
+<li><code>confidence</code> (float, 0.0–1.0) — decays over time. Defaults to 1.0.</li>
+<li><code>decayed_at</code> (datetime) — last decay pass.</li>
+<li><code>created_at</code>, <code>updated_at</code> — system timestamps (auto-managed).</li>
+</ul>
+<p><strong>Confidence decay</strong> (<code>engrama decay</code>): exponential decay
+<code>new_conf = conf × exp(-rate × days_since_update)</code>.</p>
+<p><strong>Supersession (<code>valid_to</code>)</strong>: setting it auto-halves confidence.
+Updating a superseded node clears <code>valid_to</code> (revival) and logs a
+conflict warning.</p>
+<p><strong>Temporal queries</strong> (<code>query_at_date</code>): returns nodes where
+<code>valid_from &lt;= date AND (valid_to IS NULL OR valid_to &gt;= date)</code>.</p>
+<p><strong>Temporal scoring in hybrid search</strong>: the <code>γ × temporal</code> term combines
+confidence with recency.
+<code>temporal_score = confidence × 2^(-days / half_life)</code>.
+Default γ=0.1 and half_life=30 days.</p>
+<h2 id="obsidian-integration-ddr-002">Obsidian integration (DDR-002)<a class="headerlink" href="#obsidian-integration-ddr-002" title="Permanent link">&para;</a></h2>
+<p>The vault is the <strong>narrative layer</strong>. The graph is the <strong>relational
+layer</strong>. Neither replaces the other.</p>
+<h3 id="referential-integrity-via-engrama_id">Referential integrity via <code>engrama_id</code><a class="headerlink" href="#referential-integrity-via-engrama_id" title="Permanent link">&para;</a></h3>
+<p>Every documented node carries <code>engrama_id</code> in its note's YAML
+frontmatter. <code>adapters/obsidian/sync.py</code> maintains the contract:</p>
+<pre class="mermaid"><code>sequenceDiagram
+  participant V as Obsidian Vault
+  participant A as ObsidianAdapter
+  participant P as NoteParser
+  participant E as Engine (MERGE)
+  participant N as Backend (SQLite or Neo4j)
+
+  rect rgb(230, 245, 255)
+    Note over V,N: Note created or modified
+    V-&gt;&gt;A: read_note(path)
+    A-&gt;&gt;P: parse(content, frontmatter)
+    P--&gt;&gt;E: ParsedNote (label, name, props)
+    E-&gt;&gt;N: MERGE node
+    N--&gt;&gt;E: engrama_id
+    E-&gt;&gt;A: inject_engrama_id(path, id)
+    A-&gt;&gt;V: write frontmatter
+  end
+
+  rect rgb(255, 235, 235)
+    Note over V,N: Note deleted
+    V--xA: note missing
+    A-&gt;&gt;E: archive_missing()
+    E-&gt;&gt;N: SET status = "archived"
+    Note right of N: Never hard-deleted
+  end</code></pre>
+<h3 id="bidirectional-sync">Bidirectional sync<a class="headerlink" href="#bidirectional-sync" title="Permanent link">&para;</a></h3>
+<p>DDR-002 mandates that every relation is mirrored into the source note's
+frontmatter <code>relations</code> map. Combined with DDR-004 (portable storage),
+this means an Obsidian vault is a <strong>portable backup of the entire
+graph</strong>: a fresh SQLite install pointed at the same vault rebuilds the
+full graph by running <code>engrama_sync_vault</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Module</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read note</td>
+<td><code>adapter.py</code></td>
+<td>Extract content + frontmatter</td>
+</tr>
+<tr>
+<td>Search notes</td>
+<td><code>adapter.py</code></td>
+<td>Find related notes by text</td>
+</tr>
+<tr>
+<td>List notes</td>
+<td><code>adapter.py</code></td>
+<td>Full vault scan</td>
+</tr>
+<tr>
+<td>Inject engrama_id</td>
+<td><code>adapter.py</code></td>
+<td>Bidirectional sync identity</td>
+</tr>
+<tr>
+<td><code>vault_create_note</code></td>
+<td><code>proactive.py</code></td>
+<td>Write Insight notes back to vault</td>
+</tr>
+<tr>
+<td><code>vault_append_note</code></td>
+<td><code>proactive.py</code></td>
+<td>Add insight section to existing notes</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-distinctive-skills-reflect-proactive-ingest">The distinctive skills: reflect + proactive + ingest<a class="headerlink" href="#the-distinctive-skills-reflect-proactive-ingest" title="Permanent link">&para;</a></h2>
+<p><code>skills/reflect.py</code> runs <strong>adaptive</strong> cross-entity pattern detection.
+Before executing any pattern, it profiles the graph (counts labels with
+data) and only runs patterns whose preconditions are met. Seven
+detection patterns:</p>
+<ol>
+<li><strong>Cross-project solution</strong> — Problems sharing Concepts with resolved
+   Problems in other Projects.</li>
+<li><strong>Shared technology</strong> — any two entities connected to the same
+   Technology via USES/TEACHES/COMPOSED_OF.</li>
+<li><strong>Training opportunity</strong> — Vulnerabilities or open Problems linked
+   to Concepts that a Course covers.</li>
+<li><strong>Technique transfer</strong> — Techniques used in 2+ Domains.</li>
+<li><strong>Concept clustering</strong> — 3+ entities sharing a Concept.</li>
+<li><strong>Stale knowledge</strong> — nodes &gt;90 days old OR with confidence &lt;0.3,
+   still linked to active Projects or Courses.</li>
+<li><strong>Under-connected</strong> — nodes with &lt;2 relationships.</li>
+</ol>
+<p>Results are written as <code>Insight</code> nodes with confidence scaled by
+connection strength and entity count. <strong>Previously dismissed AND
+approved Insights are never re-surfaced</strong> — the reflect run filters
+against <code>dismissed | approved</code> so re-running reflect doesn't undo
+human review (regression caught and fixed during DDR-004 testing).</p>
+<p><code>skills/proactive.py</code> surfaces pending Insights to the agent and writes
+them back to Obsidian via <code>vault_append_note</code>. The agent proposes — the
+human approves. Insights are never acted upon automatically.</p>
+<p><strong>Proactivity triggers</strong> (module-level state in the MCP server):
+- After 10+ <code>engrama_remember</code> calls since last reflect →
+  <code>proactive_hint</code> returned.
+- <code>engrama_search</code> checks for pending Insights related to the query.
+- <code>engrama_reflect</code> resets the counter.</p>
+<p><strong>Ingestion</strong> (<code>engrama_ingest</code>): reads a vault note, raw text, or
+conversation transcript and returns the content with entity-extraction
+guidance plus deduplication hints (existing nodes in the graph). The
+agent then calls <code>engrama_remember</code> for each extracted entity —
+agent-driven, not opaque.</p>
+<h2 id="mcp-adapter">MCP adapter<a class="headerlink" href="#mcp-adapter" title="Permanent link">&para;</a></h2>
+<p>Native MCP server built with FastMCP and the matching async store. All
+storage logic lives in <code>*AsyncStore</code>; the MCP tool handlers handle
+orchestration, validation, vault I/O, and response formatting only.</p>
+<p>Twelve tools:</p>
+<ul>
+<li><code>engrama_status</code> — read-only introspection: vault path, backend,
+  embedder, search mode, version. Agents should call this at session
+  start when Engrama coexists with other Obsidian-capable MCPs so they
+  can disambiguate which server "the vault" refers to before any sync.</li>
+<li><code>engrama_search</code> — hybrid search across the memory graph</li>
+<li><code>engrama_remember</code> — create or update a node (always MERGE)</li>
+<li><code>engrama_relate</code> — create a relationship (handles title-keyed nodes)</li>
+<li><code>engrama_context</code> — retrieve the neighbourhood of a node up to N hops</li>
+<li><code>engrama_sync_note</code> — sync a single Obsidian note to the graph;
+  accepts <code>dry_run=true</code> to preview the impact without writing</li>
+<li><code>engrama_sync_vault</code> — full vault scan, reconcile all notes;
+  accepts <code>dry_run=true</code> to project create/update counts and list the
+  files that would receive an <code>engrama_id</code> injection</li>
+<li><code>engrama_ingest</code> — read content and return extraction guidance</li>
+<li><code>engrama_reflect</code> — adaptive cross-entity pattern detection → Insight nodes</li>
+<li><code>engrama_surface_insights</code> — read pending Insights for agent presentation</li>
+<li><code>engrama_approve_insight</code> — human approves or dismisses an Insight</li>
+<li><code>engrama_write_insight_to_vault</code> — append approved Insight to Obsidian note</li>
+</ul>
+<h3 id="engrama_status-response-shape"><code>engrama_status</code> response shape<a class="headerlink" href="#engrama_status-response-shape" title="Permanent link">&para;</a></h3>
+<p>Stable JSON contract. Fields are absent (rather than <code>null</code>) when the
+corresponding subsystem is disabled, so an agent can <code>if "path" in
+payload["vault"]:</code> reliably.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.10.0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sqlite&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;node_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1234</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;configured&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/abs/path/to/engrama/vault&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;note_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">87</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;embedder&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;configured&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nomic-embed-text&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;dimensions&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">768</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;search&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;mode&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;degraded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>backend.name</code> is normalised — the underlying async stores report
+<code>sqlite-async</code> / <code>neo4j-async</code>, but the tool strips the <code>-async</code>
+suffix since agents reason about which database is running, not the
+SDK shape. <code>search.degraded</code> is always <code>false</code> for status calls
+(degradation is detected mid-<code>engrama_search</code>); use this field to
+predict what the next search <em>would</em> attempt.</p>
+<p>The MCP server CLI accepts a <code>--backend</code> flag (<code>sqlite</code> or <code>neo4j</code>)
+plus per-backend overrides (<code>--db-path</code>, <code>--neo4j-uri</code>,
+<code>--neo4j-password</code>, <code>--vault-path</code>). Defaults come from environment.</p>
+<h2 id="profile-system">Profile system<a class="headerlink" href="#profile-system" title="Permanent link">&para;</a></h2>
+<p>Profiles are the single source of truth for the graph schema. There are
+two modes: standalone profiles and composable modules.</p>
+<p><strong>Standalone</strong> (one YAML, complete schema):
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>developer
+</code></pre></div></p>
+<p><strong>Composable</strong> (base + domain modules, recommended for multi-role
+users):
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>base<span class="w"> </span>--modules<span class="w"> </span>hacking<span class="w"> </span>teaching<span class="w"> </span>photography
+</code></pre></div></p>
+<p>The base profile (<code>profiles/base.yaml</code>) defines universal nodes:
+Project, Concept, Decision, Problem, Technology, Person. Domain modules
+in <code>profiles/modules/</code> add domain-specific nodes and can reference base
+labels in their relations. The merge engine unions properties,
+deduplicates relations, and validates all endpoints.</p>
+<p>Users can create modules for <strong>any</strong> domain — the included modules are
+examples, not a fixed set. The onboard skill generates custom modules
+through a conversational interview.</p>
+<h2 id="configuration-reference-env">Configuration reference (<code>.env</code>)<a class="headerlink" href="#configuration-reference-env" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GRAPH_BACKEND</code></td>
+<td><code>sqlite</code></td>
+<td><code>sqlite</code>, <code>neo4j</code>, or <code>null</code></td>
+</tr>
+<tr>
+<td><code>VECTOR_BACKEND</code></td>
+<td>matches graph</td>
+<td><code>sqlite-vec</code>, <code>neo4j</code>, or <code>none</code> (auto if absent)</td>
+</tr>
+<tr>
+<td><code>ENGRAMA_DB_PATH</code></td>
+<td><code>~/.engrama/engrama.db</code></td>
+<td>SQLite database file</td>
+</tr>
+<tr>
+<td><code>NEO4J_URI</code></td>
+<td><code>bolt://localhost:7687</code></td>
+<td>Neo4j connection URI</td>
+</tr>
+<tr>
+<td><code>NEO4J_USERNAME</code></td>
+<td><code>neo4j</code></td>
+<td>Neo4j username</td>
+</tr>
+<tr>
+<td><code>NEO4J_PASSWORD</code></td>
+<td>—</td>
+<td>Neo4j password (required when <code>GRAPH_BACKEND=neo4j</code>)</td>
+</tr>
+<tr>
+<td><code>NEO4J_DATABASE</code></td>
+<td><code>neo4j</code></td>
+<td>Neo4j database name</td>
+</tr>
+<tr>
+<td><code>ENGRAMA_PROFILE</code></td>
+<td><code>developer</code></td>
+<td>Profile name for schema generation</td>
+</tr>
+<tr>
+<td><code>VAULT_PATH</code></td>
+<td><code>~/Documents/vault</code></td>
+<td>Obsidian vault root path</td>
+</tr>
+<tr>
+<td><code>EMBEDDING_PROVIDER</code></td>
+<td><code>none</code></td>
+<td><code>none</code>, <code>ollama</code>, or <code>openai</code></td>
+</tr>
+<tr>
+<td><code>EMBEDDING_MODEL</code></td>
+<td><code>nomic-embed-text</code></td>
+<td>Embedding model name</td>
+</tr>
+<tr>
+<td><code>EMBEDDING_DIMENSIONS</code></td>
+<td><code>768</code></td>
+<td>Embedding vector size</td>
+</tr>
+<tr>
+<td><code>OPENAI_BASE_URL</code></td>
+<td><code>https://api.openai.com/v1</code></td>
+<td>OpenAI-compat endpoint</td>
+</tr>
+<tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td>—</td>
+<td>API key (when needed)</td>
+</tr>
+<tr>
+<td><code>OLLAMA_URL</code></td>
+<td><code>http://localhost:11434</code></td>
+<td>Ollama API endpoint (legacy provider)</td>
+</tr>
+<tr>
+<td><code>HYBRID_ALPHA</code></td>
+<td><code>0.6</code></td>
+<td>Vector vs fulltext weight</td>
+</tr>
+<tr>
+<td><code>HYBRID_GRAPH_BETA</code></td>
+<td><code>0.15</code></td>
+<td>Graph topology boost weight</td>
+</tr>
+</tbody>
+</table>
+<h2 id="implementation-rules">Implementation rules<a class="headerlink" href="#implementation-rules" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Always <code>MERGE</code>, never bare <code>CREATE</code></strong> — prevents duplicates on
+   both backends.</li>
+<li><strong>Fulltext index is mandatory</strong> — <code>memory_search</code> (Neo4j) /
+   <code>nodes_fts</code> (SQLite) across all text properties.</li>
+<li><strong>Timestamps everywhere</strong> — <code>created_at</code> and <code>updated_at</code> on every
+   node.</li>
+<li><strong>Embeddings are optional</strong> — graph structure is primary; semantic
+   search via OpenAI-compatible providers enhances search when enabled.</li>
+<li><strong>Integration tests against both backends</strong> — no mocks for the data
+   layer; the contract suite parameterises over SQLite and Neo4j.</li>
+<li><strong>Cypher and SQL parameters always</strong> — never string-format queries.</li>
+<li><strong><code>server.py</code> contains zero query strings</strong> — all queries live in
+   the matching <code>*AsyncStore</code>.</li>
+<li><strong>Async stores translate shapes</strong> — explicit method-by-method
+   delegation, never an opaque <code>__getattr__</code> forward (that's how the
+   contract drift bug shipped originally; DDR-004 replaced it).</li>
+</ol>
+<h2 id="related-repositories">Related repositories<a class="headerlink" href="#related-repositories" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>scops/engrama</code> — this framework.</li>
+</ul>
+<blockquote>
+<p><strong>Historical note:</strong> an intermediate <code>mcp-neo4j</code> layer was originally
+planned but dropped in favour of a native MCP server. The async
+drivers give full control over MERGE logic, parameter handling, and
+key selection (name vs title) without an extra dependency. DDR-004
+generalised the same approach across SQLite.</p>
+</blockquote>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit", "content.action.view"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

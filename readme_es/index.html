@@ -1,0 +1,3128 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Graph-based long-term memory framework for AI agents.">
+      
+      
+      
+        <link rel="canonical" href="https://scops.github.io/engrama/readme_es/">
+      
+      
+        <link rel="prev" href="../glosario_es/">
+      
+      
+        <link rel="next" href="../ddr-001/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Spanish Readme - Engrama</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#engrama" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Engrama" class="md-header__button md-logo" aria-label="Engrama" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Engrama
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Spanish Readme
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/scops/engrama" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    scops/engrama
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../vision/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Vision
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../backends/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Backends
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../graph-schema/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Graph Schema
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../contributing/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../ddr-001/" class="md-tabs__link">
+          
+  
+  
+  Design Decisions (DDRs)
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../changelog/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Engrama" class="md-nav__button md-logo" aria-label="Engrama" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Engrama
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/scops/engrama" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    scops/engrama
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../graph-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graph Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glosario_es/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary (ES)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spanish Readme
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spanish Readme
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#por-que-grafos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ¿Por qué grafos?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requisitos-previos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requisitos previos
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inicio-rapido-sqlite-cero-dependencias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inicio rápido (SQLite, cero dependencias)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inicio rápido (SQLite, cero dependencias)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#paso-1-clonar-e-instalar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 1: Clonar e instalar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-2-inicializar-el-esquema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 2: Inicializar el esquema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-3-verificar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 3: Verificar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-4-usarlo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 4: Usarlo
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inicio-rapido-neo4j-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inicio rápido (Neo4j, opt-in)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inicio rápido (Neo4j, opt-in)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#paso-1-instalar-con-el-extra-neo4j" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 1: Instalar con el extra Neo4j
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-2-configurar-credenciales" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 2: Configurar credenciales
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-3-arrancar-neo4j" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 3: Arrancar Neo4j
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-4-inicializar-el-esquema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 4: Inicializar el esquema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-5-verificar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 5: Verificar
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuracion-de-embeddings-opcional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuración de embeddings (opcional)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuración de embeddings (opcional)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#matriz-de-proveedores-ejemplos-trabajados" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Matriz de proveedores (ejemplos trabajados)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Matriz de proveedores (ejemplos trabajados)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ollama-local-recomendado-para-empezar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama (local, recomendado para empezar)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openai" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lm-studio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LM Studio
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vllm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vLLM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llamacpp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        llama.cpp server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jina-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Jina (cloud)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integracion-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integración MCP
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Integración MCP">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#claude-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude Desktop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codex
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chatgpt-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ChatGPT Desktop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sdk-de-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SDK de Python
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#referencia-de-la-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Referencia de la CLI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#modos-de-busqueda" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modos de búsqueda
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#personalizar-tu-grafo-onboarding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personalizar tu grafo (onboarding)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Personalizar tu grafo (onboarding)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opcion-a-usar-el-perfil-developer-integrado" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opción A: Usar el perfil developer integrado
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opcion-b-que-claude-construya-tus-modulos-recomendado" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opción B: Que Claude construya tus módulos (recomendado)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opcion-c-componer-a-partir-de-modulos-existentes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opción C: Componer a partir de módulos existentes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opcion-d-escribir-tu-propio-modulo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opción D: Escribir tu propio módulo
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consejos-para-buenos-perfiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consejos para buenos perfiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#referencia-de-configuracion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Referencia de configuración
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentacion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentación
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#licencia" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Licencia
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Licencia">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#contribuciones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contribuciones
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extensiones-comerciales" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extensiones comerciales
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#relacionado" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relacionado
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Decisions (DDRs)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Decisions (DDRs)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-001/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-001
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-002/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-002
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-003/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-003
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-004/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-004
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../portable-storage-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Portable Storage Spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_3" id="__nav_9_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Prompts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    System Prompts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/system-prompts/v0.4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version 0.4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/system-prompts/v0.5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version 0.5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#por-que-grafos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ¿Por qué grafos?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requisitos-previos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requisitos previos
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inicio-rapido-sqlite-cero-dependencias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inicio rápido (SQLite, cero dependencias)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inicio rápido (SQLite, cero dependencias)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#paso-1-clonar-e-instalar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 1: Clonar e instalar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-2-inicializar-el-esquema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 2: Inicializar el esquema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-3-verificar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 3: Verificar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-4-usarlo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 4: Usarlo
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inicio-rapido-neo4j-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inicio rápido (Neo4j, opt-in)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inicio rápido (Neo4j, opt-in)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#paso-1-instalar-con-el-extra-neo4j" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 1: Instalar con el extra Neo4j
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-2-configurar-credenciales" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 2: Configurar credenciales
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-3-arrancar-neo4j" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 3: Arrancar Neo4j
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-4-inicializar-el-esquema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 4: Inicializar el esquema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#paso-5-verificar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paso 5: Verificar
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuracion-de-embeddings-opcional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuración de embeddings (opcional)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuración de embeddings (opcional)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#matriz-de-proveedores-ejemplos-trabajados" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Matriz de proveedores (ejemplos trabajados)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Matriz de proveedores (ejemplos trabajados)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ollama-local-recomendado-para-empezar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama (local, recomendado para empezar)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openai" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lm-studio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LM Studio
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vllm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vLLM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llamacpp-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        llama.cpp server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jina-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Jina (cloud)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integracion-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integración MCP
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Integración MCP">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#claude-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude Desktop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codex
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chatgpt-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ChatGPT Desktop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sdk-de-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SDK de Python
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#referencia-de-la-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Referencia de la CLI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#modos-de-busqueda" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modos de búsqueda
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#personalizar-tu-grafo-onboarding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personalizar tu grafo (onboarding)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Personalizar tu grafo (onboarding)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opcion-a-usar-el-perfil-developer-integrado" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opción A: Usar el perfil developer integrado
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opcion-b-que-claude-construya-tus-modulos-recomendado" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opción B: Que Claude construya tus módulos (recomendado)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opcion-c-componer-a-partir-de-modulos-existentes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opción C: Componer a partir de módulos existentes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opcion-d-escribir-tu-propio-modulo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opción D: Escribir tu propio módulo
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consejos-para-buenos-perfiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consejos para buenos perfiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#referencia-de-configuracion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Referencia de configuración
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentacion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentación
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#licencia" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Licencia
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Licencia">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#contribuciones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contribuciones
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extensiones-comerciales" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extensiones comerciales
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#relacionado" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relacionado
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/scops/engrama/edit/main/docs/readme_es.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+    
+      
+    
+    <a href="https://github.com/scops/engrama/raw/main/docs/readme_es.md" title="View source of this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 18c.56 0 1 .44 1 1s-.44 1-1 1-1-.44-1-1 .44-1 1-1m0-3c-2.73 0-5.06 1.66-6 4 .94 2.34 3.27 4 6 4s5.06-1.66 6-4c-.94-2.34-3.27-4-6-4m0 6.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5M9.27 20H6V4h7v5h5v4.07c.7.08 1.36.25 2 .49V8l-6-6H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4.5a8.2 8.2 0 0 1-1.23-2"/></svg>
+    </a>
+  
+
+
+<h1 id="engrama">Engrama<a class="headerlink" href="#engrama" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>Framework de memoria a largo plazo basado en grafos para agentes de IA.</p>
+</blockquote>
+<p><a href="https://python.org"><img alt="Python" src="https://img.shields.io/badge/python-3.11+-blue.svg" /></a>
+<a href="../backends/"><img alt="Backend" src="https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg" /></a>
+<a href="../LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache_2.0-blue.svg" /></a>
+<a href="#inicio-r%C3%A1pido-sqlite-cero-dependencias"><img alt="Estado" src="https://img.shields.io/badge/estado-alpha%20%C2%B7%20instalaci%C3%B3n%20desde%20fuente-orange.svg" /></a></p>
+<p>Engrama dota a cualquier agente de IA de una memoria persistente y
+estructurada respaldada por un <strong>grafo de conocimiento</strong>. En lugar de
+almacenes clave-valor planos o bases de datos vectoriales opacas,
+Engrama almacena <strong>entidades</strong>, <strong>observaciones</strong> y <strong>relaciones</strong> — y
+permite a los agentes recorrer ese grafo para razonar sobre el
+conocimiento acumulado.</p>
+<p>Hay dos backends de primera clase:</p>
+<ul>
+<li><strong>SQLite + <code>sqlite-vec</code></strong> (por defecto desde la 0.9) — un único
+  archivo, sin servicios externos, <code>git clone</code> + <code>uv sync</code> y a
+  correr (Engrama aún no está en PyPI; instalación desde fuente).</li>
+<li><strong>Neo4j 5.26 LTS</strong> (opcional) — para producción multiproceso, índices
+  vectoriales muy grandes o equipos que ya usan Cypher.</li>
+</ul>
+<p>El modelo de datos es idéntico en ambos. Mira <strong><a href="../backends/">backends.md</a></strong>
+para la guía completa de elección; el resto de este README asume el
+SQLite por defecto.</p>
+<p>Inspirado en el concepto de "segundo cerebro" de Karpathy, pero pensado
+para agentes en lugar de humanos — y con grafos en vez de wikis.</p>
+<hr />
+<h2 id="por-que-grafos">¿Por qué grafos?<a class="headerlink" href="#por-que-grafos" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>JSON plano / KV</th>
+<th>Base vectorial</th>
+<th><strong>Engrama (Grafo)</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Consultas por relaciones</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ nativo</td>
+</tr>
+<tr>
+<td>Escala a 10k+ memorias</td>
+<td>❌ lento</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Funciona sin embeddings</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅ (opcional)</td>
+</tr>
+<tr>
+<td>Local-first / privado</td>
+<td>✅</td>
+<td>depende</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Cero servicios externos</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅ (SQLite)</td>
+</tr>
+<tr>
+<td>"¿Qué proyectos usan FastMCP?"</td>
+<td>escaneo</td>
+<td>aproximado</td>
+<td>recorrido a 1 salto</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="requisitos-previos">Requisitos previos<a class="headerlink" href="#requisitos-previos" title="Permanent link">&para;</a></h2>
+<p>Necesitas dos cosas para arrancar con el backend SQLite por defecto.
+<strong>Docker no hace falta</strong> salvo que decidas usar Neo4j.</p>
+<table>
+<thead>
+<tr>
+<th>Requisito</th>
+<th>Versión</th>
+<th>Cómo comprobar</th>
+<th>Guía de instalación</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Python</strong></td>
+<td>3.11 o superior</td>
+<td><code>python --version</code></td>
+<td><a href="https://www.python.org/downloads/">python.org/downloads</a></td>
+</tr>
+<tr>
+<td><strong>uv</strong> (gestor de paquetes Python)</td>
+<td>cualquier versión reciente</td>
+<td><code>uv --version</code></td>
+<td><a href="https://docs.astral.sh/uv/getting-started/installation/">docs.astral.sh/uv</a></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Usuarios de Windows:</strong> después de instalar Python, asegúrate de marcar
+"Add Python to PATH". Tras instalar uv, puede que necesites reiniciar
+el terminal.</p>
+</blockquote>
+<p><strong>Opcionales:</strong></p>
+<ul>
+<li><a href="https://obsidian.md/">Obsidian</a> — solo necesario para sincronización con vault.</li>
+<li>Un servidor de embeddings local para búsqueda semántica — Ollama, LM
+  Studio, vLLM, llama.cpp o cualquier servicio que hable la API
+  OpenAI-compatible. Ver <a href="#configuración-de-embeddings-opcional">Configuración de embeddings</a>.</li>
+<li><a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> —
+  solo si optas por el backend Neo4j.</li>
+</ul>
+<hr />
+<h2 id="inicio-rapido-sqlite-cero-dependencias">Inicio rápido (SQLite, cero dependencias)<a class="headerlink" href="#inicio-rapido-sqlite-cero-dependencias" title="Permanent link">&para;</a></h2>
+<h3 id="paso-1-clonar-e-instalar">Paso 1: Clonar e instalar<a class="headerlink" href="#paso-1-clonar-e-instalar" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/scops/engrama
+<span class="nb">cd</span><span class="w"> </span>engrama
+uv<span class="w"> </span>sync
+</code></pre></div>
+<p>Esto crea un entorno virtual en <code>.venv/</code> e instala las dependencias
+base (<code>sqlite-vec</code>, <code>httpx</code>, <code>pydantic</code>, <code>python-dotenv</code>, <code>pyyaml</code>). El
+driver de Neo4j <strong>no</strong> se instala por defecto.</p>
+<h3 id="paso-2-inicializar-el-esquema">Paso 2: Inicializar el esquema<a class="headerlink" href="#paso-2-inicializar-el-esquema" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>developer
+</code></pre></div>
+<p>El archivo SQLite se crea automáticamente en <code>~/.engrama/engrama.db</code> la
+primera vez. El esquema se aplica solo — sin restricciones que
+ejecutar, sin servicio que esperar. Se cargan los nodos semilla del
+perfil que elijas.</p>
+<h3 id="paso-3-verificar">Paso 3: Verificar<a class="headerlink" href="#paso-3-verificar" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>verify
+</code></pre></div>
+<p>Salida esperada: <code>backend=sqlite, ok=true, ...</code></p>
+<h3 id="paso-4-usarlo">Paso 4: Usarlo<a class="headerlink" href="#paso-4-usarlo" title="Permanent link">&para;</a></h3>
+<p>Tres formas:</p>
+<p><strong>A) Desde Claude Desktop o Codex</strong> — ver <a href="#integración-mcp">Integración MCP</a> más abajo.</p>
+<p><strong>B) Desde Python:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">engrama</span><span class="w"> </span><span class="kn">import</span> <span class="n">Engrama</span>
+
+<span class="k">with</span> <span class="n">Engrama</span><span class="p">()</span> <span class="k">as</span> <span class="n">eng</span><span class="p">:</span>
+    <span class="n">eng</span><span class="o">.</span><span class="n">remember</span><span class="p">(</span><span class="s2">&quot;Technology&quot;</span><span class="p">,</span> <span class="s2">&quot;FastAPI&quot;</span><span class="p">,</span> <span class="s2">&quot;High-performance async framework&quot;</span><span class="p">)</span>
+    <span class="n">eng</span><span class="o">.</span><span class="n">associate</span><span class="p">(</span><span class="s2">&quot;MyProject&quot;</span><span class="p">,</span> <span class="s2">&quot;Project&quot;</span><span class="p">,</span> <span class="s2">&quot;USES&quot;</span><span class="p">,</span> <span class="s2">&quot;FastAPI&quot;</span><span class="p">,</span> <span class="s2">&quot;Technology&quot;</span><span class="p">)</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="n">eng</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;microservices&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>C) Desde la línea de comandos:</strong></p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>search<span class="w"> </span><span class="s2">&quot;FastAPI&quot;</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>reflect
+</code></pre></div>
+<blockquote>
+<p><strong>Nota:</strong> todos los comandos <code>engrama</code> de la CLI necesitan el prefijo
+<code>uv run</code> salvo que actives primero el entorno virtual con
+<code>.venv\Scripts\Activate.ps1</code> (Windows) o <code>source .venv/bin/activate</code>
+(Linux/macOS).</p>
+</blockquote>
+<hr />
+<h2 id="inicio-rapido-neo4j-opt-in">Inicio rápido (Neo4j, opt-in)<a class="headerlink" href="#inicio-rapido-neo4j-opt-in" title="Permanent link">&para;</a></h2>
+<p>Si has leído <a href="../backends/">backends.md</a> y decides que necesitas Neo4j —
+escrituras multi-proceso, índices vectoriales muy grandes, una cadena
+de herramientas Cypher existente — sigue esta ruta en lugar de la
+anterior.</p>
+<h3 id="paso-1-instalar-con-el-extra-neo4j">Paso 1: Instalar con el extra Neo4j<a class="headerlink" href="#paso-1-instalar-con-el-extra-neo4j" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/scops/engrama
+<span class="nb">cd</span><span class="w"> </span>engrama
+uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>neo4j
+</code></pre></div>
+<h3 id="paso-2-configurar-credenciales">Paso 2: Configurar credenciales<a class="headerlink" href="#paso-2-configurar-credenciales" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Linux / macOS / Git Bash</span>
+cp<span class="w"> </span>.env.example<span class="w"> </span>.env
+<span class="c1"># PowerShell (Windows)</span>
+Copy-Item<span class="w"> </span>.env.example<span class="w"> </span>.env
+</code></pre></div>
+<p>Abre <code>.env</code> y configura:</p>
+<ol>
+<li><code>GRAPH_BACKEND=neo4j</code></li>
+<li><code>NEO4J_PASSWORD</code> — elige una contraseña fuerte</li>
+<li><code>VAULT_PATH</code> (opcional) — ruta absoluta a tu vault de Obsidian si
+   quieres usar las herramientas de sincronización</li>
+</ol>
+<h3 id="paso-3-arrancar-neo4j">Paso 3: Arrancar Neo4j<a class="headerlink" href="#paso-3-arrancar-neo4j" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<p>Espera unos 15 segundos. Verifica con <code>docker ps</code> — <code>engrama-neo4j</code>
+debe estar <code>healthy</code>.</p>
+<h3 id="paso-4-inicializar-el-esquema">Paso 4: Inicializar el esquema<a class="headerlink" href="#paso-4-inicializar-el-esquema" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>developer
+</code></pre></div>
+<p>Esto genera y aplica las restricciones Cypher + los índices fulltext y
+vectorial.</p>
+<h3 id="paso-5-verificar">Paso 5: Verificar<a class="headerlink" href="#paso-5-verificar" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>verify
+</code></pre></div>
+<p>Salida esperada: <code>Connected to Neo4j at bolt://localhost:7687</code>.</p>
+<p>El resto del flujo (SDK Python, CLI, integración MCP) es idéntico al
+camino SQLite.</p>
+<hr />
+<h2 id="configuracion-de-embeddings-opcional">Configuración de embeddings (opcional)<a class="headerlink" href="#configuracion-de-embeddings-opcional" title="Permanent link">&para;</a></h2>
+<p>Engrama funciona de fábrica solo con búsqueda fulltext. Para <strong>búsqueda
+por similitud semántica</strong> — encontrar nodos conceptualmente relacionados,
+no solo coincidencias por palabra clave — activa los embeddings vía
+cualquier servicio compatible con OpenAI.</p>
+<p>Configura cuatro variables de entorno (<code>EMBEDDING_PROVIDER</code>,
+<code>EMBEDDING_MODEL</code>, <code>EMBEDDING_DIMENSIONS</code>, <code>OPENAI_BASE_URL</code>) más
+<code>OPENAI_API_KEY</code> cuando el servidor lo requiera. Luego ejecuta
+<code>uv run engrama verify</code> — imprime <code>Embeddings: ok (provider=…, model=…)</code>
+al éxito y <code>Embeddings: degraded …</code> si el endpoint o el modelo no
+están disponibles.</p>
+<p>Tras activar embeddings sobre un grafo existente, ejecuta
+<code>uv run engrama reindex</code> para embeberse los nodos antiguos. Los nodos
+nuevos se embeben automáticamente al crearse. Si el endpoint deja de
+estar disponible, la búsqueda degrada a <code>fulltext_only</code> y expone el
+motivo en <code>search_mode</code> — Engrama nunca devuelve resultados vacíos en
+silencio.</p>
+<h3 id="matriz-de-proveedores-ejemplos-trabajados">Matriz de proveedores (ejemplos trabajados)<a class="headerlink" href="#matriz-de-proveedores-ejemplos-trabajados" title="Permanent link">&para;</a></h3>
+<p>Todos los proveedores hablan el formato OpenAI <code>/v1/embeddings</code>, así
+que <code>EMBEDDING_PROVIDER=openai</code> es la opción recomendada para todos
+ellos (incluido Ollama local). La ruta nativa de Ollama <code>/api/embed</code>
+sigue soportada con <code>EMBEDDING_PROVIDER=ollama</code> — se mantiene por
+retrocompatibilidad, pero elige un estilo y mantente en él.</p>
+<h4 id="ollama-local-recomendado-para-empezar">Ollama (local, recomendado para empezar)<a class="headerlink" href="#ollama-local-recomendado-para-empezar" title="Permanent link">&para;</a></h4>
+<p>Local, gratis, sin API key, ~274 MB de descarga. La mejor ruta si
+solo quieres probar búsqueda semántica.</p>
+<div class="highlight"><pre><span></span><code>EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_DIMENSIONS=768
+OPENAI_BASE_URL=http://localhost:11434/v1
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="c1"># Instalar: https://ollama.com</span>
+ollama<span class="w"> </span>pull<span class="w"> </span>nomic-embed-text
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>verify<span class="w">   </span><span class="c1"># → &quot;Embeddings: ok (provider=openai, model=nomic-embed-text)&quot;</span>
+</code></pre></div>
+<p>Otros modelos locales sólidos: <code>mxbai-embed-large</code> (1024 dims, inglés),
+<code>bge-m3</code> (1024 dims, multilingüe). Empareja <code>EMBEDDING_DIMENSIONS</code> con
+el modelo — discrepancias hacen que la búsqueda híbrida caiga a fulltext.</p>
+<h4 id="openai">OpenAI<a class="headerlink" href="#openai" title="Permanent link">&para;</a></h4>
+<p>API cloud, de pago, latencia &lt;10 ms. La implementación de referencia
+del contrato <code>/v1/embeddings</code>.</p>
+<div class="highlight"><pre><span></span><code>EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSIONS=1536
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=sk-...
+</code></pre></div>
+<p><code>text-embedding-3-large</code> (3072 dims) también funciona — pon
+<code>EMBEDDING_DIMENSIONS=3072</code>. Los modelos <code>text-embedding-3-*</code> aceptan
+un valor de dimensiones menor para truncar (p. ej.
+<code>EMBEDDING_DIMENSIONS=512</code> con el modelo small y OpenAI devuelve
+vectores de 512 dims).</p>
+<h4 id="lm-studio">LM Studio<a class="headerlink" href="#lm-studio" title="Permanent link">&para;</a></h4>
+<p>Servidor local gestionado por GUI, útil cuando quieres selector de
+modelo y gestor de descargas. Arranca un modelo de embeddings desde
+la pestaña "Local Server" de LM Studio primero.</p>
+<div class="highlight"><pre><span></span><code>EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5-GGUF
+EMBEDDING_DIMENSIONS=768
+OPENAI_BASE_URL=http://localhost:1234/v1
+OPENAI_API_KEY=lm-studio
+</code></pre></div>
+<p>LM Studio ignora el valor de la API key pero su cliente HTTP espera
+que la cabecera esté presente — cualquier string no vacío sirve.</p>
+<h4 id="vllm">vLLM<a class="headerlink" href="#vllm" title="Permanent link">&para;</a></h4>
+<p>Servidor de inferencia de alto throughput, buena opción cuando
+embebes en bulk y quieres batching contra una GPU.</p>
+<div class="highlight"><pre><span></span><code>EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=intfloat/e5-mistral-7b-instruct
+EMBEDDING_DIMENSIONS=4096
+OPENAI_BASE_URL=http://localhost:8000/v1
+OPENAI_API_KEY=any
+</code></pre></div>
+<p>Arranca vLLM con un modelo capaz de embeddings:
+<code>vllm serve intfloat/e5-mistral-7b-instruct --task embed</code>. Empareja
+<code>EMBEDDING_DIMENSIONS</code> con el hidden size del modelo.</p>
+<h4 id="llamacpp-server">llama.cpp server<a class="headerlink" href="#llamacpp-server" title="Permanent link">&para;</a></h4>
+<p>Servidor binario único CPU/GPU, mínimas piezas móviles. Útil para
+modelos de embedding pequeños en hosts con recursos limitados.</p>
+<div class="highlight"><pre><span></span><code>EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=nomic-embed-text-v1.5.Q4_K_M
+EMBEDDING_DIMENSIONS=768
+OPENAI_BASE_URL=http://localhost:8080/v1
+OPENAI_API_KEY=any
+</code></pre></div>
+<p>Arranca con <code>--embedding</code> y la ruta al GGUF:
+<code>./llama-server -m nomic-embed-text-v1.5.Q4_K_M.gguf --embedding --port 8080</code>.</p>
+<h4 id="jina-cloud">Jina (cloud)<a class="headerlink" href="#jina-cloud" title="Permanent link">&para;</a></h4>
+<p>Embeddings multilingües hosteados con contexto largo. Pago por token,
+sin self-hosting.</p>
+<div class="highlight"><pre><span></span><code>EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=jina-embeddings-v3
+EMBEDDING_DIMENSIONS=1024
+OPENAI_BASE_URL=https://api.jina.ai/v1
+OPENAI_API_KEY=jina_...
+</code></pre></div>
+<p><code>jina-embeddings-v3</code> es multilingüe (89 idiomas) con 8192 tokens de
+contexto. Para entradas más cortas y menos latencia, usa
+<code>jina-embeddings-v2-base-en</code> con <code>EMBEDDING_DIMENSIONS=768</code>.</p>
+<hr />
+<h2 id="integracion-mcp">Integración MCP<a class="headerlink" href="#integracion-mcp" title="Permanent link">&para;</a></h2>
+<p>Engrama actúa como capa de abstracción entre el agente de IA y el
+backend de almacenamiento. Los clientes MCP se conectan al servidor de
+Engrama — nunca ven credenciales, cadenas de conexión ni consultas en
+crudo.</p>
+<h3 id="claude-desktop">Claude Desktop<a class="headerlink" href="#claude-desktop" title="Permanent link">&para;</a></h3>
+<p><strong>1. Localiza tu archivo de configuración de Claude Desktop:</strong></p>
+<ul>
+<li><strong>Windows:</strong> <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
+<li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
+</ul>
+<p><strong>2. Añade el servidor de Engrama.</strong></p>
+<p>La configuración de abajo usa SQLite por defecto. El flag <code>--backend</code>
+es opcional (por defecto <code>sqlite</code>), pero hacerlo explícito ayuda a
+leer la config de un vistazo:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;engrama&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uv&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="s2">&quot;run&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;--directory&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;C:\\Proyectos\\engrama&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;--extra&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcp&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;engrama-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;--backend&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sqlite&quot;</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Para el backend Neo4j cambia <code>--backend sqlite</code> por <code>--backend neo4j</code>
+(o quita el flag y pon <code>GRAPH_BACKEND=neo4j</code> en <code>.env</code>). Asegúrate de
+añadir también el extra: <code>"--extra", "mcp", "--extra", "neo4j"</code>.</p>
+<p><strong>Importante:</strong> cambia <code>C:\\Proyectos\\engrama</code> por la ruta real donde
+clonaste el repositorio. En macOS/Linux usa barras normales (p. ej.
+<code>/home/tu_usuario/engrama</code>). Aquí no hacen falta credenciales — el
+servidor las lee desde <code>.env</code> cuando funciona contra Neo4j.</p>
+<p><strong>3. Reinicia Claude Desktop</strong> completamente (sal y vuelve a abrir).</p>
+<h3 id="codex">Codex<a class="headerlink" href="#codex" title="Permanent link">&para;</a></h3>
+<p>Codex soporta servidores MCP locales por <code>stdio</code>, así que puedes
+registrar Engrama directamente desde el CLI:</p>
+<div class="highlight"><pre><span></span><code>codex<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>engrama<span class="w"> </span>--<span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>--directory<span class="w"> </span>C:<span class="se">\P</span>royectos<span class="se">\e</span>ngrama<span class="w"> </span>--extra<span class="w"> </span>mcp<span class="w"> </span>engrama-mcp<span class="w"> </span>--backend<span class="w"> </span>sqlite
+</code></pre></div>
+<p>Para Neo4j, cambia <code>--backend sqlite</code> por <code>--backend neo4j</code> y añade
+también el extra:</p>
+<div class="highlight"><pre><span></span><code>codex<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>engrama<span class="w"> </span>--<span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>--directory<span class="w"> </span>C:<span class="se">\P</span>royectos<span class="se">\e</span>ngrama<span class="w"> </span>--extra<span class="w"> </span>mcp<span class="w"> </span>--extra<span class="w"> </span>neo4j<span class="w"> </span>engrama-mcp<span class="w"> </span>--backend<span class="w"> </span>neo4j
+</code></pre></div>
+<p>Después comprueba que quedó registrado:</p>
+<div class="highlight"><pre><span></span><code>codex<span class="w"> </span>mcp<span class="w"> </span>list
+</code></pre></div>
+<p>Igual que en Claude Desktop, cambia <code>C:\Proyectos\engrama</code> por la ruta
+real donde clonaste el repositorio.</p>
+<h3 id="chatgpt-desktop">ChatGPT Desktop<a class="headerlink" href="#chatgpt-desktop" title="Permanent link">&para;</a></h3>
+<p>ChatGPT <strong>no</strong> usa directamente esta configuración local por <code>stdio</code>.
+La documentación actual de OpenAI describe los conectores MCP
+personalizados de ChatGPT como servidores MCP <strong>remotos</strong> importados
+desde <code>Settings -&gt; Connectors</code>, sobre HTTP/SSE y no como un comando
+local.</p>
+<p>Eso significa que <code>engrama-mcp</code> encaja bien con Claude Desktop y
+Codex, pero <strong>todavía no</strong> como integración directa de ChatGPT Desktop.
+Para usar Engrama desde ChatGPT habría que exponer un endpoint MCP
+remoto y empaquetarlo como conector personalizado de ChatGPT.</p>
+<p>Ahora deberías ver las doce herramientas:</p>
+<table>
+<thead>
+<tr>
+<th>Herramienta</th>
+<th>Descripción</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>engrama_status</code></td>
+<td>Introspección de solo lectura (vault path, backend, embedder, modo de búsqueda, versión). Llámala al inicio de sesión cuando hay otros MCPs de Obsidian conectados.</td>
+</tr>
+<tr>
+<td><code>engrama_search</code></td>
+<td>Búsqueda híbrida (vector + fulltext + boost de grafo + temporal)</td>
+</tr>
+<tr>
+<td><code>engrama_remember</code></td>
+<td>Crear o actualizar un nodo (siempre MERGE)</td>
+</tr>
+<tr>
+<td><code>engrama_relate</code></td>
+<td>Crear una relación entre dos nodos</td>
+</tr>
+<tr>
+<td><code>engrama_context</code></td>
+<td>Recuperar el vecindario de un nodo</td>
+</tr>
+<tr>
+<td><code>engrama_sync_note</code></td>
+<td>Sincronizar una sola nota de Obsidian con el grafo. Acepta <code>dry_run=true</code> para previsualizar el impacto.</td>
+</tr>
+<tr>
+<td><code>engrama_sync_vault</code></td>
+<td>Escaneo completo del vault, reconciliar todas las notas. Acepta <code>dry_run=true</code> para previsualizar create/update counts + ficheros que recibirían <code>engrama_id</code>.</td>
+</tr>
+<tr>
+<td><code>engrama_ingest</code></td>
+<td>Leer contenido + extraer conocimiento automáticamente</td>
+</tr>
+<tr>
+<td><code>engrama_reflect</code></td>
+<td>Detección adaptativa de patrones entre entidades → Insights</td>
+</tr>
+<tr>
+<td><code>engrama_surface_insights</code></td>
+<td>Leer Insights pendientes para revisión</td>
+</tr>
+<tr>
+<td><code>engrama_approve_insight</code></td>
+<td>Aprobar o descartar un Insight</td>
+</tr>
+<tr>
+<td><code>engrama_write_insight_to_vault</code></td>
+<td>Escribir un Insight aprobado en Obsidian</td>
+</tr>
+</tbody>
+</table>
+<p>Consulta <a href="../examples/claude_desktop/system-prompt.md"><code>examples/claude_desktop/system-prompt.md</code></a>
+para un system prompt listo para pegar que enseña a Claude a usar el
+grafo de memoria.</p>
+<hr />
+<h2 id="sdk-de-python">SDK de Python<a class="headerlink" href="#sdk-de-python" title="Permanent link">&para;</a></h2>
+<p>Usa Engrama directamente desde cualquier script de Python — sin MCP:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">engrama</span><span class="w"> </span><span class="kn">import</span> <span class="n">Engrama</span>
+
+<span class="c1"># Por defecto SQLite en ~/.engrama/engrama.db</span>
+<span class="k">with</span> <span class="n">Engrama</span><span class="p">()</span> <span class="k">as</span> <span class="n">eng</span><span class="p">:</span>
+    <span class="c1"># Escribir</span>
+    <span class="n">eng</span><span class="o">.</span><span class="n">remember</span><span class="p">(</span><span class="s2">&quot;Technology&quot;</span><span class="p">,</span> <span class="s2">&quot;FastAPI&quot;</span><span class="p">,</span> <span class="s2">&quot;High-performance async framework&quot;</span><span class="p">)</span>
+    <span class="n">eng</span><span class="o">.</span><span class="n">associate</span><span class="p">(</span><span class="s2">&quot;MyProject&quot;</span><span class="p">,</span> <span class="s2">&quot;Project&quot;</span><span class="p">,</span> <span class="s2">&quot;USES&quot;</span><span class="p">,</span> <span class="s2">&quot;FastAPI&quot;</span><span class="p">,</span> <span class="s2">&quot;Technology&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Leer</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="n">eng</span><span class="o">.</span><span class="n">recall</span><span class="p">(</span><span class="s2">&quot;FastAPI&quot;</span><span class="p">,</span> <span class="n">hops</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">hits</span> <span class="o">=</span> <span class="n">eng</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;microservices&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+
+    <span class="c1"># Reflexionar</span>
+    <span class="n">insights</span> <span class="o">=</span> <span class="n">eng</span><span class="o">.</span><span class="n">reflect</span><span class="p">()</span>
+    <span class="n">pending</span> <span class="o">=</span> <span class="n">eng</span><span class="o">.</span><span class="n">surface_insights</span><span class="p">()</span>
+    <span class="n">eng</span><span class="o">.</span><span class="n">approve_insight</span><span class="p">(</span><span class="n">pending</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">title</span><span class="p">)</span>
+
+    <span class="c1"># Olvidar</span>
+    <span class="n">eng</span><span class="o">.</span><span class="n">forget</span><span class="p">(</span><span class="s2">&quot;Technology&quot;</span><span class="p">,</span> <span class="s2">&quot;OldLib&quot;</span><span class="p">)</span>
+    <span class="n">eng</span><span class="o">.</span><span class="n">forget_by_ttl</span><span class="p">(</span><span class="s2">&quot;Technology&quot;</span><span class="p">,</span> <span class="n">days</span><span class="o">=</span><span class="mi">365</span><span class="p">,</span> <span class="n">purge</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p>Para apuntar explícitamente a Neo4j:</p>
+<div class="highlight"><pre><span></span><code><span class="k">with</span> <span class="n">Engrama</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;neo4j&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">eng</span><span class="p">:</span>
+    <span class="o">...</span>
+</code></pre></div>
+<p>O pon <code>GRAPH_BACKEND=neo4j</code> en <code>.env</code> y llama a <code>Engrama()</code> sin
+argumentos. Todos los métodos están documentados con docstrings — usa
+<code>help(Engrama)</code> o el autocompletado de tu IDE para explorarlos.</p>
+<hr />
+<h2 id="referencia-de-la-cli">Referencia de la CLI<a class="headerlink" href="#referencia-de-la-cli" title="Permanent link">&para;</a></h2>
+<p>Todos los comandos requieren el prefijo <code>uv run</code> (o un entorno virtual activado):</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>developer<span class="w">                         </span><span class="c1"># SQLite (por defecto)</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>base<span class="w"> </span>--modules<span class="w"> </span>hacking<span class="w"> </span>teaching<span class="w">   </span><span class="c1"># Composable</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>developer<span class="w"> </span>--dry-run<span class="w">               </span><span class="c1"># Vista previa</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>verify<span class="w">                                           </span><span class="c1"># Comprobación de salud</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>search<span class="w"> </span><span class="s2">&quot;microservices&quot;</span><span class="w">                           </span><span class="c1"># Búsqueda híbrida</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>reflect<span class="w">                                          </span><span class="c1"># Detección de patrones</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>reindex<span class="w">                                          </span><span class="c1"># Re-embedding por lotes</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>decay<span class="w"> </span>--dry-run<span class="w">                                  </span><span class="c1"># Vista previa del decay</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>decay<span class="w"> </span>--rate<span class="w"> </span><span class="m">0</span>.01<span class="w">                                </span><span class="c1"># Aplicar decay suave</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>decay<span class="w"> </span>--rate<span class="w"> </span><span class="m">0</span>.1<span class="w"> </span>--min-confidence<span class="w"> </span><span class="m">0</span>.05<span class="w">           </span><span class="c1"># Agresivo + archivar</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span><span class="nb">export</span><span class="w"> </span>dump.ndjson<span class="w">                               </span><span class="c1"># Volcado backend-agnostic</span>
+uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>import<span class="w"> </span>dump.ndjson<span class="w"> </span>--purge<span class="w">                       </span><span class="c1"># Restaurar (limpiando destino)</span>
+</code></pre></div>
+<p>Para sobrescribir el backend en un comando puntual:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">GRAPH_BACKEND</span><span class="o">=</span>neo4j<span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>verify
+</code></pre></div>
+<p><code>engrama export</code> vuelca el grafo + vectores del backend activo a un
+fichero NDJSON. <code>engrama import</code> lo restaura. Funciona cross-backend
+— para migrar SQLite a Neo4j:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">GRAPH_BACKEND</span><span class="o">=</span>sqlite<span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span><span class="nb">export</span><span class="w"> </span>dump.ndjson
+<span class="nv">GRAPH_BACKEND</span><span class="o">=</span>neo4j<span class="w">  </span>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>import<span class="w"> </span>dump.ndjson<span class="w"> </span>--purge
+</code></pre></div>
+<p>Los vectores se restauran sólo cuando origen y destino tienen las
+mismas dimensiones de embedding; si no coinciden se saltan y
+<code>engrama reindex</code> los regenera con el embedder activo.</p>
+<hr />
+<h2 id="modos-de-busqueda">Modos de búsqueda<a class="headerlink" href="#modos-de-busqueda" title="Permanent link">&para;</a></h2>
+<p>Tres modos, controlados por <code>EMBEDDING_PROVIDER</code>:</p>
+<p><strong>Solo fulltext</strong> (<code>EMBEDDING_PROVIDER=none</code>, por defecto) —
+coincidencia por palabras clave. SQLite usa FTS5; Neo4j usa su índice
+fulltext nativo. Funciona sin dependencias extra.</p>
+<p><strong>Híbrida</strong> (<code>EMBEDDING_PROVIDER=ollama</code> o <code>openai</code>) — combina
+similitud semántica (búsqueda vectorial) con coincidencia por palabras
+clave, más un boost por topología del grafo y un factor temporal.
+Encuentra nodos conceptualmente relacionados incluso sin coincidencia
+exacta de palabras clave.</p>
+<p><strong>Cómo activar la búsqueda híbrida:</strong>
+1. Establece <code>EMBEDDING_PROVIDER</code> en <code>.env</code> (ver
+   <a href="#configuración-de-embeddings-opcional">Configuración de embeddings</a>).
+2. Ejecuta <code>uv run engrama reindex</code> para generar embeddings de nodos
+   existentes.
+3. Los nodos nuevos reciben embeddings automáticamente al crearse.</p>
+<p>La fórmula de puntuación es:</p>
+<pre><code>final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal
+</code></pre>
+<p>con α=0.6, β=0.15, γ=0.1 por defecto. Configurables vía <code>HYBRID_ALPHA</code>
+y <code>HYBRID_GRAPH_BETA</code> en <code>.env</code>.</p>
+<hr />
+<h2 id="personalizar-tu-grafo-onboarding">Personalizar tu grafo (onboarding)<a class="headerlink" href="#personalizar-tu-grafo-onboarding" title="Permanent link">&para;</a></h2>
+<p>Engrama viene con un perfil <code>developer</code>, pero el esquema debería
+encajar con <strong>tu</strong> mundo, no con una plantilla genérica. El grafo de
+una enfermera no se parece en nada al de un desarrollador — y esa es
+la idea.</p>
+<h3 id="opcion-a-usar-el-perfil-developer-integrado">Opción A: Usar el perfil <code>developer</code> integrado<a class="headerlink" href="#opcion-a-usar-el-perfil-developer-integrado" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>developer
+</code></pre></div>
+<p>Crea nodos para Projects, Technologies, Decisions, Problems, Courses,
+Concepts y Clients.</p>
+<h3 id="opcion-b-que-claude-construya-tus-modulos-recomendado">Opción B: Que Claude construya tus módulos (recomendado)<a class="headerlink" href="#opcion-b-que-claude-construya-tus-modulos-recomendado" title="Permanent link">&para;</a></h3>
+<p>Abre Claude Desktop con Engrama conectado y dile:</p>
+<blockquote>
+<p>"Quiero configurar Engrama para mi trabajo. Soy enfermera con un
+máster en biología, doy clases a estudiantes de grado y los fines de
+semana me encanta cocinar."</p>
+</blockquote>
+<p>Claude te entrevistará durante unos 5 minutos — qué cosas registras día
+a día, cómo se conectan en tu cabeza — y luego generará módulos de
+dominio personalizados: <code>nursing.yaml</code>, <code>biology.yaml</code>,
+<code>teaching.yaml</code>, <code>cooking.yaml</code>. Los compone con el <code>base.yaml</code>
+universal y aplica el esquema, todo en una misma conversación. No hace
+falta saber YAML.</p>
+<h3 id="opcion-c-componer-a-partir-de-modulos-existentes">Opción C: Componer a partir de módulos existentes<a class="headerlink" href="#opcion-c-componer-a-partir-de-modulos-existentes" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>base<span class="w"> </span>--modules<span class="w"> </span>hacking<span class="w"> </span>teaching<span class="w"> </span>photography<span class="w"> </span>ai
+</code></pre></div>
+<p>Esto fusiona <code>profiles/base.yaml</code> (Project, Concept, Decision, Problem,
+Technology, Person) con módulos específicos de dominio de
+<code>profiles/modules/</code>.</p>
+<p><strong>Módulos de ejemplo incluidos:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Módulo</th>
+<th>Añade</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hacking</code></td>
+<td>Target, Vulnerability, Technique, Tool, CTF</td>
+</tr>
+<tr>
+<td><code>teaching</code></td>
+<td>Course, Client, Exercise, Material</td>
+</tr>
+<tr>
+<td><code>photography</code></td>
+<td>Photo, Location, Species, Gear</td>
+</tr>
+<tr>
+<td><code>ai</code></td>
+<td>Model, Dataset, Experiment, Pipeline</td>
+</tr>
+</tbody>
+</table>
+<p>Estos cuatro son <strong>ejemplos, no una lista cerrada</strong> — cualquiera puede
+crear un módulo para cualquier dominio.</p>
+<h3 id="opcion-d-escribir-tu-propio-modulo">Opción D: Escribir tu propio módulo<a class="headerlink" href="#opcion-d-escribir-tu-propio-modulo" title="Permanent link">&para;</a></h3>
+<p>Un módulo es solo un pequeño archivo YAML en <code>profiles/modules/</code>.
+Ejemplo de cocina:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cooking</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Recipes, techniques, and ingredients</span>
+
+<span class="nt">nodes</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">label</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Recipe</span>
+<span class="w">    </span><span class="nt">properties</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">name</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cuisine</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">difficulty</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">time</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">notes</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">name</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;A</span><span class="nv"> </span><span class="s">dish</span><span class="nv"> </span><span class="s">or</span><span class="nv"> </span><span class="s">preparation.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">label</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ingredient</span>
+<span class="w">    </span><span class="nt">properties</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">name</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">category</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">season</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">notes</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">name</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;A</span><span class="nv"> </span><span class="s">food</span><span class="nv"> </span><span class="s">ingredient</span><span class="nv"> </span><span class="s">—</span><span class="nv"> </span><span class="s">vegetable,</span><span class="nv"> </span><span class="s">spice,</span><span class="nv"> </span><span class="s">protein.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">label</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CookingTechnique</span>
+<span class="w">    </span><span class="nt">properties</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">name</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">type</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">notes</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">name</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;A</span><span class="nv"> </span><span class="s">culinary</span><span class="nv"> </span><span class="s">method</span><span class="nv"> </span><span class="s">—</span><span class="nv"> </span><span class="s">sous</span><span class="nv"> </span><span class="s">vide,</span><span class="nv"> </span><span class="s">fermentation,</span><span class="nv"> </span><span class="s">braising.&quot;</span>
+
+<span class="nt">relations</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">USES</span><span class="p p-Indicator">,</span><span class="nt">      from</span><span class="p">:</span><span class="w"> </span><span class="nv">Recipe</span><span class="p p-Indicator">,</span><span class="nt">     to</span><span class="p">:</span><span class="w"> </span><span class="nv">Ingredient</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">APPLIES</span><span class="p p-Indicator">,</span><span class="nt">   from</span><span class="p">:</span><span class="w"> </span><span class="nv">Recipe</span><span class="p p-Indicator">,</span><span class="nt">     to</span><span class="p">:</span><span class="w"> </span><span class="nv">CookingTechnique</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">RELATED</span><span class="p p-Indicator">,</span><span class="nt">   from</span><span class="p">:</span><span class="w"> </span><span class="nv">Ingredient</span><span class="p p-Indicator">,</span><span class="nt"> to</span><span class="p">:</span><span class="w"> </span><span class="nv">Concept</span><span class="p p-Indicator">}</span><span class="w">        </span><span class="c1"># &#39;Concept&#39; viene de base.yaml</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">DOCUMENTS</span><span class="p p-Indicator">,</span><span class="nt"> from</span><span class="p">:</span><span class="w"> </span><span class="nv">Recipe</span><span class="p p-Indicator">,</span><span class="nt">     to</span><span class="p">:</span><span class="w"> </span><span class="nv">Project</span><span class="p p-Indicator">}</span><span class="w">        </span><span class="c1"># &#39;Project&#39; viene de base.yaml</span>
+</code></pre></div>
+<p>Guárdalo como <code>profiles/modules/cooking.yaml</code>, y luego:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>engrama<span class="w"> </span>init<span class="w"> </span>--profile<span class="w"> </span>base<span class="w"> </span>--modules<span class="w"> </span>cooking<span class="w"> </span>teaching
+</code></pre></div>
+<p><strong>Reglas para módulos:</strong></p>
+<ul>
+<li>Los nodos usan etiquetas en PascalCase y <code>name</code> o <code>title</code> como clave de merge.</li>
+<li>Las relaciones pueden referenciar cualquier etiqueta de <code>base.yaml</code> sin redefinirla.</li>
+<li>Si dos módulos definen la misma etiqueta, las propiedades se fusionan automáticamente.</li>
+<li>Los tipos de relación deben ser verbos (USES, TREATS, COVERS), no sustantivos.</li>
+</ul>
+<p>Consulta <a href="../profiles/developer.yaml"><code>profiles/developer.yaml</code></a> para un
+perfil independiente completo, y
+<a href="../engrama/skills/onboard/references/example-profiles.md"><code>engrama/skills/onboard/references/example-profiles.md</code></a>
+para perfiles trabajados en enfermería, abogacía, PM, creativos
+freelance.</p>
+<h3 id="consejos-para-buenos-perfiles">Consejos para buenos perfiles<a class="headerlink" href="#consejos-para-buenos-perfiles" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>3 a 5 tipos de nodo por módulo</strong> es el punto óptimo. La base ya te
+  da 6. Un usuario multi-rol típico acaba con 12–18 en total.</li>
+<li>Usa <code>title</code> como clave de merge para cosas con forma de frase
+  (decisiones, problemas, protocolos). Usa <code>name</code> para todo lo demás.</li>
+<li>Incluye siempre <code>status</code> en nodos con ciclo de vida — reflect lo usa
+  para distinguir elementos abiertos vs resueltos.</li>
+<li>Ante la duda, deja que Claude genere el módulo por ti (Opción B).</li>
+</ul>
+<hr />
+<h2 id="referencia-de-configuracion">Referencia de configuración<a class="headerlink" href="#referencia-de-configuracion" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Por defecto</th>
+<th>Propósito</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GRAPH_BACKEND</code></td>
+<td><code>sqlite</code></td>
+<td><code>sqlite</code>, <code>neo4j</code> o <code>null</code> (testing)</td>
+</tr>
+<tr>
+<td><code>VECTOR_BACKEND</code></td>
+<td>acompaña al grafo</td>
+<td>Auto (<code>sqlite-vec</code> para SQLite)</td>
+</tr>
+<tr>
+<td><code>ENGRAMA_DB_PATH</code></td>
+<td><code>~/.engrama/engrama.db</code></td>
+<td>Archivo SQLite</td>
+</tr>
+<tr>
+<td><code>NEO4J_URI</code></td>
+<td><code>bolt://localhost:7687</code></td>
+<td>URI de conexión a Neo4j</td>
+</tr>
+<tr>
+<td><code>NEO4J_USERNAME</code></td>
+<td><code>neo4j</code></td>
+<td>Usuario Neo4j</td>
+</tr>
+<tr>
+<td><code>NEO4J_PASSWORD</code></td>
+<td>—</td>
+<td>Contraseña Neo4j (requerida con <code>GRAPH_BACKEND=neo4j</code>)</td>
+</tr>
+<tr>
+<td><code>NEO4J_DATABASE</code></td>
+<td><code>neo4j</code></td>
+<td>Nombre de base de datos Neo4j</td>
+</tr>
+<tr>
+<td><code>ENGRAMA_PROFILE</code></td>
+<td><code>developer</code></td>
+<td>Perfil para generar el esquema</td>
+</tr>
+<tr>
+<td><code>VAULT_PATH</code></td>
+<td><code>~/Documents/vault</code></td>
+<td>Raíz del vault de Obsidian</td>
+</tr>
+<tr>
+<td><code>EMBEDDING_PROVIDER</code></td>
+<td><code>none</code></td>
+<td><code>none</code>, <code>ollama</code> u <code>openai</code></td>
+</tr>
+<tr>
+<td><code>EMBEDDING_MODEL</code></td>
+<td><code>nomic-embed-text</code></td>
+<td>Nombre del modelo</td>
+</tr>
+<tr>
+<td><code>EMBEDDING_DIMENSIONS</code></td>
+<td><code>768</code></td>
+<td>Tamaño del vector</td>
+</tr>
+<tr>
+<td><code>OPENAI_BASE_URL</code></td>
+<td><code>https://api.openai.com/v1</code></td>
+<td>Endpoint OpenAI-compat</td>
+</tr>
+<tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td>—</td>
+<td>API key (cuando hace falta)</td>
+</tr>
+<tr>
+<td><code>OLLAMA_URL</code></td>
+<td><code>http://localhost:11434</code></td>
+<td>Endpoint API de Ollama</td>
+</tr>
+<tr>
+<td><code>HYBRID_ALPHA</code></td>
+<td><code>0.6</code></td>
+<td>Peso vector vs fulltext</td>
+</tr>
+<tr>
+<td><code>HYBRID_GRAPH_BETA</code></td>
+<td><code>0.15</code></td>
+<td>Peso del boost por topología</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="documentacion">Documentación<a class="headerlink" href="#documentacion" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../vision/">Vision</a> — por qué existe esto</li>
+<li><a href="../backends/">Backends</a> — guía SQLite vs Neo4j</li>
+<li><a href="../architecture/">Architecture</a> — diseño técnico y estructura de directorios</li>
+<li><a href="../graph-schema/">Graph Schema</a> — nodos, relaciones, referencia de consultas</li>
+<li><a href="../roadmap/">Roadmap</a> — fases de desarrollo y estado</li>
+<li><a href="../changelog/">Changelog</a> — notas de versión</li>
+<li><a href="../contributing/">Contributing</a> — cómo contribuir</li>
+<li><a href="../ddr-001/">DDR-001</a> — clasificación facetada</li>
+<li><a href="../ddr-002/">DDR-002</a> — sincronización bidireccional vault ↔ grafo</li>
+<li><a href="../ddr-003/">DDR-003</a> — capa de protocolos, embeddings, búsqueda híbrida, razonamiento temporal</li>
+<li><a href="../ddr-004/">DDR-004</a> — almacenamiento portátil (SQLite por defecto)</li>
+<li><a href="../glosario_es/">Glosario</a> — términos clave</li>
+</ul>
+<hr />
+<h2 id="licencia">Licencia<a class="headerlink" href="#licencia" title="Permanent link">&para;</a></h2>
+<p>Engrama está licenciado bajo Apache License 2.0.
+Copyright 2026 Sinensia IT Solutions.</p>
+<p>Eres libre de usar, modificar y distribuir Engrama tanto en proyectos
+personales como comerciales. La licencia Apache 2.0 incluye una
+concesión explícita de patentes, dándote tranquilidad para adoptar
+Engrama en entornos empresariales sin preocupaciones de propiedad
+intelectual.</p>
+<h3 id="contribuciones">Contribuciones<a class="headerlink" href="#contribuciones" title="Permanent link">&para;</a></h3>
+<p>Al enviar un pull request aceptas que tu contribución se licencia bajo
+los mismos términos de Apache 2.0. Usamos un Developer Certificate of
+Origin (DCO) — firma tus commits con <code>git commit -s</code>.</p>
+<h3 id="extensiones-comerciales">Extensiones comerciales<a class="headerlink" href="#extensiones-comerciales" title="Permanent link">&para;</a></h3>
+<p>Determinadas funcionalidades premium (como hosting gestionado,
+colaboración multi-tenant y analítica avanzada) podrán ofrecerse bajo
+una licencia comercial separada. El motor principal, las herramientas
+MCP y toda la funcionalidad de cara a la comunidad permanecen
+totalmente open source bajo Apache 2.0.</p>
+<p>Para consultas de licencias comerciales, por favor visita el formulario de contacto en <a href="https://sinensia.com">Sinensia</a>.</p>
+<hr />
+<h2 id="relacionado">Relacionado<a class="headerlink" href="#relacionado" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://github.com/neo4j-contrib/mcp-neo4j">neo4j-contrib/mcp-neo4j</a> — Servidor MCP genérico para Neo4j (Engrama usa su propio adaptador nativo que habla SQLite y Neo4j).</li>
+<li><a href="https://github.com/asg017/sqlite-vec">sqlite-vec</a> — Extensión de búsqueda vectorial para SQLite que da vida al backend Engrama por defecto.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit", "content.action.view"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

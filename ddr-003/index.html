@@ -1,0 +1,3385 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Graph-based long-term memory framework for AI agents.">
+      
+      
+      
+        <link rel="canonical" href="https://scops.github.io/engrama/ddr-003/">
+      
+      
+        <link rel="prev" href="../ddr-002/">
+      
+      
+        <link rel="next" href="../ddr-004/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>DDR-003 - Engrama</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#ddr-003-protocol-based-architecture-for-engrama-v10" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Engrama" class="md-header__button md-logo" aria-label="Engrama" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Engrama
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              DDR-003
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/scops/engrama" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    scops/engrama
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../vision/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Vision
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../backends/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Backends
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../graph-schema/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Graph Schema
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../ddr-001/" class="md-tabs__link">
+          
+  
+  
+  Design Decisions (DDRs)
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../changelog/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Engrama" class="md-nav__button md-logo" aria-label="Engrama" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Engrama
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/scops/engrama" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    scops/engrama
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../graph-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graph Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glosario_es/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary (ES)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../readme_es/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spanish Readme
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Decisions (DDRs)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Decisions (DDRs)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-001/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-001
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-002/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-002
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-003
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-003
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-seven-features-and-their-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The seven features and their dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-1-storage-protocols-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 1 — Storage protocols (#2)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 1 — Storage protocols (#2)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-graphstore-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 GraphStore protocol
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-vectorstore-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 VectorStore protocol
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-why-two-protocols-not-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 Why two protocols, not one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-neo4j-implementation-first-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 Neo4j implementation (first backend)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.5 Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-2-embedding-provider-7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 2 — Embedding provider (#7)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 2 — Embedding provider (#7)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#text-representation-for-embedding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Text representation for embedding
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-3-hybrid-search-engine-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 3 — Hybrid search engine (#1)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 3 — Hybrid search engine (#1)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Algorithm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#graceful-degradation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graceful degradation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-4-temporal-reasoning-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 4 — Temporal reasoning (#3)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 4 — Temporal reasoning (#3)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bi-temporal-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bi-temporal model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#confidence-decay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confidence decay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ttl-and-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TTL and lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-5-memory-security-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 5 — Memory security (#4)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 5 — Memory security (#4)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#threat-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threat model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#defence-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Defence layers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-6-multi-scope-memory-6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 6 — Multi-scope memory (#6)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 6 — Multi-scope memory (#6)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scope-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scope-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-7-benchmarks-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 7 — Benchmarks (#5)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 7 — Benchmarks (#5)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#target-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-we-need-before-benchmarking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What we need before benchmarking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#realistic-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Realistic targets
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#revised-directory-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revised directory structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Revised directory structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#migration-from-current-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration from current code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation phases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Implementation phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-a-protocols-neo4j-extraction-foundation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase A — Protocols + Neo4j extraction (foundation)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-b-embedding-providers-7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase B — Embedding providers (#7)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-c-vector-storage-hybrid-search-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase C — Vector storage + hybrid search (#1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-d-temporal-reasoning-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase D — Temporal reasoning (#3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-e-security-hardening-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase E — Security hardening (#4)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-f-multi-scope-6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase F — Multi-scope (#6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-g-benchmarks-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase G — Benchmarks (#5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#env-reference-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        .env reference (complete)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consequences
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Consequences">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#positive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Positive
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#negative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Negative
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-004/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DDR-004
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ddr-template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../portable-storage-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Portable Storage Spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_3" id="__nav_9_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Prompts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    System Prompts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/system-prompts/v0.4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version 0.4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/system-prompts/v0.5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version 0.5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-seven-features-and-their-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The seven features and their dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-1-storage-protocols-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 1 — Storage protocols (#2)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 1 — Storage protocols (#2)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-graphstore-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 GraphStore protocol
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-vectorstore-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 VectorStore protocol
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-why-two-protocols-not-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 Why two protocols, not one
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-neo4j-implementation-first-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 Neo4j implementation (first backend)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.5 Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-2-embedding-provider-7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 2 — Embedding provider (#7)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 2 — Embedding provider (#7)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#text-representation-for-embedding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Text representation for embedding
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-3-hybrid-search-engine-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 3 — Hybrid search engine (#1)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 3 — Hybrid search engine (#1)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Algorithm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#graceful-degradation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graceful degradation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-4-temporal-reasoning-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 4 — Temporal reasoning (#3)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 4 — Temporal reasoning (#3)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bi-temporal-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bi-temporal model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#confidence-decay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confidence decay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ttl-and-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TTL and lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-5-memory-security-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 5 — Memory security (#4)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 5 — Memory security (#4)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#threat-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threat model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#defence-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Defence layers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-6-multi-scope-memory-6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 6 — Multi-scope memory (#6)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 6 — Multi-scope memory (#6)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scope-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scope-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-7-benchmarks-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 7 — Benchmarks (#5)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 7 — Benchmarks (#5)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#target-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-we-need-before-benchmarking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What we need before benchmarking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#realistic-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Realistic targets
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#revised-directory-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revised directory structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Revised directory structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#migration-from-current-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration from current code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation phases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Implementation phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-a-protocols-neo4j-extraction-foundation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase A — Protocols + Neo4j extraction (foundation)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-b-embedding-providers-7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase B — Embedding providers (#7)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-c-vector-storage-hybrid-search-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase C — Vector storage + hybrid search (#1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-d-temporal-reasoning-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase D — Temporal reasoning (#3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-e-security-hardening-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase E — Security hardening (#4)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-f-multi-scope-6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase F — Multi-scope (#6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-g-benchmarks-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase G — Benchmarks (#5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#env-reference-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        .env reference (complete)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consequences
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Consequences">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#positive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Positive
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#negative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Negative
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/scops/engrama/edit/main/docs/ddr-003.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+    
+      
+    
+    <a href="https://github.com/scops/engrama/raw/main/docs/ddr-003.md" title="View source of this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 18c.56 0 1 .44 1 1s-.44 1-1 1-1-.44-1-1 .44-1 1-1m0-3c-2.73 0-5.06 1.66-6 4 .94 2.34 3.27 4 6 4s5.06-1.66 6-4c-.94-2.34-3.27-4-6-4m0 6.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5M9.27 20H6V4h7v5h5v4.07c.7.08 1.36.25 2 .49V8l-6-6H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4.5a8.2 8.2 0 0 1-1.23-2"/></svg>
+    </a>
+  
+
+
+<h1 id="ddr-003-protocol-based-architecture-for-engrama-v10">DDR-003 — Protocol-based architecture for Engrama v1.0<a class="headerlink" href="#ddr-003-protocol-based-architecture-for-engrama-v10" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>Version: 0.2.0 | Date: 2026-04-12 | Status: Proposed
+Supersedes: DDR-003 v0.1.0 (Neo4j-only hybrid search)</p>
+</blockquote>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">&para;</a></h2>
+<p>The DAFO analysis identified seven features Engrama needs to compete.
+Implementing them independently creates rework: hybrid search (#1)
+hard-wired to Neo4j conflicts with database abstraction (#2); temporal
+reasoning (#3) touches every query path; security (#4) and multi-scope
+(#6) cut across all storage operations.</p>
+<p>This DDR designs a unified protocol-based architecture where all seven
+features compose cleanly. The key insight: <strong>#2 (database abstraction)
+is the foundation, not #1 (hybrid search)</strong>. Every other feature builds
+on the storage protocols. We define those protocols first, then each
+feature becomes a layer that plugs in without refactoring what came before.</p>
+<h2 id="the-seven-features-and-their-dependencies">The seven features and their dependencies<a class="headerlink" href="#the-seven-features-and-their-dependencies" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>#5 Benchmarks ← needs #1, #3
+#6 Multi-scope ← needs #2, #4
+#4 Security   ← needs #2, #3
+#1 Hybrid search ← needs #2, #7
+#3 Temporal   ← needs #2
+#7 LLM-agnostic ← independent
+#2 DB abstraction ← FOUNDATION
+</code></pre></div>
+<p>Implementation order: #2 + #7 → #1 + #3 → #4 → #6 → #5</p>
+<h2 id="decision">Decision<a class="headerlink" href="#decision" title="Permanent link">&para;</a></h2>
+<p>Replace Engrama's direct Neo4j coupling with three protocol interfaces.
+Every skill, adapter, and MCP tool talks to these protocols — never to a
+specific database. Neo4j becomes the first (and default) implementation.</p>
+<hr />
+<h2 id="part-1-storage-protocols-2">Part 1 — Storage protocols (#2)<a class="headerlink" href="#part-1-storage-protocols-2" title="Permanent link">&para;</a></h2>
+<h3 id="11-graphstore-protocol">1.1 GraphStore protocol<a class="headerlink" href="#11-graphstore-protocol" title="Permanent link">&para;</a></h3>
+<p>Covers: node CRUD, relationships, fulltext search, pattern queries.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Protocol</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">runtime_checkable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+
+<span class="nd">@runtime_checkable</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GraphStore</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract interface for graph storage backends.&quot;&quot;&quot;</span>
+
+    <span class="c1"># --- Node operations ---</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">merge_node</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">properties</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+        <span class="n">embedding</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create or update a node. Always MERGE semantics.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_node</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_value</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieve a single node by its unique key.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">delete_node</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">soft</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Delete or archive a node. soft=True sets status=&#39;archived&#39;.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="c1"># --- Relationship operations ---</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">merge_relation</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">from_label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">from_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">from_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">rel_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">to_label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">to_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">to_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a relationship (idempotent).&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="c1"># --- Query operations ---</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_neighbours</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">hops</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Traverse N hops from a node.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fulltext_search</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Keyword search across all text properties.</span>
+<span class="sd">        Returns: [{node, score, label, key}]&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run_cypher</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Execute a raw query (backend-specific).</span>
+<span class="sd">        For reflect patterns that need full query power.</span>
+<span class="sd">        Backends that don&#39;t support Cypher raise NotImplementedError.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="c1"># --- Schema operations ---</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">init_schema</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="s2">&quot;SchemaDefinition&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply constraints, indexes, and seed data.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">health_check</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return backend status and version info.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="c1"># --- Temporal operations (#3) ---</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_node_history</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key_value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the temporal history of a node&#39;s property changes.</span>
+<span class="sd">        Each entry: {properties, valid_from, valid_to, ingested_at}&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">decay_scores</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">max_age_days</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">90</span><span class="p">,</span> <span class="n">decay_rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply confidence decay to stale nodes.</span>
+<span class="sd">        Returns count of nodes affected.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="c1"># --- Scope operations (#6) ---</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">set_scope</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">scope</span><span class="p">:</span> <span class="s2">&quot;MemoryScope&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the active scope for all subsequent operations.</span>
+<span class="sd">        Scope filters are applied automatically to every query.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+</code></pre></div>
+<h3 id="12-vectorstore-protocol">1.2 VectorStore protocol<a class="headerlink" href="#12-vectorstore-protocol" title="Permanent link">&para;</a></h3>
+<p>Covers: embedding storage, similarity search. May be the same backend
+as GraphStore (Neo4j) or a separate one (ChromaDB, pgvector).</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@runtime_checkable</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">VectorStore</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract interface for vector similarity search.&quot;&quot;&quot;</span>
+
+    <span class="n">dimensions</span><span class="p">:</span> <span class="nb">int</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">store_vectors</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">items</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Store embeddings for nodes. items: [(node_id, embedding)].</span>
+<span class="sd">        Returns count stored.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">search_vectors</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">query_embedding</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+        <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="n">scope</span><span class="p">:</span> <span class="s2">&quot;MemoryScope | None&quot;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;k-ANN similarity search.</span>
+<span class="sd">        Returns: [{node_id, score, label, key}]&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">delete_vectors</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">node_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove embeddings for deleted/archived nodes.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">count</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Total vectors stored.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+</code></pre></div>
+<h3 id="13-why-two-protocols-not-one">1.3 Why two protocols, not one<a class="headerlink" href="#13-why-two-protocols-not-one" title="Permanent link">&para;</a></h3>
+<p>Some backends implement both (Neo4j has native graph + native vectors).
+Others don't (NetworkX has no vector index; ChromaDB has no graph).
+Keeping them separate lets us mix backends:</p>
+<table>
+<thead>
+<tr>
+<th>Combination</th>
+<th>GraphStore</th>
+<th>VectorStore</th>
+<th>Use case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Neo4j only</td>
+<td>Neo4jGraphStore</td>
+<td>Neo4jVectorStore</td>
+<td>Default, simplest</td>
+</tr>
+<tr>
+<td>Neo4j + Chroma</td>
+<td>Neo4jGraphStore</td>
+<td>ChromaVectorStore</td>
+<td>Better vector perf</td>
+</tr>
+<tr>
+<td>Kuzu + Chroma</td>
+<td>KuzuGraphStore</td>
+<td>ChromaVectorStore</td>
+<td>Embedded, no Docker</td>
+</tr>
+<tr>
+<td>NetworkX + None</td>
+<td>NetworkXGraphStore</td>
+<td>NullVectorStore</td>
+<td>Zero-dep prototyping</td>
+</tr>
+<tr>
+<td>PG+AGE + pgvector</td>
+<td>PgGraphStore</td>
+<td>PgVectorStore</td>
+<td>Single Postgres</td>
+</tr>
+</tbody>
+</table>
+<h3 id="14-neo4j-implementation-first-backend">1.4 Neo4j implementation (first backend)<a class="headerlink" href="#14-neo4j-implementation-first-backend" title="Permanent link">&para;</a></h3>
+<p>The Neo4j adapter implements both protocols. It wraps the exact same
+Cypher queries that exist today in <code>server.py</code> — zero logic change,
+just extraction behind the interface.</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">Neo4jBackend</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Implements both GraphStore and VectorStore using Neo4j.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">driver</span><span class="p">:</span> <span class="n">AsyncDriver</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">driver</span> <span class="o">=</span> <span class="n">driver</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scope</span><span class="p">:</span> <span class="n">MemoryScope</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># --- GraphStore ---</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">merge_node</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">key_field</span><span class="p">,</span> <span class="n">key_value</span><span class="p">,</span>
+                         <span class="n">properties</span><span class="p">,</span> <span class="n">embedding</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># Same MERGE Cypher as current engine.py</span>
+        <span class="c1"># + stores embedding property if provided</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fulltext_search</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
+        <span class="c1"># Same db.index.fulltext.queryNodes(&#39;memory_search&#39;, ...)</span>
+        <span class="o">...</span>
+
+    <span class="c1"># --- VectorStore ---</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">search_vectors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query_embedding</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># CALL db.index.vector.queryNodes(&#39;memory_vectors&#39;, $k, $emb)</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">store_vectors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">items</span><span class="p">):</span>
+        <span class="c1"># SET n.embedding = $embedding (already on the same node)</span>
+        <span class="o">...</span>
+</code></pre></div>
+<h3 id="15-configuration">1.5 Configuration<a class="headerlink" href="#15-configuration" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code># Storage backend
+GRAPH_BACKEND=neo4j          # neo4j | kuzu | networkx | postgres
+VECTOR_BACKEND=neo4j         # neo4j | chroma | pgvector | none
+
+# Neo4j (when GRAPH_BACKEND=neo4j or VECTOR_BACKEND=neo4j)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=changeme
+
+# ChromaDB (when VECTOR_BACKEND=chroma)
+CHROMA_PATH=./chroma_data    # local persistent directory
+CHROMA_COLLECTION=engrama
+
+# Kuzu (when GRAPH_BACKEND=kuzu)
+KUZU_PATH=./kuzu_data
+</code></pre></div>
+<p>The factory reads <code>.env</code> and returns the correct implementations:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">create_stores</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GraphStore</span><span class="p">,</span> <span class="n">VectorStore</span><span class="p">]:</span>
+    <span class="n">graph</span> <span class="o">=</span> <span class="n">_create_graph_store</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="n">vector</span> <span class="o">=</span> <span class="n">_create_vector_store</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">graph</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">graph</span><span class="p">,</span> <span class="n">vector</span>
+</code></pre></div>
+<p>When <code>VECTOR_BACKEND</code> matches <code>GRAPH_BACKEND</code> (e.g., both <code>neo4j</code>),
+the factory returns the same object for both — no wasted connections.</p>
+<hr />
+<h2 id="part-2-embedding-provider-7">Part 2 — Embedding provider (#7)<a class="headerlink" href="#part-2-embedding-provider-7" title="Permanent link">&para;</a></h2>
+<p>Decoupled from any LLM vendor. Three implementations at launch.</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@runtime_checkable</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EmbeddingProvider</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">dimensions</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">embed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span> <span class="o">...</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">embed_batch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">texts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span> <span class="o">...</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">health_check</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span> <span class="o">...</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Model</th>
+<th>Dims</th>
+<th>Local</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OllamaProvider</code></td>
+<td>nomic-embed-text</td>
+<td>768</td>
+<td>yes</td>
+<td>free</td>
+</tr>
+<tr>
+<td><code>OllamaProvider</code></td>
+<td>nomic-embed-text-v2-moe</td>
+<td>768</td>
+<td>yes</td>
+<td>free, multilingual</td>
+</tr>
+<tr>
+<td><code>OpenAIProvider</code></td>
+<td>text-embedding-3-small</td>
+<td>1536</td>
+<td>no</td>
+<td>$0.02/1M tokens</td>
+</tr>
+<tr>
+<td><code>SentenceTransformerProvider</code></td>
+<td>all-MiniLM-L6-v2</td>
+<td>384</td>
+<td>yes</td>
+<td>free, no Ollama</td>
+</tr>
+<tr>
+<td><code>NullProvider</code></td>
+<td>—</td>
+<td>0</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>EMBEDDING_PROVIDER=ollama           # ollama | openai | sentence_transformer | none
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_DIMENSIONS=768
+OLLAMA_URL=http://localhost:11434
+</code></pre></div>
+<h3 id="text-representation-for-embedding">Text representation for embedding<a class="headerlink" href="#text-representation-for-embedding" title="Permanent link">&para;</a></h3>
+<p>Every node gets embedded from its concatenated text properties:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">node_to_text</span><span class="p">(</span><span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">props</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">]</span>
+    <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;title&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;description&quot;</span><span class="p">,</span> <span class="s2">&quot;notes&quot;</span><span class="p">,</span> <span class="s2">&quot;rationale&quot;</span><span class="p">,</span>
+                  <span class="s2">&quot;solution&quot;</span><span class="p">,</span> <span class="s2">&quot;context&quot;</span><span class="p">,</span> <span class="s2">&quot;body&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="o">:=</span> <span class="n">props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">):</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="part-3-hybrid-search-engine-1">Part 3 — Hybrid search engine (#1)<a class="headerlink" href="#part-3-hybrid-search-engine-1" title="Permanent link">&para;</a></h2>
+<p>The search engine lives in <code>core/search.py</code>. It talks only to the
+protocols — zero database-specific code.</p>
+<h3 id="algorithm">Algorithm<a class="headerlink" href="#algorithm" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>query ──► EmbeddingProvider.embed(query)
+               │
+     ┌─────────┴──────────┐
+     ▼                    ▼
+VectorStore          GraphStore
+.search_vectors()    .fulltext_search()
+     │                    │
+     └─────────┬──────────┘
+               ▼
+         merge by node_id
+         normalize scores to [0,1]
+               │
+               ▼
+    final = α·v_score + (1-α)·f_score + β·graph_boost
+               │
+               ▼
+         optional: GraphStore.get_neighbours()
+         for top-K results (1-hop expansion)
+               │
+               ▼
+         ranked results
+</code></pre></div>
+<h3 id="scoring">Scoring<a class="headerlink" href="#scoring" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">HybridConfig</span><span class="p">:</span>
+    <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.6</span>       <span class="c1"># vector weight</span>
+    <span class="n">graph_beta</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.15</span> <span class="c1"># graph boost weight</span>
+    <span class="n">boost_cap</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.3</span>   <span class="c1"># max graph boost per node</span>
+    <span class="n">vector_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span>       <span class="c1"># candidates from vector search</span>
+    <span class="n">fulltext_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span>     <span class="c1"># candidates from fulltext search</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">HybridSearchEngine</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph</span><span class="p">:</span> <span class="n">GraphStore</span><span class="p">,</span> <span class="n">vector</span><span class="p">:</span> <span class="n">VectorStore</span><span class="p">,</span>
+                 <span class="n">embedder</span><span class="p">:</span> <span class="n">EmbeddingProvider</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">HybridConfig</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">graph</span> <span class="o">=</span> <span class="n">graph</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vector</span> <span class="o">=</span> <span class="n">vector</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">embedder</span> <span class="o">=</span> <span class="n">embedder</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">SearchResult</span><span class="p">]:</span>
+        <span class="c1"># 1. Embed query</span>
+        <span class="n">query_vec</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedder</span><span class="o">.</span><span class="n">embed</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+
+        <span class="c1"># 2. Parallel search (or sequential if same backend)</span>
+        <span class="n">v_results</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">vector</span><span class="o">.</span><span class="n">search_vectors</span><span class="p">(</span>
+            <span class="n">query_vec</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">vector_k</span>
+        <span class="p">)</span> <span class="k">if</span> <span class="n">query_vec</span> <span class="k">else</span> <span class="p">[]</span>
+        <span class="n">f_results</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">fulltext_search</span><span class="p">(</span>
+            <span class="n">query</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fulltext_k</span>
+        <span class="p">)</span>
+
+        <span class="c1"># 3. Merge by node identity</span>
+        <span class="n">merged</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_merge</span><span class="p">(</span><span class="n">v_results</span><span class="p">,</span> <span class="n">f_results</span><span class="p">)</span>
+
+        <span class="c1"># 4. Score</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">merged</span><span class="p">:</span>
+            <span class="n">r</span><span class="o">.</span><span class="n">final_score</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">alpha</span> <span class="o">*</span> <span class="n">r</span><span class="o">.</span><span class="n">vector_score</span>
+                <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">alpha</span><span class="p">)</span> <span class="o">*</span> <span class="n">r</span><span class="o">.</span><span class="n">fulltext_score</span>
+                <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">graph_beta</span> <span class="o">*</span> <span class="n">r</span><span class="o">.</span><span class="n">graph_boost</span>
+            <span class="p">)</span>
+
+        <span class="c1"># 5. Rank and return</span>
+        <span class="n">merged</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">final_score</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">merged</span><span class="p">[:</span><span class="n">limit</span><span class="p">]</span>
+</code></pre></div>
+<h3 id="graceful-degradation">Graceful degradation<a class="headerlink" href="#graceful-degradation" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EMBEDDING_PROVIDER=none</code></td>
+<td>α forced to 0.0, fulltext only</td>
+</tr>
+<tr>
+<td><code>VECTOR_BACKEND=none</code></td>
+<td>Same as above</td>
+</tr>
+<tr>
+<td>Ollama not running</td>
+<td>Fallback to fulltext + warning</td>
+</tr>
+<tr>
+<td>Node has no embedding</td>
+<td>Appears in fulltext results only</td>
+</tr>
+<tr>
+<td>No fulltext index (Kuzu)</td>
+<td>α forced to 1.0, vector only</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Zero breaking changes.</strong> Current behaviour (fulltext-only on Neo4j)
+is the default configuration.</p>
+<hr />
+<h2 id="part-4-temporal-reasoning-3">Part 4 — Temporal reasoning (#3)<a class="headerlink" href="#part-4-temporal-reasoning-3" title="Permanent link">&para;</a></h2>
+<h3 id="bi-temporal-model">Bi-temporal model<a class="headerlink" href="#bi-temporal-model" title="Permanent link">&para;</a></h3>
+<p>Every node carries four timestamps:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+<th>Set by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>created_at</code></td>
+<td>When the node was first created</td>
+<td>engine (exists today)</td>
+</tr>
+<tr>
+<td><code>updated_at</code></td>
+<td>Last modification time</td>
+<td>engine (exists today)</td>
+</tr>
+<tr>
+<td><code>valid_from</code></td>
+<td>When the fact became true in the real world</td>
+<td>user/agent (new)</td>
+</tr>
+<tr>
+<td><code>valid_to</code></td>
+<td>When the fact stopped being true</td>
+<td>user/agent (new)</td>
+</tr>
+</tbody>
+</table>
+<p><code>valid_from</code> and <code>valid_to</code> enable temporal queries: "What technologies
+was the project using in January?" — filter by <code>valid_from &lt;= date AND
+(valid_to IS NULL OR valid_to &gt;= date)</code>.</p>
+<h3 id="confidence-decay">Confidence decay<a class="headerlink" href="#confidence-decay" title="Permanent link">&para;</a></h3>
+<p>Nodes get a <code>confidence</code> property (float, 0.0–1.0, default 1.0).
+Decay runs on <code>GraphStore.decay_scores()</code>:</p>
+<div class="highlight"><pre><span></span><code>confidence = initial × exp(-decay_rate × days_since_updated)
+</code></pre></div>
+<p>The reflect skill already uses confidence scores on Insight nodes.
+Extending this to all nodes lets search results prioritize recent,
+actively-maintained knowledge over stale entries.</p>
+<h3 id="ttl-and-lifecycle">TTL and lifecycle<a class="headerlink" href="#ttl-and-lifecycle" title="Permanent link">&para;</a></h3>
+<p>The existing <code>ForgetSkill</code> already supports <code>forget_by_ttl()</code> with
+soft-delete (archive) and hard-delete (purge). Temporal reasoning
+extends this with:</p>
+<ul>
+<li>Auto-decay on a schedule (CLI: <code>engrama decay --rate 0.01</code>)</li>
+<li>Conflict detection: when <code>engrama_remember</code> updates a node whose
+  <code>valid_to</code> is already set, flag it for review rather than silently
+  overwriting</li>
+</ul>
+<h3 id="schema-additions">Schema additions<a class="headerlink" href="#schema-additions" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Added to all nodes via GraphStore.merge_node()</span>
+<span class="n">temporal_fields</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;valid_from&quot;</span><span class="p">:</span> <span class="s2">&quot;datetime | None&quot;</span><span class="p">,</span>   <span class="c1"># when fact became true</span>
+    <span class="s2">&quot;valid_to&quot;</span><span class="p">:</span> <span class="s2">&quot;datetime | None&quot;</span><span class="p">,</span>     <span class="c1"># when fact stopped being true</span>
+    <span class="s2">&quot;confidence&quot;</span><span class="p">:</span> <span class="s2">&quot;float&quot;</span><span class="p">,</span>             <span class="c1"># 0.0–1.0, decays over time</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>No new indexes needed — <code>valid_from</code> and <code>valid_to</code> are filtered in
+queries, not searched. The existing <code>updated_at</code> range index covers
+the decay calculation.</p>
+<hr />
+<h2 id="part-5-memory-security-4">Part 5 — Memory security (#4)<a class="headerlink" href="#part-5-memory-security-4" title="Permanent link">&para;</a></h2>
+<h3 id="threat-model">Threat model<a class="headerlink" href="#threat-model" title="Permanent link">&para;</a></h3>
+<p>The OWASP Top 10 for Agentic Applications (Dec 2025) classifies
+memory poisoning as ASI06. The MINJA attack achieves &gt;95% injection
+success rate. For Engrama — targeting security professionals — this
+is reputationally critical.</p>
+<h3 id="defence-layers">Defence layers<a class="headerlink" href="#defence-layers" title="Permanent link">&para;</a></h3>
+<p><strong>Layer 1 — Input sanitisation</strong> (in the engine, above the stores):</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">Sanitiser</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validates and cleans all inputs before they reach storage.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">sanitise_properties</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">props</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Strip injection attempts from property values.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_label</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whitelist-check against schema labels.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_relation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rel_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whitelist-check against schema relation types.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+</code></pre></div>
+<p><strong>Layer 2 — Provenance tracking</strong> (metadata on every write):</p>
+<div class="highlight"><pre><span></span><code><span class="n">provenance_fields</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;str&quot;</span><span class="p">,</span>         <span class="c1"># &quot;mcp&quot; | &quot;sdk&quot; | &quot;cli&quot; | &quot;sync&quot;</span>
+    <span class="s2">&quot;source_agent&quot;</span><span class="p">:</span> <span class="s2">&quot;str&quot;</span><span class="p">,</span>   <span class="c1"># which agent wrote this</span>
+    <span class="s2">&quot;source_session&quot;</span><span class="p">:</span> <span class="s2">&quot;str&quot;</span><span class="p">,</span> <span class="c1"># session identifier</span>
+    <span class="s2">&quot;trust_level&quot;</span><span class="p">:</span> <span class="s2">&quot;float&quot;</span><span class="p">,</span>  <span class="c1"># 0.0–1.0, based on source</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Layer 3 — Trust-aware retrieval</strong> (in the search engine):</p>
+<p>Search results are weighted by trust level. Nodes written by verified
+sources (vault sync, CLI) get higher trust than those from agent
+conversations. The hybrid score formula extends:</p>
+<div class="highlight"><pre><span></span><code>final = α·vector + (1-α)·fulltext + β·graph_boost + γ·trust_level
+</code></pre></div>
+<p>Where <code>γ = 0.1</code> by default. This means a low-trust node needs higher
+semantic/keyword relevance to rank above a high-trust node.</p>
+<p><strong>Layer 4 — Scope isolation</strong> (see Part 6).</p>
+<hr />
+<h2 id="part-6-multi-scope-memory-6">Part 6 — Multi-scope memory (#6)<a class="headerlink" href="#part-6-multi-scope-memory-6" title="Permanent link">&para;</a></h2>
+<h3 id="scope-model">Scope model<a class="headerlink" href="#scope-model" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MemoryScope</span><span class="p">:</span>
+    <span class="n">user_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>      <span class="c1"># whose memory</span>
+    <span class="n">agent_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>     <span class="c1"># which agent</span>
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>   <span class="c1"># which conversation</span>
+    <span class="n">org_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>       <span class="c1"># which organisation</span>
+</code></pre></div>
+<p>When a scope is set via <code>GraphStore.set_scope()</code>, every query
+automatically filters by the scope fields. Nodes created in a scope
+carry those scope fields as properties.</p>
+<h3 id="scope-hierarchy">Scope hierarchy<a class="headerlink" href="#scope-hierarchy" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>org_id (broadest)
+  └── user_id
+        └── agent_id
+              └── session_id (narrowest)
+</code></pre></div>
+<p>A query with <code>user_id="alice"</code> sees:
+- All nodes with <code>user_id="alice"</code> (her personal memory)
+- All nodes with <code>org_id="acme"</code> and no <code>user_id</code> (shared org memory)
+- All nodes with no scope fields (global/public memory)</p>
+<h3 id="implementation">Implementation<a class="headerlink" href="#implementation" title="Permanent link">&para;</a></h3>
+<p>For Neo4j, scopes become property filters on every MATCH clause.
+The <code>GraphStore.set_scope()</code> method stores the active scope, and
+<code>merge_node()</code> / <code>fulltext_search()</code> / <code>search_vectors()</code> all
+apply it automatically.</p>
+<p>For v1, Engrama remains single-user (scope fields exist but default
+to None). Multi-user support is a configuration change, not a code
+change.</p>
+<hr />
+<h2 id="part-7-benchmarks-5">Part 7 — Benchmarks (#5)<a class="headerlink" href="#part-7-benchmarks-5" title="Permanent link">&para;</a></h2>
+<h3 id="target-benchmarks">Target benchmarks<a class="headerlink" href="#target-benchmarks" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>What it measures</th>
+<th>Leader (2026)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LOCOMO</td>
+<td>Long conversation memory (1,986 questions)</td>
+<td>MemMachine 91.7%</td>
+</tr>
+<tr>
+<td>LongMemEval</td>
+<td>Long-term memory evaluation (500 questions)</td>
+<td>Mem0 93.0%</td>
+</tr>
+</tbody>
+</table>
+<h3 id="what-we-need-before-benchmarking">What we need before benchmarking<a class="headerlink" href="#what-we-need-before-benchmarking" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Hybrid search (#1) — LOCOMO heavily tests semantic recall</li>
+<li>Temporal reasoning (#3) — LongMemEval tests temporal questions</li>
+<li>A benchmark harness that loads test data, runs queries, scores results</li>
+</ul>
+<h3 id="realistic-targets">Realistic targets<a class="headerlink" href="#realistic-targets" title="Permanent link">&para;</a></h3>
+<p>With hybrid search (graph+vector+fulltext), Engrama should target:
+- LOCOMO: 70–80% (competitive, not leading)
+- LongMemEval: 75–85% (graph boost helps temporal questions)</p>
+<p>Even modest scores published transparently establish credibility.
+The graph boost term is Engrama's structural advantage — no competitor
+uses graph topology as a ranking signal.</p>
+<hr />
+<h2 id="revised-directory-structure">Revised directory structure<a class="headerlink" href="#revised-directory-structure" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>engrama/
+├── core/
+│   ├── protocols.py       # GraphStore, VectorStore, EmbeddingProvider
+│   ├── search.py          # HybridSearchEngine (protocol-based)
+│   ├── security.py        # Sanitiser, provenance, trust
+│   ├── scope.py           # MemoryScope dataclass + filtering
+│   ├── temporal.py        # Decay, bi-temporal queries
+│   ├── engine.py          # Orchestrator (uses protocols)
+│   ├── client.py          # (deprecated, kept for backward compat)
+│   └── schema.py          # SchemaDefinition, node dataclasses
+│
+├── backends/
+│   ├── __init__.py        # create_stores() factory
+│   ├── neo4j/
+│   │   ├── graph.py       # Neo4jGraphStore
+│   │   ├── vector.py      # Neo4jVectorStore
+│   │   └── backend.py     # Neo4jBackend (unified, implements both)
+│   ├── kuzu/              # future
+│   ├── networkx/          # future
+│   └── null.py            # NullGraphStore, NullVectorStore
+│
+├── embeddings/
+│   ├── __init__.py        # create_provider() factory
+│   ├── ollama.py          # OllamaProvider
+│   ├── openai.py          # OpenAIProvider
+│   ├── sentence_transformer.py
+│   └── null.py            # NullProvider
+│
+├── skills/                # unchanged — use protocols via engine
+├── adapters/              # unchanged — use protocols via engine
+└── ...
+</code></pre></div>
+<h3 id="migration-from-current-code">Migration from current code<a class="headerlink" href="#migration-from-current-code" title="Permanent link">&para;</a></h3>
+<p>The refactoring extracts, not rewrites:</p>
+<table>
+<thead>
+<tr>
+<th>Current</th>
+<th>Becomes</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core/engine.py</code> merge logic</td>
+<td><code>backends/neo4j/graph.py</code></td>
+<td>Extract</td>
+</tr>
+<tr>
+<td><code>core/engine.py</code> fulltext search</td>
+<td><code>backends/neo4j/graph.py</code></td>
+<td>Extract</td>
+</tr>
+<tr>
+<td><code>core/engine.py</code> orchestration</td>
+<td><code>core/engine.py</code> (now uses protocols)</td>
+<td>Thin</td>
+</tr>
+<tr>
+<td><code>adapters/mcp/server.py</code></td>
+<td>Same file, uses engine</td>
+<td>Minimal</td>
+</tr>
+<tr>
+<td><code>skills/*.py</code></td>
+<td>Same files, use engine</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<p>The MCP tools and skills don't change at all — they call <code>engine.*</code>
+methods, and the engine delegates to the protocols. The only code that
+moves is the Neo4j-specific Cypher, from <code>engine.py</code> into
+<code>backends/neo4j/</code>.</p>
+<hr />
+<h2 id="implementation-phases">Implementation phases<a class="headerlink" href="#implementation-phases" title="Permanent link">&para;</a></h2>
+<h3 id="phase-a-protocols-neo4j-extraction-foundation">Phase A — Protocols + Neo4j extraction (foundation)<a class="headerlink" href="#phase-a-protocols-neo4j-extraction-foundation" title="Permanent link">&para;</a></h3>
+<p><strong>Estimated: 4–6h | No new features, no regressions</strong></p>
+<ol>
+<li>Create <code>core/protocols.py</code> with GraphStore, VectorStore, EmbeddingProvider</li>
+<li>Create <code>backends/neo4j/backend.py</code> — extract existing Cypher from engine.py</li>
+<li>Create <code>backends/null.py</code> — NullGraphStore, NullVectorStore</li>
+<li>Create <code>embeddings/null.py</code> — NullProvider</li>
+<li>Create <code>backends/__init__.py</code> — factory that reads .env</li>
+<li>Refactor <code>core/engine.py</code> to accept protocols via constructor</li>
+<li>Update MCP server lifespan to use factory</li>
+<li>Run all 100 existing tests — must pass unchanged</li>
+</ol>
+<p><strong>Definition of done:</strong> All existing tests pass. MCP tools work
+identically. Zero user-visible change.</p>
+<h3 id="phase-b-embedding-providers-7">Phase B — Embedding providers (#7)<a class="headerlink" href="#phase-b-embedding-providers-7" title="Permanent link">&para;</a></h3>
+<p><strong>Estimated: 2–3h | Enables vector search</strong></p>
+<ol>
+<li>Create <code>embeddings/ollama.py</code> — OllamaProvider</li>
+<li>Create <code>embeddings/openai.py</code> — OpenAIProvider (optional)</li>
+<li>Create <code>embeddings/sentence_transformer.py</code> (optional)</li>
+<li>Create <code>embeddings/__init__.py</code> — factory</li>
+<li>Add .env variables: EMBEDDING_PROVIDER, EMBEDDING_MODEL, etc.</li>
+<li>Tests: mock Ollama API, verify embed/embed_batch</li>
+</ol>
+<h3 id="phase-c-vector-storage-hybrid-search-1">Phase C — Vector storage + hybrid search (#1)<a class="headerlink" href="#phase-c-vector-storage-hybrid-search-1" title="Permanent link">&para;</a></h3>
+<p><strong>Estimated: 4–5h | The big feature</strong></p>
+<ol>
+<li>Add vector index creation to Neo4j schema init</li>
+<li>Implement <code>Neo4jVectorStore.store_vectors()</code> and <code>search_vectors()</code></li>
+<li>Modify <code>engine.merge_node()</code> to embed + store in one call</li>
+<li>Create <code>core/search.py</code> — HybridSearchEngine</li>
+<li>Update <code>engrama_search</code> MCP tool to use hybrid engine</li>
+<li>Update <code>engrama_remember</code> to embed on write</li>
+<li>CLI: <code>engrama reindex</code> — batch re-embed all nodes</li>
+<li>Tests: hybrid scoring, graceful degradation, fulltext fallback</li>
+</ol>
+<h3 id="phase-d-temporal-reasoning-3">Phase D — Temporal reasoning (#3)<a class="headerlink" href="#phase-d-temporal-reasoning-3" title="Permanent link">&para;</a></h3>
+<p><strong>Estimated: 3–4h</strong></p>
+<ol>
+<li>Add <code>valid_from</code>, <code>valid_to</code>, <code>confidence</code> to merge_node</li>
+<li>Implement <code>decay_scores()</code> in Neo4j backend</li>
+<li>CLI: <code>engrama decay --rate 0.01 --max-age 90</code></li>
+<li>Modify recall/search to factor confidence into scoring</li>
+<li>Conflict detection in remember (flag when valid_to is set)</li>
+<li>Tests: decay calculation, temporal filtering</li>
+</ol>
+<h3 id="phase-e-security-hardening-4">Phase E — Security hardening (#4)<a class="headerlink" href="#phase-e-security-hardening-4" title="Permanent link">&para;</a></h3>
+<p><strong>Estimated: 3–4h</strong></p>
+<ol>
+<li>Create <code>core/security.py</code> — Sanitiser class</li>
+<li>Add provenance fields to merge_node</li>
+<li>Add trust_level to scoring formula</li>
+<li>Input validation on all MCP tool inputs</li>
+<li>Tests: injection attempts, provenance tracking</li>
+</ol>
+<h3 id="phase-f-multi-scope-6">Phase F — Multi-scope (#6)<a class="headerlink" href="#phase-f-multi-scope-6" title="Permanent link">&para;</a></h3>
+<p><strong>Estimated: 2–3h</strong></p>
+<ol>
+<li>Create <code>core/scope.py</code> — MemoryScope dataclass</li>
+<li>Add scope fields to merge_node</li>
+<li>Add scope filtering to all query methods</li>
+<li>MCP: optional scope parameters on tools</li>
+<li>Tests: scope isolation, hierarchy resolution</li>
+</ol>
+<h3 id="phase-g-benchmarks-5">Phase G — Benchmarks (#5)<a class="headerlink" href="#phase-g-benchmarks-5" title="Permanent link">&para;</a></h3>
+<p><strong>Estimated: 3–4h</strong></p>
+<ol>
+<li>Benchmark harness: load LOCOMO/LongMemEval data</li>
+<li>Run queries through hybrid search engine</li>
+<li>Score and publish results in <code>docs/benchmarks/</code></li>
+<li>Iterate on α, β, γ parameters based on results</li>
+</ol>
+<p><strong>Total estimated: 22–29 hours across all phases</strong></p>
+<hr />
+<h2 id="env-reference-complete">.env reference (complete)<a class="headerlink" href="#env-reference-complete" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code># === Storage backends ===
+GRAPH_BACKEND=neo4j
+VECTOR_BACKEND=neo4j
+
+# === Neo4j ===
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=CHANGE_ME_BEFORE_FIRST_RUN
+
+# === Embeddings ===
+EMBEDDING_PROVIDER=none
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_DIMENSIONS=768
+OLLAMA_URL=http://localhost:11434
+
+# === Hybrid search ===
+HYBRID_ALPHA=0.6
+HYBRID_GRAPH_BETA=0.15
+HYBRID_TRUST_GAMMA=0.1
+
+# === Obsidian ===
+VAULT_PATH=
+
+# === Temporal ===
+DECAY_RATE=0.01
+DECAY_MAX_AGE_DAYS=90
+
+# === Scope (v1: single user, leave empty) ===
+DEFAULT_USER_ID=
+DEFAULT_ORG_ID=
+</code></pre></div>
+<hr />
+<h2 id="consequences">Consequences<a class="headerlink" href="#consequences" title="Permanent link">&para;</a></h2>
+<h3 id="positive">Positive<a class="headerlink" href="#positive" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Build once, extend forever.</strong> New backends (Kuzu, PostgreSQL+AGE)
+  implement the protocols without touching skills, adapters, or MCP tools.</li>
+<li><strong>No rework.</strong> Hybrid search, temporal, security, and multi-scope all
+  compose on the same protocol layer. Each phase adds, never refactors.</li>
+<li><strong>Neo4j risk mitigated.</strong> If Neo4j's licensing changes or a lighter
+  alternative is needed, swap the backend — the rest of Engrama is
+  unaffected.</li>
+<li><strong>Zero breaking changes.</strong> Default configuration reproduces today's
+  exact behaviour. Every new feature is opt-in via .env.</li>
+<li><strong>Testable in isolation.</strong> Each protocol implementation can be tested
+  independently. NullStore enables pure unit tests without any database.</li>
+</ul>
+<h3 id="negative">Negative<a class="headerlink" href="#negative" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Abstraction tax.</strong> One extra layer of indirection between skills and
+  storage. Mitigated: the protocols are thin (~200 lines total), and the
+  Neo4j implementation wraps the exact same Cypher we have today.</li>
+<li><strong>Phase A produces zero new features.</strong> The extraction is invisible to
+  users. Necessary investment, but delivers no immediate user value.</li>
+<li><strong>Not all backends will be equal.</strong> NetworkX can't run Cypher; Kuzu
+  has different query syntax. The <code>run_cypher()</code> method is backend-
+  specific and may raise NotImplementedError. Reflect patterns that
+  depend on complex Cypher will need per-backend translations — or
+  will only work on Cypher-capable backends.</li>
+<li><strong>Embedding model lock-in within a graph.</strong> Changing the embedding
+  model requires re-indexing all nodes. Mitigated by <code>engrama reindex</code>.</li>
+</ul>
+<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
+<ul>
+<li>DDR-001: Faceted classification system</li>
+<li>DDR-002: Bidirectional sync and vault portability</li>
+<li>Neo4j vector indexes: https://neo4j.com/docs/cypher-manual/5/indexes/semantic-indexes/vector-indexes/</li>
+<li>nomic-embed-text: https://ollama.com/library/nomic-embed-text</li>
+<li>OWASP Agentic AI Top 10: https://genaisecurityproject.com</li>
+<li>Mem0 LOCOMO benchmark: https://mem0.ai/research</li>
+<li>Zep temporal architecture: https://arxiv.org/abs/2501.13956</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit", "content.action.view"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
