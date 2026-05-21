@@ -1,0 +1,3 @@
+# Exclude corporate website from automated link checking because it blocks bot user-agents / hangs on HEAD requests.
+https://sinensia\.com
+https://sinensia\.com/.*

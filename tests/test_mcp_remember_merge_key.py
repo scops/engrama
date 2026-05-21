@@ -230,7 +230,7 @@ async def test_inline_relation_resolves_title_keyed_target(tmp_path: Path) -> No
     assert resp.get("status") == "ok"
     assert resp.get("relations_created") == 1, (
         "counter must reflect the edge that actually landed; "
-        "got %r" % resp.get("relations_created")
+        f"got {resp.get('relations_created')!r}"
     )
 
     # The edge must be traversable from the source's neighbourhood,
@@ -286,5 +286,5 @@ async def test_inline_relation_counter_does_not_lie_on_missed_match(
         nb = eng._store.get_neighbours("Concept", "name", "isolated-concept")
         assert counter == len(nb), (
             "relations_created must equal the number of edges actually "
-            "present in the graph: counter=%d, edges=%d" % (counter, len(nb))
+            f"present in the graph: counter={counter}, edges={len(nb)}"
         )
