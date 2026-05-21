@@ -58,7 +58,7 @@ Honest accounting of what changes:
   contributors need to know about.
 
 If a consequence touches user-visible behaviour, make sure it lands in
-CHANGELOG.md too — DDRs are the *why*, the CHANGELOG is the *what*.
+changelog.md too — DDRs are the *why*, the CHANGELOG is the *what*.
 -->
 
 ## Supersedes / Superseded by
@@ -80,5 +80,5 @@ Track the actual work in GitHub issues; keep this list short and stable.
 
 <!--
 External papers, prior art, related PRs / issues / discussions. Keep
-internal links relative (`./DDR-001.md`) so the file stays portable.
+internal links relative (`./ddr-001.md`) so the file stays portable.
 -->

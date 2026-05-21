@@ -66,7 +66,7 @@ healing rows that pre-date the canonicalisation fix.
   the agent can disambiguate which server "the vault" refers to before
   any sync or ingest call — a server-side signal that doesn't rely on
   docstrings being read or on `engrama-system-prompt-v0.5.md` being
-  installed. JSON contract documented in `ARCHITECTURE.md`. Phase C of
+  installed. JSON contract documented in `architecture.md`. Phase C of
   #52.
 
 ### Changed
@@ -141,7 +141,7 @@ dev environment.
   Dependabot weekly for `pip` and `github-actions`, monthly for
   `docker`. (#7–#12)
 - **Phase-4 repo hygiene** — `.github/CODEOWNERS`,
-  `pull_request_template.md`, structured issue templates, `SECURITY.md`
+  `pull_request_template.md`, structured issue templates, `security.md`
   (disclosure via GitHub private advisories), `lychee-action` weekly +
   per-PR link checker, `DDR-template.md`. (#22)
 
@@ -225,7 +225,7 @@ parity (DDR-004, PR #5).
 - **76 SQLite-only tests** (`tests/backends/test_sqlite*.py`,
   `tests/contracts/test_graphstore_contract.py` SQLite branch) — pass on
   a fresh checkout with no `.env` and no Docker. CI runs them by default.
-- **BACKENDS.md** — newcomer-facing decision guide: when to pick SQLite,
+- **backends.md** — newcomer-facing decision guide: when to pick SQLite,
   when to pick Neo4j, how to switch, FAQ. Linked from README and
   ARCHITECTURE.
 - **DDR-004** — formal record of the portable storage decision, including
@@ -291,8 +291,8 @@ Temporal reasoning — confidence decay, fact supersession, and time-travel quer
 - **Async store tests**: `TestAsyncDecayConfidence` (5 tests), `TestAsyncValidTo` (3 tests), `TestAsyncQueryAtDate` (3 tests) added to `test_temporal.py`.
 
 ### Changed
-- ARCHITECTURE.md: rewritten 5-layer diagram (Adapters → Skills → Engine → Protocols → Backends), added temporal reasoning section, configuration reference table, updated directory structure to match reality (15 test files).
-- GRAPH-SCHEMA.md: added temporal fields (`valid_to`, `decayed_at`, `embedding`) to all-nodes section.
+- architecture.md: rewritten 5-layer diagram (Adapters → Skills → Engine → Protocols → Backends), added temporal reasoning section, configuration reference table, updated directory structure to match reality (15 test files).
+- graph-schema.md: added temporal fields (`valid_to`, `decayed_at`, `embedding`) to all-nodes section.
 - `temporal.py`: `days_since()` now handles Neo4j `DateTime` objects via `.to_native()`.
 - `search.py`: min-max normalization returns `1.0` for single-result sets (was `0.0`).
 
@@ -319,7 +319,7 @@ Async embedding providers and hybrid search (DDR-003 Phase B + C).
 - **MCP server lifespan**: simplified — no longer creates redundant sync stores for hybrid search. The async store serves as both `GraphStore` and `VectorStore` for `HybridSearchEngine.asearch()`.
 - **MCP `engrama_search`**: uses `HybridSearchEngine.asearch()` with the async store directly, eliminating the sync→async impedance mismatch.
 - **MCP embed-on-write**: uses `await embedder.aembed()` instead of sync `embedder.embed()`, preventing event loop blocking.
-- ARCHITECTURE.md: added "Embedding and hybrid search" section documenting dual-mode providers, embed-on-write, vector index strategy, and scoring formula.
+- architecture.md: added "Embedding and hybrid search" section documenting dual-mode providers, embed-on-write, vector index strategy, and scoring formula.
 
 ### Fixed
 - **Event loop blocking in MCP server**: embedding and hybrid search previously called sync methods from async context, blocking the event loop. Now fully async.
@@ -347,7 +347,7 @@ Protocol extraction and bug fixes (DDR-003 Phase A). Zero Cypher in server.py.
 ### Changed
 - **server.py**: rewired from inline Cypher to `Neo4jAsyncStore` method calls. Contains **zero** Cypher strings (was ~2053 lines, now ~1753). MCP tools handle orchestration, validation, vault I/O, and response formatting only.
 - **server.py lifespan**: creates `Neo4jAsyncStore` via `create_async_store(driver, database, config)` and stores it in context alongside the raw driver.
-- ARCHITECTURE.md: updated stack table, directory structure, and added "Protocol layer (DDR-003 Phase A)" section documenting sync/async stores, null implementations, and factory pattern.
+- architecture.md: updated stack table, directory structure, and added "Protocol layer (DDR-003 Phase A)" section documenting sync/async stores, null implementations, and factory pattern.
 
 ---
 

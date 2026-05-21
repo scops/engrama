@@ -151,8 +151,8 @@ Skills, the MCP server, the CLI, and the Python SDK are written against
 the protocols — they don't know which backend is underneath. That's why
 swapping is a one-variable change.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md#protocol-layer-and-backends) for
-the full layer diagram, and [DDR-004](DDR-004.md) for the design
+See [architecture.md](architecture.md#protocol-layer-and-backends) for
+the full layer diagram, and [DDR-004](ddr-004.md) for the design
 rationale of the portable backend.
 
 ---

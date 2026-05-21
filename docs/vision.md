@@ -10,7 +10,7 @@ Karpathy built his second brain in Markdown and wikis — that works for humans 
 
 **Engrama** is a plug-and-play Python framework that gives any AI agent persistent, structured memory backed by a knowledge graph. The agent can remember, associate, forget, and reason about its accumulated knowledge — exactly as a human with good memory would.
 
-The graph runs on either **SQLite + sqlite-vec** (default since 0.9 — single file, zero external services, `git clone` + `uv sync` and you're running; Engrama is not yet on PyPI) or **Neo4j 5.26 LTS** (opt-in for multi-process production, large vector indexes, or teams already invested in Cypher). Both expose the same data model and the same twelve MCP tools — see [BACKENDS.md](BACKENDS.md) for the decision guide.
+The graph runs on either **SQLite + sqlite-vec** (default since 0.9 — single file, zero external services, `git clone` + `uv sync` and you're running; Engrama is not yet on PyPI) or **Neo4j 5.26 LTS** (opt-in for multi-process production, large vector indexes, or teams already invested in Cypher). Both expose the same data model and the same twelve MCP tools — see [backends.md](backends.md) for the decision guide.
 
 ## What makes it different
 
@@ -32,7 +32,7 @@ The graph runs on either **SQLite + sqlite-vec** (default since 0.9 — single f
 ## Design philosophy
 
 1. **Local-first** — your graph, on your machine, zero cloud dependencies
-2. **Zero-friction install** — `git clone … && uv sync && uv run engrama init`, no Docker, no JVM, no service to configure (Neo4j is there when you grow into it — see [BACKENDS.md](BACKENDS.md))
+2. **Zero-friction install** — `git clone … && uv sync && uv run engrama init`, no Docker, no JVM, no service to configure (Neo4j is there when you grow into it — see [backends.md](backends.md))
 3. **Agent-agnostic** — works with Claude, LangChain, n8n, or anything that speaks MCP or Python
 4. **Backend-agnostic** — skills, tools and the engine talk to abstract `GraphStore` / `VectorStore` / `EmbeddingProvider` protocols. Swapping SQLite for Neo4j (or, eventually, Chroma / pgvector / ArcadeDB) is a one-variable change
 5. **Schema as configuration** — profiles define node types and relationships without touching code

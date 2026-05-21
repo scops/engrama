@@ -1,0 +1,83 @@
+site_name: Engrama
+site_description: Graph-based long-term memory framework for AI agents.
+site_url: https://scops.github.io/engrama/
+repo_url: https://github.com/scops/engrama
+repo_name: scops/engrama
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - content.action.view
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:pymdownx.emoji.twemoji
+      emoji_generator: !!python/name:pymdownx.emoji.to_svg
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Vision: vision.md
+  - Backends: backends.md
+  - Graph Schema: graph-schema.md
+  - Roadmap: roadmap.md
+  - Guides:
+      - Contributing: contributing.md
+      - Releasing: releasing.md
+      - Security: security.md
+      - Glossary (ES): glosario_es.md
+      - Spanish Readme: readme_es.md
+  - Design Decisions (DDRs):
+      - DDR-001: ddr-001.md
+      - DDR-002: ddr-002.md
+      - DDR-003: ddr-003.md
+      - DDR-004: ddr-004.md
+      - Template: ddr-template.md
+  - Reference:
+      - Changelog: changelog.md
+      - Portable Storage Spec: portable-storage-spec.md
+      - System Prompts:
+          - Version 0.4: reference/system-prompts/v0.4.md
+          - Version 0.5: reference/system-prompts/v0.5.md

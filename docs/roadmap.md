@@ -28,7 +28,7 @@
 > Goal: use the graph from Claude Desktop via MCP without writing Cypher manually.
 
 - [x] `engrama/adapters/mcp/server.py` — native MCP server via FastMCP + async Neo4j driver
-- [x] Ten MCP tools: search, remember, relate, context, sync_note, sync_vault, reflect, surface_insights, approve_insight, write_insight_to_vault (the set has since grown to twelve — `engrama_ingest` landed in Phase 9 and `engrama_status` in #52; see ARCHITECTURE.md for the current list)
+- [x] Ten MCP tools: search, remember, relate, context, sync_note, sync_vault, reflect, surface_insights, approve_insight, write_insight_to_vault (the set has since grown to twelve — `engrama_ingest` landed in Phase 9 and `engrama_status` in #52; see architecture.md for the current list)
 - [x] `examples/claude_desktop/config.json` — ready-to-paste config
 - [x] `examples/claude_desktop/system-prompt.md` — memory system prompt
 - [ ] End-to-end test: Claude Desktop → MCP → Neo4j → response (manual verification done, automated test pending)
@@ -213,7 +213,7 @@
 - [x] **Phase 4** — `OpenAICompatibleProvider` covers OpenAI, Ollama, LM Studio, vLLM, llama.cpp, Jina with one client. `httpx` promoted to base dep.
 - [x] **Async contract suite** — `tests/contracts/test_async_graphstore_contract.py` parameterised over both async backends. 421 tests passing total (was 393 before this phase).
 - [x] **Bugs surfaced & fixed pre-merge:** async-store contract drift on SQLite (commit `23d5537`), reflect re-pinning approved Insights to pending (`e1a0d4e`), hybrid search dropping enrichment on pure-vector hits (`156fbf5`).
-- [x] **Public-facing decision guide** — `BACKENDS.md` with FAQ and decision tree; `DDR-004.md` with the formal record.
+- [x] **Public-facing decision guide** — `backends.md` with FAQ and decision tree; `ddr-004.md` with the formal record.
 - [x] **FTS5 query sanitization** — user queries containing hyphens, colons, parentheses, quotes, etc. are now routed through a sanitizer in `SqliteGraphStore.fulltext_search` (each unsafe token wrapped as a quoted phrase, embedded `"` doubled per FTS5 grammar). Closes the `engrama-mcp-server` miss; operator keywords (`AND`/`OR`/`NOT`/`NEAR`) keep their semantics.
 - [x] **Follow-ups** (non-blocking): first-class `engrama export` / `engrama import` cross-backend migration tool (#30) and README embedder matrix with worked examples per provider (#29).
 

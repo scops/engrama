@@ -140,6 +140,15 @@ CREATE INDEX experiment_status IF NOT EXISTS
 CREATE INDEX pipeline_status IF NOT EXISTS
   FOR (n:Pipeline) ON (n.status);
 
+// Insight is the highest-cardinality status-indexed label in the
+// graph: every engrama_reflect run MERGEs new pending Insights, and
+// every engrama_surface_insights query filters by status. Without
+// this index the surface-insights query degrades to a label scan +
+// property filter, which is what made it tip over once the reflect
+// queue grew past a few hundred rows.
+CREATE INDEX insight_status IF NOT EXISTS
+  FOR (n:Insight) ON (n.status);
+
 // === VERIFY ===
 
 SHOW CONSTRAINTS;

@@ -22,7 +22,7 @@ Base de datos de grafos open source (con versión LTS gratuita). Engrama la sopo
 Base de datos relacional embebida en un único archivo. Es el backend por defecto de Engrama desde la versión 0.9 (DDR-004): cero servicios externos, cero Docker, cero JVM. Cualquier laptop o VM puede ejecutar Engrama con `git clone` + `uv sync` y un comando `uv run engrama init` (Engrama todavía no está publicado en PyPI).
 
 **sqlite-vec**
-Extensión de SQLite que añade búsqueda vectorial mediante una "virtual table" llamada `vec0`. Engrama la usa para que los embeddings vivan en el mismo archivo `.db` que el grafo. Búsqueda por fuerza bruta — cómoda hasta ~100k vectores; más allá compensa pasar a Neo4j (ver [BACKENDS.md](BACKENDS.md)).
+Extensión de SQLite que añade búsqueda vectorial mediante una "virtual table" llamada `vec0`. Engrama la usa para que los embeddings vivan en el mismo archivo `.db` que el grafo. Búsqueda por fuerza bruta — cómoda hasta ~100k vectores; más allá compensa pasar a Neo4j (ver [backends.md](backends.md)).
 
 **FTS5**
 Motor de búsqueda fulltext integrado en SQLite (similar a Lucene). Engrama lo usa para la búsqueda por palabras clave cuando el backend es SQLite. En Neo4j el equivalente es el índice fulltext nativo (`memory_search`).

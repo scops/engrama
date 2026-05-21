@@ -28,6 +28,7 @@ Cypher has been moved to the async_store backend module.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -511,7 +512,10 @@ def create_engrama_mcp(
         if obsidian is not None:
             vault_info["path"] = str(obsidian.vault_path.resolve())
             try:
-                notes = obsidian.list_notes("")
+                # ``list_notes`` is sync I/O; punt to a worker thread so
+                # a slow vault (e.g. on a cloud-sync drive) can't freeze
+                # the MCP event loop on an otherwise read-only call.
+                notes = await asyncio.to_thread(obsidian.list_notes, "")
                 vault_info["note_count"] = len(notes)
             except Exception as e:
                 vault_info["error"] = str(e)
@@ -786,8 +790,10 @@ def create_engrama_mcp(
             slug = _re.sub(r"[\s]+", "-", slug).strip("-")
             vault_path = f"{slug}.md"
 
-            # Check if a note already exists
-            note_data = obsidian.read_note(vault_path)
+            # Check if a note already exists. Vault I/O is sync — send
+            # it to a worker thread so a slow cloud-sync drive can't
+            # block the MCP event loop and stall every concurrent tool.
+            note_data = await asyncio.to_thread(obsidian.read_note, vault_path)
             if note_data["success"]:
                 engrama_id = note_data["frontmatter"].get("engrama_id")
 
@@ -829,7 +835,9 @@ def create_engrama_mcp(
                     if desc:
                         new_content += f"\n> {desc}\n"
 
-                target.write_text(new_content, encoding="utf-8")
+                await asyncio.to_thread(
+                    target.write_text, new_content, encoding="utf-8"
+                )
                 logger.info("Vault note written: %s", vault_path)
             except Exception as e:
                 logger.warning("Could not write vault note for %s: %s", merge_value, e)
@@ -889,35 +897,63 @@ def create_engrama_mcp(
                     continue
 
                 for target_name in targets:
-                    # Find or create the target node
+                    # Find or create the target node. ``lookup_node_label``
+                    # already COALESCEs ``name`` and ``title``, so an
+                    # existing title-keyed target (Decision, Problem,
+                    # Experiment, ...) resolves to the right label here.
                     target_label = await store.lookup_node_label(target_name)
 
                     if target_label is None:
-                        # Infer label from relation type and create stub
+                        # Target doesn't exist yet — infer label from the
+                        # relation type and create a stub. Stubs are
+                        # always written under the ``name`` key; the
+                        # MERGE below reuses the same key.
                         target_label = ObsidianSync._infer_stub_label(rel_type_upper)
+                        target_key = "name"
                         try:
                             await store.merge_node(
                                 target_label,
-                                "name",
+                                target_key,
                                 target_name,
                                 _with_mcp_provenance({"status": "stub"}),
                             )
                         except Exception as e:
                             logger.warning("Could not create stub %s: %s", target_name, e)
                             continue
+                    else:
+                        # Canonicalise the target merge key the same way
+                        # the engine does for the source (#51 / #53).
+                        # Hardcoding ``"name"`` here silently fails for
+                        # title-keyed targets: the MATCH returns zero
+                        # rows, the MERGE creates nothing, but the
+                        # counter still increments because no exception
+                        # is raised.
+                        target_key = (
+                            "title" if target_label in TITLE_KEYED_LABELS else "name"
+                        )
 
                     # Create the relationship
                     try:
-                        await store.merge_relation(
+                        rel_result = await store.merge_relation(
                             label,
                             merge_key,
                             merge_value,
                             rel_type_upper,
                             target_label,
-                            "name",
+                            target_key,
                             target_name,
                         )
-                        relations_created += 1
+                        if rel_result:
+                            relations_created += 1
+                        else:
+                            logger.warning(
+                                "Inline relation not created (target not found): "
+                                "%s -[%s]-> %s:%s",
+                                merge_value,
+                                rel_type_upper,
+                                target_label,
+                                target_name,
+                            )
                     except Exception as e:
                         logger.warning(
                             "Could not create relation %s -[%s]-> %s: %s",
@@ -930,7 +966,12 @@ def create_engrama_mcp(
                     # Write relation to vault frontmatter (DDR-002)
                     if obsidian is not None and vault_path:
                         try:
-                            obsidian.add_relation(vault_path, rel_type_upper, target_name)
+                            await asyncio.to_thread(
+                                obsidian.add_relation,
+                                vault_path,
+                                rel_type_upper,
+                                target_name,
+                            )
                         except Exception:
                             pass
 
@@ -1027,7 +1068,11 @@ def create_engrama_mcp(
                 slug = _re.sub(r"[^\w\s-]", "", params.from_name.lower())
                 slug = _re.sub(r"[\s]+", "-", slug).strip("-")
                 from_path = f"{slug}.md"
-                note_data = obsidian.read_note(from_path)
+                # Vault I/O is sync — every file touch from this async
+                # tool goes through ``asyncio.to_thread`` to keep the
+                # MCP event loop free while a slow cloud-sync drive
+                # finishes its write.
+                note_data = await asyncio.to_thread(obsidian.read_note, from_path)
                 if not note_data["success"]:
                     # Create a minimal vault note for this node
                     try:
@@ -1047,7 +1092,8 @@ def create_engrama_mcp(
                             sort_keys=False,
                         )
                         target_file = obsidian._resolve(from_path)
-                        target_file.write_text(
+                        await asyncio.to_thread(
+                            target_file.write_text,
                             "---\n" + fm_yaml + f"---\n\n# {params.from_name}\n",
                             encoding="utf-8",
                         )
@@ -1066,7 +1112,8 @@ def create_engrama_mcp(
 
             if from_path:
                 try:
-                    vault_written = obsidian.add_relation(
+                    vault_written = await asyncio.to_thread(
+                        obsidian.add_relation,
                         from_path,
                         params.rel_type,
                         params.to_name,
@@ -1178,7 +1225,7 @@ def create_engrama_mcp(
                 indent=2,
             )
 
-        note_data = obsidian.read_note(params.path)
+        note_data = await asyncio.to_thread(obsidian.read_note, params.path)
         if not note_data["success"]:
             return json.dumps(
                 {
@@ -1289,7 +1336,9 @@ def create_engrama_mcp(
                     body = "\n\n" + content
                 new_content = "---\n" + fm_yaml + "---" + body
                 target = obsidian._resolve(params.path)
-                target.write_text(new_content, encoding="utf-8")
+                await asyncio.to_thread(
+                    target.write_text, new_content, encoding="utf-8"
+                )
             except Exception as e:
                 logger.warning("Could not update note frontmatter: %s", e)
 
@@ -1379,12 +1428,14 @@ def create_engrama_mcp(
             # {'path': ...}: unsupported operand type(s) for / ..." for
             # every note — surfaced by the dry-run tests added with
             # this change.)
-            notes = obsidian.list_notes(params.folder if params.folder else "")
+            notes = await asyncio.to_thread(
+                obsidian.list_notes, params.folder if params.folder else ""
+            )
 
             for note_entry in notes:
                 note_path = note_entry["path"] if isinstance(note_entry, dict) else note_entry
                 try:
-                    note_data = obsidian.read_note(note_path)
+                    note_data = await asyncio.to_thread(obsidian.read_note, note_path)
                     if not note_data["success"]:
                         skipped_count += 1
                         continue
@@ -1463,7 +1514,9 @@ def create_engrama_mcp(
                                 body = "\n\n" + content
                             new_content = "---\n" + fm_yaml + "---" + body
                             target = obsidian._resolve(note_path)
-                            target.write_text(new_content, encoding="utf-8")
+                            await asyncio.to_thread(
+                                target.write_text, new_content, encoding="utf-8"
+                            )
                         except Exception as e:
                             logger.warning("Could not update note %s: %s", note_path, e)
 
@@ -1552,7 +1605,7 @@ def create_engrama_mcp(
                     },
                     indent=2,
                 )
-            note_data = obsidian.read_note(params.source)
+            note_data = await asyncio.to_thread(obsidian.read_note, params.source)
             if not note_data["success"]:
                 return json.dumps(
                     {
@@ -2190,7 +2243,7 @@ def create_engrama_mcp(
             )
 
         # Read the target note
-        note_data = obsidian.read_note(params.target_note)
+        note_data = await asyncio.to_thread(obsidian.read_note, params.target_note)
         if not note_data["success"]:
             return json.dumps(
                 {
@@ -2215,7 +2268,9 @@ def create_engrama_mcp(
         try:
             target = obsidian._resolve(params.target_note)
             new_content = content + insight_section
-            target.write_text(new_content, encoding="utf-8")
+            await asyncio.to_thread(
+                target.write_text, new_content, encoding="utf-8"
+            )
             logger.info("Insight written to vault: %s", params.target_note)
         except Exception as e:
             logger.warning("Could not write insight to vault: %s", e)
