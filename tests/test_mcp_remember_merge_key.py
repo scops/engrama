@@ -239,7 +239,13 @@ async def test_inline_relation_resolves_title_keyed_target(tmp_path: Path) -> No
 
     with Engrama(backend="sqlite", db_path=db) as eng:
         nb = eng._store.get_neighbours("Concept", "name", "canonical-keys-policy")
-        targets = [(n["label"], n["name"]) for n in nb]
+        targets = [
+            (
+                n["neighbour"]["_labels"][0],
+                n["neighbour"].get("title") or n["neighbour"].get("name"),
+            )
+            for n in nb
+        ]
         assert ("Decision", "adopt-canonical-keys") in targets
 
         # And no spurious ``Decision`` row was created under ``name``.
