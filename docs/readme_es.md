@@ -3,8 +3,8 @@
 > Framework de memoria a largo plazo basado en grafos para agentes de IA.
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
-[![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](BACKENDS.md)
-[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+[![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](backends.md)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](../LICENSE)
 [![Estado](https://img.shields.io/badge/estado-alpha%20%C2%B7%20instalaci%C3%B3n%20desde%20fuente-orange.svg)](#inicio-r%C3%A1pido-sqlite-cero-dependencias)
 
 Engrama dota a cualquier agente de IA de una memoria persistente y
@@ -22,7 +22,7 @@ Hay dos backends de primera clase:
 - **Neo4j 5.26 LTS** (opcional) — para producción multiproceso, índices
   vectoriales muy grandes o equipos que ya usan Cypher.
 
-El modelo de datos es idéntico en ambos. Mira **[BACKENDS.md](BACKENDS.md)**
+El modelo de datos es idéntico en ambos. Mira **[backends.md](backends.md)**
 para la guía completa de elección; el resto de este README asume el
 SQLite por defecto.
 
@@ -135,7 +135,7 @@ uv run engrama reflect
 
 ## Inicio rápido (Neo4j, opt-in)
 
-Si has leído [BACKENDS.md](BACKENDS.md) y decides que necesitas Neo4j —
+Si has leído [backends.md](backends.md) y decides que necesitas Neo4j —
 escrituras multi-proceso, índices vectoriales muy grandes, una cadena
 de herramientas Cypher existente — sigue esta ruta en lugar de la
 anterior.
@@ -435,7 +435,7 @@ Ahora deberías ver las doce herramientas:
 | `engrama_approve_insight` | Aprobar o descartar un Insight |
 | `engrama_write_insight_to_vault` | Escribir un Insight aprobado en Obsidian |
 
-Consulta [`examples/claude_desktop/system-prompt.md`](examples/claude_desktop/system-prompt.md)
+Consulta [`examples/claude_desktop/system-prompt.md`](../examples/claude_desktop/system-prompt.md)
 para un system prompt listo para pegar que enseña a Claude a usar el
 grafo de memoria.
 
@@ -647,9 +647,9 @@ uv run engrama init --profile base --modules cooking teaching
 - Si dos módulos definen la misma etiqueta, las propiedades se fusionan automáticamente.
 - Los tipos de relación deben ser verbos (USES, TREATS, COVERS), no sustantivos.
 
-Consulta [`profiles/developer.yaml`](profiles/developer.yaml) para un
+Consulta [`profiles/developer.yaml`](../profiles/developer.yaml) para un
 perfil independiente completo, y
-[`engrama/skills/onboard/references/example-profiles.md`](engrama/skills/onboard/references/example-profiles.md)
+[`engrama/skills/onboard/references/example-profiles.md`](../engrama/skills/onboard/references/example-profiles.md)
 para perfiles trabajados en enfermería, abogacía, PM, creativos
 freelance.
 
@@ -691,18 +691,18 @@ freelance.
 
 ## Documentación
 
-- [Vision](VISION.md) — por qué existe esto
-- [Backends](BACKENDS.md) — guía SQLite vs Neo4j
-- [Architecture](ARCHITECTURE.md) — diseño técnico y estructura de directorios
-- [Graph Schema](GRAPH-SCHEMA.md) — nodos, relaciones, referencia de consultas
-- [Roadmap](ROADMAP.md) — fases de desarrollo y estado
-- [Changelog](CHANGELOG.md) — notas de versión
-- [Contributing](CONTRIBUTING.md) — cómo contribuir
-- [DDR-001](DDR-001.md) — clasificación facetada
-- [DDR-002](DDR-002.md) — sincronización bidireccional vault ↔ grafo
-- [DDR-003](DDR-003.md) — capa de protocolos, embeddings, búsqueda híbrida, razonamiento temporal
-- [DDR-004](DDR-004.md) — almacenamiento portátil (SQLite por defecto)
-- [Glosario](GLOSARIO_ES.md) — términos clave
+- [Vision](vision.md) — por qué existe esto
+- [Backends](backends.md) — guía SQLite vs Neo4j
+- [Architecture](architecture.md) — diseño técnico y estructura de directorios
+- [Graph Schema](graph-schema.md) — nodos, relaciones, referencia de consultas
+- [Roadmap](roadmap.md) — fases de desarrollo y estado
+- [Changelog](changelog.md) — notas de versión
+- [Contributing](contributing.md) — cómo contribuir
+- [DDR-001](ddr-001.md) — clasificación facetada
+- [DDR-002](ddr-002.md) — sincronización bidireccional vault ↔ grafo
+- [DDR-003](ddr-003.md) — capa de protocolos, embeddings, búsqueda híbrida, razonamiento temporal
+- [DDR-004](ddr-004.md) — almacenamiento portátil (SQLite por defecto)
+- [Glosario](glosario_es.md) — términos clave
 
 ---
 
@@ -731,8 +731,7 @@ una licencia comercial separada. El motor principal, las herramientas
 MCP y toda la funcionalidad de cara a la comunidad permanecen
 totalmente open source bajo Apache 2.0.
 
-Para consultas de licencias comerciales, escribe a
-sinensiaitsolutions@gmail.com.
+Para consultas de licencias comerciales, por favor visita el formulario de contacto en [Sinensia](https://sinensia.com).
 
 ---
 

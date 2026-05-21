@@ -201,4 +201,4 @@ RETURN path LIMIT 50
 - **Embeddings are optional** — semantic search via any OpenAI-compatible service (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina) enhances search when enabled (DDR-003 Phase B+C, DDR-004). On Neo4j the vector index on `(:Embedded)` covers all node types; on SQLite vectors live in the `node_embeddings` `vec0` virtual table.
 - **Always parameterise queries** — never string-format Cypher (Neo4j) or SQL (SQLite). Both backends use parameter binding.
 - **Temporal fields auto-managed** — `valid_from`, `confidence` set on creation; `valid_to` cleared on revival (MATCH). Decay applied via `engrama decay` CLI.
-- **Schema is backend-agnostic** — the same labels and relationships defined in `profiles/*.yaml` apply to either backend. See [BACKENDS.md](BACKENDS.md) for the decision guide between SQLite and Neo4j.
+- **Schema is backend-agnostic** — the same labels and relationships defined in `profiles/*.yaml` apply to either backend. See [backends.md](backends.md) for the decision guide between SQLite and Neo4j.

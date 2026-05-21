@@ -172,3 +172,118 @@ async def _call_raw(server, tool: str, args: dict) -> str:
     async with Client(server) as client:
         result = await client.call_tool(tool, {"params": args})
         return result.content[0].text  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# Inline relations — target merge key must follow TITLE_KEYED_LABELS too
+# ---------------------------------------------------------------------------
+#
+# v0.11.0 canonicalised the SOURCE merge key (#51 / #53) but the inline
+# ``relations={...}`` path in ``engrama_remember`` was still calling
+# ``store.merge_relation`` with a hardcoded ``"name"`` for the target
+# merge key. For title-keyed targets (Decision, Problem, Experiment,
+# Vulnerability, Exercise, Photo) the underlying Cypher resolved to
+# ``MATCH (b:Experiment {name: $value})``, matched zero rows, and the
+# MERGE created no edge — but ``relations_created`` still incremented
+# because no exception was raised. The bug was silent end-to-end.
+#
+# These tests pin the fix: existing title-keyed targets must be reached
+# via their canonical key, and the response counter must reflect what
+# actually landed in the graph.
+
+
+async def test_inline_relation_resolves_title_keyed_target(tmp_path: Path) -> None:
+    """Inline relation to a pre-existing title-keyed node lands an edge."""
+    db = tmp_path / "engrama.db"
+    server = _make_server(db)
+
+    # Seed a title-keyed target node first.
+    seed = await _call(
+        server,
+        "engrama_remember",
+        {
+            "label": "Decision",
+            "properties": {
+                "title": "adopt-canonical-keys",
+                "notes": "target for the inline-relation test",
+            },
+        },
+    )
+    assert seed.get("status") == "ok"
+
+    # Now create a name-keyed source with an inline relation pointing
+    # at the title-keyed target by its identity. Before the fix this
+    # MERGE found nothing and the counter lied.
+    resp = await _call(
+        server,
+        "engrama_remember",
+        {
+            "label": "Concept",
+            "properties": {
+                "name": "canonical-keys-policy",
+                "notes": "source pointing at a title-keyed target",
+                "relations": {"INFORMED_BY": ["adopt-canonical-keys"]},
+            },
+        },
+    )
+
+    assert resp.get("status") == "ok"
+    assert resp.get("relations_created") == 1, (
+        f"counter must reflect the edge that actually landed; got {resp.get('relations_created')!r}"
+    )
+
+    # The edge must be traversable from the source's neighbourhood,
+    # and it must point at the canonical (title-keyed) row — not at
+    # a stray ``name``-keyed stub.
+    from engrama import Engrama
+
+    with Engrama(backend="sqlite", db_path=db) as eng:
+        nb = eng._store.get_neighbours("Concept", "name", "canonical-keys-policy")
+        targets = [(n["label"], n["name"]) for n in nb]
+        assert ("Decision", "adopt-canonical-keys") in targets
+
+        # And no spurious ``Decision`` row was created under ``name``.
+        stub = eng._store.get_node("Decision", "name", "adopt-canonical-keys")
+        assert stub is None or stub.get("name") != "adopt-canonical-keys"
+
+
+async def test_inline_relation_counter_does_not_lie_on_missed_match(
+    tmp_path: Path,
+) -> None:
+    """If the target genuinely cannot be matched, the counter must NOT
+    increment.
+
+    This guards against the original regression mode where
+    ``merge_relation`` returned an empty dict and the handler counted
+    it as success anyway. Here the target is a stub label that the
+    inferer creates under ``name`` — so the MERGE itself succeeds and
+    the counter legitimately reads 1. The test below targets the
+    other shape: the COUNTER must agree with the graph.
+    """
+    db = tmp_path / "engrama.db"
+    server = _make_server(db)
+
+    resp = await _call(
+        server,
+        "engrama_remember",
+        {
+            "label": "Concept",
+            "properties": {
+                "name": "isolated-concept",
+                "notes": "target will be a fresh stub",
+                "relations": {"RELATED_TO": ["brand-new-target"]},
+            },
+        },
+    )
+
+    assert resp.get("status") == "ok"
+    counter = resp.get("relations_created", 0)
+
+    from engrama import Engrama
+
+    with Engrama(backend="sqlite", db_path=db) as eng:
+        nb = eng._store.get_neighbours("Concept", "name", "isolated-concept")
+        assert counter == len(nb), (
+            "relations_created must equal the number of edges actually "
+            f"present in the graph: counter={counter}, edges={len(nb)}"
+        )

@@ -103,7 +103,7 @@ block-beta
 The factory in `engrama/backends/__init__.py` reads `GRAPH_BACKEND` and
 returns the matching implementation. Skills, adapters, and the engine
 talk only to the protocols — they don't know which backend is
-underneath. See [DDR-004](DDR-004.md) for the rationale and [BACKENDS.md](BACKENDS.md)
+underneath. See [DDR-004](ddr-004.md) for the rationale and [backends.md](backends.md)
 for the user-facing decision guide.
 
 ## Data flow: reflect → Insight
@@ -212,14 +212,14 @@ point of view this is invisible.
 engrama/
 ├── README.md
 ├── README_ES.md
-├── VISION.md
-├── ARCHITECTURE.md
-├── BACKENDS.md              # ★ NEW (DDR-004) — backend decision guide
-├── GRAPH-SCHEMA.md
-├── ROADMAP.md
-├── CONTRIBUTING.md
-├── CHANGELOG.md
-├── DDR-001.md … DDR-004.md
+├── vision.md
+├── architecture.md
+├── backends.md              # ★ NEW (DDR-004) — backend decision guide
+├── graph-schema.md
+├── roadmap.md
+├── contributing.md
+├── changelog.md
+├── ddr-001.md … ddr-004.md
 ├── pyproject.toml
 ├── docker-compose.yml       # Neo4j only — not needed for SQLite default
 ├── .env.example
@@ -406,7 +406,7 @@ Both sync and async stores expose `search_similar` returning a uniform
 shape `{node_id, label, name, score, summary, tags, confidence,
 updated_at}` so the scorer can populate enrichment fields without a
 second round trip — a regression discovered during DDR-004 testing
-(see [DDR-004](DDR-004.md) "Risks").
+(see [DDR-004](ddr-004.md) "Risks").
 
 ## Temporal reasoning (DDR-003 Phase D)
 

@@ -3,7 +3,7 @@
 > Graph-based long-term memory framework for AI agents.
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
-[![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](BACKENDS.md)
+[![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](docs/backends.md)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha%20%C2%B7%20install%20from%20source-orange.svg)](#quick-start-sqlite-zero-dep)
 
@@ -21,7 +21,7 @@ Two backends are first-class:
 - **Neo4j 5.26 LTS** (opt-in) — for multi-process production setups,
   large-scale vector search, or teams that already use Cypher.
 
-The data model is identical on both. See **[BACKENDS.md](BACKENDS.md)**
+The data model is identical on both. See **[docs/backends.md](docs/backends.md)**
 for a full decision guide; the rest of this README assumes the SQLite
 default.
 
@@ -134,7 +134,7 @@ uv run engrama reflect
 
 ## Quick start (Neo4j, opt-in)
 
-If you've read [BACKENDS.md](BACKENDS.md) and decided you need Neo4j —
+If you've read [docs/backends.md](docs/backends.md) and decided you need Neo4j —
 multi-process writes, very large vector indexes, an existing Cypher
 toolchain — follow this path instead.
 
@@ -707,17 +707,17 @@ creative.
 
 ## Documentation
 
-- [Vision](VISION.md) — why this exists
-- [Backends](BACKENDS.md) — SQLite vs Neo4j decision guide
-- [Architecture](ARCHITECTURE.md) — technical design and directory structure
-- [Graph Schema](GRAPH-SCHEMA.md) — nodes, relationships, query reference
-- [Roadmap](ROADMAP.md) — development phases and status
-- [Changelog](CHANGELOG.md) — release notes
-- [Contributing](CONTRIBUTING.md) — how to contribute
-- [DDR-001](DDR-001.md) — faceted classification
-- [DDR-002](DDR-002.md) — bidirectional vault sync
-- [DDR-003](DDR-003.md) — protocol layer, embeddings, hybrid search, temporal reasoning
-- [DDR-004](DDR-004.md) — portable storage (SQLite default)
+- [Vision](docs/vision.md) — why this exists
+- [Backends](docs/backends.md) — SQLite vs Neo4j decision guide
+- [Architecture](docs/architecture.md) — technical design and directory structure
+- [Graph Schema](docs/graph-schema.md) — nodes, relationships, query reference
+- [Roadmap](docs/roadmap.md) — development phases and status
+- [Changelog](docs/changelog.md) — release notes
+- [Contributing](docs/contributing.md) — how to contribute
+- [DDR-001](docs/ddr-001.md) — faceted classification
+- [DDR-002](docs/ddr-002.md) — bidirectional vault sync
+- [DDR-003](docs/ddr-003.md) — protocol layer, embeddings, hybrid search, temporal reasoning
+- [DDR-004](docs/ddr-004.md) — portable storage (SQLite default)
 
 ---
 
@@ -744,8 +744,7 @@ advanced analytics) may be offered under a separate commercial license.
 The core engine, MCP tools, and all community-facing functionality
 remain fully open source under Apache 2.0.
 
-For commercial licensing inquiries, contact
-sinensiaitsolutions@gmail.com.
+For commercial licensing inquiries, please visit the contact form at [Sinensia](https://sinensia.com).
 
 ---
 
