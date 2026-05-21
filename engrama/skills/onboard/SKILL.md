@@ -26,7 +26,7 @@ zero-dependency SQLite backend that lives in `~/.engrama/engrama.db`
 and is created automatically on first connection. Neo4j is opt-in
 (`uv sync --extra neo4j` + Docker) for multi-process production
 setups, very large vector indexes, or teams already using Cypher —
-see [BACKENDS.md](../../../BACKENDS.md) for the decision guide.
+see [BACKENDS.md](../../../docs/backends.md) for the decision guide.
 
 No dependency on any specific AI framework, agent SDK, or MCP runtime.
 

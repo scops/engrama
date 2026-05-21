@@ -835,9 +835,7 @@ def create_engrama_mcp(
                     if desc:
                         new_content += f"\n> {desc}\n"
 
-                await asyncio.to_thread(
-                    target.write_text, new_content, encoding="utf-8"
-                )
+                await asyncio.to_thread(target.write_text, new_content, encoding="utf-8")
                 logger.info("Vault note written: %s", vault_path)
             except Exception as e:
                 logger.warning("Could not write vault note for %s: %s", merge_value, e)
@@ -928,9 +926,7 @@ def create_engrama_mcp(
                         # rows, the MERGE creates nothing, but the
                         # counter still increments because no exception
                         # is raised.
-                        target_key = (
-                            "title" if target_label in TITLE_KEYED_LABELS else "name"
-                        )
+                        target_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
 
                     # Create the relationship
                     try:
@@ -947,8 +943,7 @@ def create_engrama_mcp(
                             relations_created += 1
                         else:
                             logger.warning(
-                                "Inline relation not created (target not found): "
-                                "%s -[%s]-> %s:%s",
+                                "Inline relation not created (target not found): %s -[%s]-> %s:%s",
                                 merge_value,
                                 rel_type_upper,
                                 target_label,
@@ -1336,9 +1331,7 @@ def create_engrama_mcp(
                     body = "\n\n" + content
                 new_content = "---\n" + fm_yaml + "---" + body
                 target = obsidian._resolve(params.path)
-                await asyncio.to_thread(
-                    target.write_text, new_content, encoding="utf-8"
-                )
+                await asyncio.to_thread(target.write_text, new_content, encoding="utf-8")
             except Exception as e:
                 logger.warning("Could not update note frontmatter: %s", e)
 
@@ -2268,9 +2261,7 @@ def create_engrama_mcp(
         try:
             target = obsidian._resolve(params.target_note)
             new_content = content + insight_section
-            await asyncio.to_thread(
-                target.write_text, new_content, encoding="utf-8"
-            )
+            await asyncio.to_thread(target.write_text, new_content, encoding="utf-8")
             logger.info("Insight written to vault: %s", params.target_note)
         except Exception as e:
             logger.warning("Could not write insight to vault: %s", e)

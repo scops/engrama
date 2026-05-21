@@ -229,8 +229,7 @@ async def test_inline_relation_resolves_title_keyed_target(tmp_path: Path) -> No
 
     assert resp.get("status") == "ok"
     assert resp.get("relations_created") == 1, (
-        "counter must reflect the edge that actually landed; "
-        f"got {resp.get('relations_created')!r}"
+        f"counter must reflect the edge that actually landed; got {resp.get('relations_created')!r}"
     )
 
     # The edge must be traversable from the source's neighbourhood,

@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](backends.md)
-[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](../LICENSE)
 [![Estado](https://img.shields.io/badge/estado-alpha%20%C2%B7%20instalaci%C3%B3n%20desde%20fuente-orange.svg)](#inicio-r%C3%A1pido-sqlite-cero-dependencias)
 
 Engrama dota a cualquier agente de IA de una memoria persistente y
@@ -435,7 +435,7 @@ Ahora deberías ver las doce herramientas:
 | `engrama_approve_insight` | Aprobar o descartar un Insight |
 | `engrama_write_insight_to_vault` | Escribir un Insight aprobado en Obsidian |
 
-Consulta [`examples/claude_desktop/system-prompt.md`](examples/claude_desktop/system-prompt.md)
+Consulta [`examples/claude_desktop/system-prompt.md`](../examples/claude_desktop/system-prompt.md)
 para un system prompt listo para pegar que enseña a Claude a usar el
 grafo de memoria.
 
@@ -647,9 +647,9 @@ uv run engrama init --profile base --modules cooking teaching
 - Si dos módulos definen la misma etiqueta, las propiedades se fusionan automáticamente.
 - Los tipos de relación deben ser verbos (USES, TREATS, COVERS), no sustantivos.
 
-Consulta [`profiles/developer.yaml`](profiles/developer.yaml) para un
+Consulta [`profiles/developer.yaml`](../profiles/developer.yaml) para un
 perfil independiente completo, y
-[`engrama/skills/onboard/references/example-profiles.md`](engrama/skills/onboard/references/example-profiles.md)
+[`engrama/skills/onboard/references/example-profiles.md`](../engrama/skills/onboard/references/example-profiles.md)
 para perfiles trabajados en enfermería, abogacía, PM, creativos
 freelance.
 
