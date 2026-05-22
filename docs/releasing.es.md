@@ -1,6 +1,6 @@
 # Publicar engrama
 
-El pipeline de release se encuentra en [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+El pipeline de release se encuentra en [`.github/workflows/release.yml`](https://github.com/scops/engrama/blob/main/.github/workflows/release.yml).
 Se activa con un `push` de cualquier tag que coincida con `v*`, ejecuta un pipeline de seis etapas
 (`guardian → build → sbom → attest → publish → release-notes`) y produce:
 

@@ -1,6 +1,6 @@
 # Releasing engrama
 
-Release pipeline lives in [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+Release pipeline lives in [`.github/workflows/release.yml`](https://github.com/scops/engrama/blob/main/.github/workflows/release.yml).
 It triggers on `push` of any tag matching `v*`, runs a six-stage pipeline
 (`guardian → build → sbom → attest → publish → release-notes`), and produces:
 
