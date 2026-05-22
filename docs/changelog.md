@@ -7,6 +7,50 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.12.0] — 2026-05-22
+
+Two latency fixes on the MCP server path plus the documentation site
+overhaul (bilingual docs, MkDocs landing page, modern GitHub Pages
+deployment). No API or schema-breaking changes.
+
+### Fixed
+- **MCP vault I/O no longer blocks the asyncio event loop (#66).** The
+  MCP server runs on a single-threaded event loop, but ~15 synchronous
+  `ObsidianAdapter` calls (`list_notes`, `read_note`, `add_relation`)
+  and direct `Path.write_text` writes were made straight from inside
+  `async` tool handlers. While any one of those waited on a slow vault
+  write — common on cloud-sync drives like Proton Drive or OneDrive,
+  and more frequent since 0.11.0 added automatic note creation in
+  `engrama_relate` — every other tool call queued behind it and hit the
+  client timeout. The server looked half-alive (`engrama_status` still
+  replied instantly) while `engrama_relate` / `engrama_surface_insights`
+  timed out. Every sync vault call inside a tool handler now runs
+  through `asyncio.to_thread`, freeing the loop to service other tools
+  concurrently.
+- **`Insight.status` range index added to `init-schema.cypher` (#67).**
+  `Insight` is the highest-cardinality status-bearing label — every
+  `engrama_reflect` run MERGEs new pending Insights — but it was the one
+  status-indexed label missing from the schema's RANGE INDEXES block.
+  `engrama_surface_insights` (`MATCH (i:Insight {status: $status})`)
+  therefore degraded to a label scan once the pending queue grew to a
+  few hundred rows. The index applies hot to existing deployments via
+  `CREATE INDEX … IF NOT EXISTS`.
+
+### Changed
+- **Documentation site overhaul.** Bilingual docs (English / Castilian
+  Spanish) served from a dedicated MkDocs landing page (`index.md`) in
+  place of the README fallback, GitHub Pages now deployed via the modern
+  Actions artifact flow rather than the legacy branch push, and the
+  commercial contact points at the website. (#69, #70, #71, #72, #73,
+  #74)
+
+### Dependencies
+- Bumped `idna` (#68) and the GitHub Actions toolchain — `actions/cache`
+  (#64), `actions/upload-artifact` (#63), `actions/attest-build-provenance`
+  (#62).
+
+---
+
 ## [0.11.0] — 2026-05-16
 
 Dual-vault contract hardening (#52 Phases A–D), engine + MCP
