@@ -21,6 +21,31 @@ from engrama.core.scope import MemoryScope, scope_filter_cypher
 
 _NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 
+# Server-managed timestamps: always set by the store itself via Cypher
+# ``datetime()``, never taken from the caller's property bag. The engine
+# and MCP handlers already strip these, but the cross-backend importer
+# (``engrama import``) replays raw export dicts straight through
+# ``merge_node`` — and exports carry ``updated_at`` as an ISO string. If
+# that string is written verbatim it clobbers the ``datetime()`` and the
+# property becomes STRING-typed, breaking ``duration.between(...)`` in
+# decay / ``query_at_date``. Enforce the invariant here. See #76.
+_SERVER_MANAGED_TIMESTAMPS = frozenset({"created_at", "updated_at"})
+
+# Domain temporal properties a caller MAY set explicitly. When supplied
+# (notably by the importer, where they arrive as ISO strings) they must
+# be coerced to a Neo4j datetime via ``datetime($p)``, never stored raw.
+_TEMPORAL_PROPERTIES = frozenset(
+    {
+        "valid_from",
+        "valid_to",
+        "archived_at",
+        "synced_at",
+        "approved_at",
+        "dismissed_at",
+        "decayed_at",
+    }
+)
+
 
 def _to_python(value: Any) -> Any:
     """Recursively convert Neo4j driver types to plain Python.
@@ -125,6 +150,12 @@ class Neo4jGraphStore:
         valid_from = properties.pop("valid_from", None)
         confidence = properties.pop("confidence", None)
 
+        # Server-managed timestamps are never taken from the caller (see
+        # _SERVER_MANAGED_TIMESTAMPS): drop them so a caller-supplied ISO
+        # string can't override the datetime() set below.
+        for _ts in _SERVER_MANAGED_TIMESTAMPS:
+            properties.pop(_ts, None)
+
         set_clauses_create: list[str] = [
             "n.created_at = datetime()",
             "n.updated_at = datetime()",
@@ -152,8 +183,12 @@ class Neo4jGraphStore:
 
         for idx, (key, value) in enumerate(properties.items()):
             param_name = f"p{idx}"
-            set_clauses_create.append(f"n.{key} = ${param_name}")
-            set_clauses_match.append(f"n.{key} = ${param_name}")
+            # Coerce temporal properties to a Neo4j datetime so an
+            # ISO-string value (e.g. from the importer) is never stored
+            # as a raw string. See #76.
+            rhs = f"datetime(${param_name})" if key in _TEMPORAL_PROPERTIES else f"${param_name}"
+            set_clauses_create.append(f"n.{key} = {rhs}")
+            set_clauses_match.append(f"n.{key} = {rhs}")
             params[param_name] = value
 
         if embedding is not None:

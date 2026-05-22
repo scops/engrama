@@ -315,6 +315,86 @@ def migrate_keys(
     return summary
 
 
+# Temporal properties that must be Neo4j ``datetime`` values. A
+# string-typed value here breaks ``duration.between(...)`` (decay,
+# query_at_date). Kept local to migrate.py so the SQLite-only install
+# path doesn't import the neo4j backend. See #76.
+_TIMESTAMP_FIELDS: tuple[str, ...] = (
+    "created_at",
+    "updated_at",
+    "valid_from",
+    "valid_to",
+    "archived_at",
+    "synced_at",
+    "approved_at",
+    "dismissed_at",
+    "decayed_at",
+)
+
+
+def migrate_timestamps(
+    graph_store: Any,
+    *,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Coerce string-typed temporal properties to Neo4j ``datetime`` (#76).
+
+    Some nodes (notably anything restored via ``engrama import`` before
+    the merge_node fix) carry ``updated_at`` / ``created_at`` etc. as
+    ISO **strings** instead of Neo4j datetimes, which makes
+    ``decay_scores`` and ``query_at_date`` fail the whole transaction on
+    ``duration.between``. This rewrites those values in place, preserving
+    the instant and only changing the type.
+
+    Neo4j-only: SQLite stores timestamps as TEXT, so the type bug does
+    not apply there and the migration is a no-op.
+
+    Default is a dry-run that counts affected nodes per field. Pass
+    ``apply=True`` to rewrite. Returns::
+
+        {"dry_run": bool, "backend": str, "fields": {field: count},
+         "fixed": int, "errors": [str], "skipped_reason": str | None}
+    """
+    backend = type(graph_store).__name__
+    summary: dict[str, Any] = {
+        "dry_run": not apply,
+        "backend": backend,
+        "fields": {},
+        "fixed": 0,
+        "errors": [],
+        "skipped_reason": None,
+    }
+    if backend != "Neo4jGraphStore":
+        summary["skipped_reason"] = (
+            f"{backend} stores timestamps as text; no datetime coercion needed"
+        )
+        return summary
+
+    client = graph_store._client
+    for fld in _TIMESTAMP_FIELDS:
+        try:
+            count_q = (
+                f"MATCH (n) WHERE n.{fld} IS NOT NULL "
+                f"AND valueType(n.{fld}) STARTS WITH 'STRING' "
+                "RETURN count(n) AS c"
+            )
+            rows = client.run(count_q)
+            affected = rows[0]["c"] if rows else 0
+            summary["fields"][fld] = affected
+            if affected and apply:
+                fix_q = (
+                    f"MATCH (n) WHERE n.{fld} IS NOT NULL "
+                    f"AND valueType(n.{fld}) STARTS WITH 'STRING' "
+                    f"SET n.{fld} = datetime(n.{fld}) "
+                    "RETURN count(n) AS c"
+                )
+                fixed_rows = client.run(fix_q)
+                summary["fixed"] += fixed_rows[0]["c"] if fixed_rows else 0
+        except Exception as e:
+            summary["errors"].append(f"{fld}: {e}")
+    return summary
+
+
 # ---- SQLite-specific helpers ----
 
 

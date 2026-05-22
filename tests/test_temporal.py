@@ -320,6 +320,99 @@ class TestDecayScores:
         assert result["archived"] == 0
 
 
+class TestTimestampTypeSafety:
+    """Regression for #76: temporal properties must be stored as Neo4j
+    datetime, never as raw strings.
+
+    The cross-backend importer replays export dicts (where ``updated_at``
+    is an ISO string) straight through ``merge_node``. If those strings
+    are written verbatim, ``duration.between(...)`` blows up the whole
+    decay / query_at_date transaction.
+    """
+
+    def _value_type(self, backend, name: str, prop: str) -> str:
+        rows = backend._client.run(
+            f"MATCH (n:Concept {{name: $k}}) RETURN valueType(n.{prop}) AS t",
+            {"k": name},
+        )
+        return rows[0]["t"] if rows else ""
+
+    def test_merge_node_ignores_caller_string_created_updated_at(self, backend):
+        """A caller-supplied string created_at/updated_at is dropped in
+        favour of the server-managed ``datetime()`` — never stored raw."""
+        backend.merge_node(
+            "Concept",
+            "name",
+            "_test_ts_server_managed",
+            {
+                "_test_phase_d": True,
+                "created_at": "2020-01-01T00:00:00Z",
+                "updated_at": "2020-01-01T00:00:00Z",
+            },
+        )
+        assert self._value_type(backend, "_test_ts_server_managed", "updated_at").startswith(
+            "ZONED DATETIME"
+        )
+        assert self._value_type(backend, "_test_ts_server_managed", "created_at").startswith(
+            "ZONED DATETIME"
+        )
+        # And the server time, not the caller's 2020 string.
+        rows = backend._client.run(
+            "MATCH (n:Concept {name: $k}) RETURN n.updated_at.year AS y",
+            {"k": "_test_ts_server_managed"},
+        )
+        assert rows[0]["y"] > 2020
+
+    def test_merge_node_coerces_caller_string_valid_to(self, backend):
+        """A caller-supplied ISO-string valid_to is coerced to datetime,
+        preserving the instant."""
+        backend.merge_node(
+            "Concept",
+            "name",
+            "_test_ts_valid_to",
+            {
+                "_test_phase_d": True,
+                "valid_to": "2026-03-15T12:00:00Z",
+            },
+        )
+        assert self._value_type(backend, "_test_ts_valid_to", "valid_to").startswith(
+            "ZONED DATETIME"
+        )
+        # decay-style duration.between must not raise on this node.
+        rows = backend._client.run(
+            "MATCH (n:Concept {name: $k}) "
+            "RETURN duration.between(n.valid_to, datetime()).days AS d",
+            {"k": "_test_ts_valid_to"},
+        )
+        assert isinstance(rows[0]["d"], int)
+
+    def test_migrate_timestamps_coerces_legacy_string_value(self, backend):
+        """migrate_timestamps detects and (on apply) coerces a legacy
+        string-typed updated_at into a datetime."""
+        from engrama.migrate import migrate_timestamps
+
+        # Seed a node the way the buggy importer used to: a raw string.
+        backend._client.run(
+            "MERGE (n:Concept {name: $k}) "
+            "SET n._test_phase_d = true, n.updated_at = '2026-01-02T03:04:05Z', "
+            "    n.confidence = 0.9",
+            {"k": "_test_ts_legacy_string"},
+        )
+        assert self._value_type(backend, "_test_ts_legacy_string", "updated_at").startswith(
+            "STRING"
+        )
+
+        dry = migrate_timestamps(backend, apply=False)
+        assert dry["dry_run"] is True
+        assert dry["fields"].get("updated_at", 0) >= 1
+
+        applied = migrate_timestamps(backend, apply=True)
+        assert applied["fixed"] >= 1
+        assert self._value_type(backend, "_test_ts_legacy_string", "updated_at").startswith(
+            "ZONED DATETIME"
+        )
+
+
 # ---------------------------------------------------------------------------
 # 3. Engine tests (mocked backend)
 # ---------------------------------------------------------------------------

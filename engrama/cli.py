@@ -534,8 +534,10 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     """Dispatcher for ``engrama migrate <subcommand>``."""
     if args.migrate_command == "keys":
         return cmd_migrate_keys(args)
+    if args.migrate_command == "timestamps":
+        return cmd_migrate_timestamps(args)
     print(
-        "Usage: engrama migrate <keys>",
+        "Usage: engrama migrate <keys|timestamps>",
         file=sys.stderr,
     )
     return 1
@@ -604,6 +606,50 @@ def cmd_migrate_keys(args: argparse.Namespace) -> int:
         return 0
     except Exception as e:
         print(f"migrate keys failed: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_migrate_timestamps(args: argparse.Namespace) -> int:
+    """Coerce string-typed temporal properties to Neo4j datetime (#76).
+
+    Default is a dry-run that counts affected nodes per field. Pass
+    ``--apply`` to rewrite them in place.
+    """
+    try:
+        from engrama.backends import create_stores
+        from engrama.migrate import migrate_timestamps
+
+        graph_store, _ = create_stores()
+        try:
+            summary = migrate_timestamps(graph_store, apply=args.apply)
+        finally:
+            close = getattr(graph_store, "close", None)
+            if callable(close):
+                close()
+
+        if summary["skipped_reason"]:
+            print(summary["skipped_reason"])
+            return 0
+
+        affected = {f: c for f, c in summary["fields"].items() if c}
+        total = sum(affected.values())
+        verb = "Would coerce" if summary["dry_run"] else "Coerced"
+        if total:
+            print(f"{verb} string→datetime on {total} value(s) across {len(affected)} field(s):")
+            for fld, c in affected.items():
+                print(f"  {fld}: {c}")
+        else:
+            print("No string-typed temporal properties found — graph is clean.")
+        if not summary["dry_run"]:
+            print(f"Fixed: {summary['fixed']}")
+        if summary["errors"]:
+            print(f"Errors ({len(summary['errors'])}):", file=sys.stderr)
+            for err in summary["errors"]:
+                print(f"  - {err}", file=sys.stderr)
+            return 1
+        return 0
+    except Exception as e:
+        print(f"migrate timestamps failed: {e}", file=sys.stderr)
         return 1
 
 
@@ -955,6 +1001,19 @@ def main() -> None:
             "Write the full plan + per-entry outcomes as JSON to this path. "
             "Useful for prod runs where you want an auditable record."
         ),
+    )
+    p_migrate_timestamps = migrate_sub.add_parser(
+        "timestamps",
+        help=(
+            "Coerce string-typed temporal properties (updated_at, etc.) to "
+            "Neo4j datetime so decay / query_at_date work (#76). Neo4j-only; "
+            "default is a dry-run."
+        ),
+    )
+    p_migrate_timestamps.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually rewrite the values. Without this flag the command counts and exits.",
     )
 
     # --- bench (Roadmap P15) ---

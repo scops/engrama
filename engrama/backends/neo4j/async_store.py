@@ -20,6 +20,10 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
+from engrama.backends.neo4j.backend import (
+    _SERVER_MANAGED_TIMESTAMPS,
+    _TEMPORAL_PROPERTIES,
+)
 from engrama.core.scope import MemoryScope, scope_filter_cypher
 
 logger = logging.getLogger("engrama.backends.neo4j.async_store")
@@ -85,6 +89,12 @@ class Neo4jAsyncStore:
         valid_to = properties.pop("valid_to", None)
         confidence = properties.pop("confidence", None)
 
+        # Server-managed timestamps are never taken from the caller: drop
+        # them so a caller-supplied ISO string can't override datetime().
+        # See #76.
+        for _ts in _SERVER_MANAGED_TIMESTAMPS:
+            properties.pop(_ts, None)
+
         set_create: list[str] = [
             "n.created_at = datetime()",
             "n.updated_at = datetime()",
@@ -126,8 +136,12 @@ class Neo4jAsyncStore:
 
         for idx, (key, value) in enumerate(properties.items()):
             pname = f"p{idx}"
-            set_create.append(f"n.{key} = ${pname}")
-            set_match.append(f"n.{key} = ${pname}")
+            # Coerce temporal properties to a Neo4j datetime so an
+            # ISO-string value (e.g. from the importer) is never stored
+            # as a raw string. See #76.
+            rhs = f"datetime(${pname})" if key in _TEMPORAL_PROPERTIES else f"${pname}"
+            set_create.append(f"n.{key} = {rhs}")
+            set_match.append(f"n.{key} = {rhs}")
             params[pname] = value
 
         if embedding is not None:
