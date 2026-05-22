@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](./backends.md)
-[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](../LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha%20%C2%B7%20install%20from%20source-orange.svg)](#quick-start-sqlite-zero-dep)
 
 Engrama gives any AI agent persistent, structured memory backed by a
@@ -397,7 +397,7 @@ You should now see the twelve Engrama tools:
 | `engrama_approve_insight` | Approve or dismiss an Insight |
 | `engrama_write_insight_to_vault` | Write approved Insight to Obsidian |
 
-See [`examples/claude_desktop/system-prompt.md`](examples/claude_desktop/system-prompt.md)
+See [`examples/claude_desktop/system-prompt.md`](../examples/claude_desktop/system-prompt.md)
 for a ready-to-paste system prompt that teaches Claude how to use the
 memory graph.
 
@@ -663,9 +663,9 @@ uv run engrama init --profile base --modules cooking teaching
 - Two modules defining the same label have their properties merged.
 - Relationship types should be verbs (USES, TREATS, COVERS), not nouns.
 
-See [`profiles/developer.yaml`](profiles/developer.yaml) for a complete
+See [`profiles/developer.yaml`](../profiles/developer.yaml) for a complete
 standalone profile, and
-[`engrama/skills/onboard/references/example-profiles.md`](engrama/skills/onboard/references/example-profiles.md)
+[`engrama/skills/onboard/references/example-profiles.md`](../engrama/skills/onboard/references/example-profiles.md)
 for worked profiles in nursing, law, project management, freelance
 creative.
 
