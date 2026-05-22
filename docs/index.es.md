@@ -3,9 +3,11 @@
 > Framework de memoria a largo plazo basado en grafos para agentes de IA.
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
-[![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](backends.md)
-[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](../LICENSE)
-[![Estado](https://img.shields.io/badge/estado-alpha%20%C2%B7%20instalaci%C3%B3n%20desde%20fuente-orange.svg)](#inicio-r%C3%A1pido-sqlite-cero-dependencias)
+[![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](./backends.md)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](https://github.com/scops/engrama/blob/main/LICENSE)
+[![Estado](https://img.shields.io/badge/estado-alpha%20%C2%B7%20instalaci%C3%B3n%20desde%20fuente-orange.svg)](https://github.com/scops/engrama#inicio-rapido-sqlite-cero-dependencias)
+
+![Banner de Engrama](assets/hero_banner.webp)
 
 Engrama dota a cualquier agente de IA de una memoria persistente y
 estructurada respaldada por un **grafo de conocimiento**. En lugar de
@@ -63,7 +65,7 @@ Necesitas dos cosas para arrancar con el backend SQLite por defecto.
 - [Obsidian](https://obsidian.md/) — solo necesario para sincronización con vault.
 - Un servidor de embeddings local para búsqueda semántica — Ollama, LM
   Studio, vLLM, llama.cpp o cualquier servicio que hable la API
-  OpenAI-compatible. Ver [Configuración de embeddings](#configuración-de-embeddings-opcional).
+  OpenAI-compatible. Ver [Configuración de embeddings](#configuracion-de-embeddings-opcional).
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) —
   solo si optas por el backend Neo4j.
 
@@ -106,7 +108,7 @@ Salida esperada: `backend=sqlite, ok=true, ...`
 
 Tres formas:
 
-**A) Desde Claude Desktop o Codex** — ver [Integración MCP](#integración-mcp) más abajo.
+**A) Desde Claude Desktop o Codex** — ver [Integración MCP](#integracion-mcp) más abajo.
 
 **B) Desde Python:**
 
@@ -435,7 +437,7 @@ Ahora deberías ver las doce herramientas:
 | `engrama_approve_insight` | Aprobar o descartar un Insight |
 | `engrama_write_insight_to_vault` | Escribir un Insight aprobado en Obsidian |
 
-Consulta [`examples/claude_desktop/system-prompt.md`](../examples/claude_desktop/system-prompt.md)
+Consulta [`examples/claude_desktop/system-prompt.md`](https://github.com/scops/engrama/blob/main/examples/claude_desktop/system-prompt.md)
 para un system prompt listo para pegar que enseña a Claude a usar el
 grafo de memoria.
 
@@ -647,9 +649,9 @@ uv run engrama init --profile base --modules cooking teaching
 - Si dos módulos definen la misma etiqueta, las propiedades se fusionan automáticamente.
 - Los tipos de relación deben ser verbos (USES, TREATS, COVERS), no sustantivos.
 
-Consulta [`profiles/developer.yaml`](../profiles/developer.yaml) para un
+Consulta [`profiles/developer.yaml`](https://github.com/scops/engrama/blob/main/profiles/developer.yaml) para un
 perfil independiente completo, y
-[`engrama/skills/onboard/references/example-profiles.md`](../engrama/skills/onboard/references/example-profiles.md)
+[`engrama/skills/onboard/references/example-profiles.md`](https://github.com/scops/engrama/blob/main/engrama/skills/onboard/references/example-profiles.md)
 para perfiles trabajados en enfermería, abogacía, PM, creativos
 freelance.
 

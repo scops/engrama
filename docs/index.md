@@ -1,11 +1,18 @@
+---
+hide:
+  - navigation
+  - toc
+---
 # Engrama
 
 > Graph-based long-term memory framework for AI agents.
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](./backends.md)
-[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](../LICENSE)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](https://github.com/scops/engrama/blob/main/LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha%20%C2%B7%20install%20from%20source-orange.svg)](#quick-start-sqlite-zero-dep)
+
+![Banner de Engrama](assets/hero_banner.webp)
 
 Engrama gives any AI agent persistent, structured memory backed by a
 **knowledge graph**. Instead of flat key-value stores or opaque vector
@@ -13,20 +20,36 @@ databases, Engrama stores **entities**, **observations**, and
 **relationships** — and lets agents traverse that graph to reason about
 their accumulated knowledge.
 
-Two backends are first-class:
+[Get Started](#quick-start-sqlite-zero-dep){ .md-button .md-button--primary }
+[Architecture](./architecture.md){ .md-button }
 
-- **SQLite + `sqlite-vec`** (default since 0.9) — single file, zero
-  external services, `git clone` + `uv sync` and you're running
-  (Engrama is not yet on PyPI; install from source).
-- **Neo4j 5.26 LTS** (opt-in) — for multi-process production setups,
-  large-scale vector search, or teams that already use Cypher.
+<div class="grid cards" markdown>
 
-The data model is identical on both. See **[./backends.md](./backends.md)**
-for a full decision guide; the rest of this README assumes the SQLite
-default.
+-   :material-database-search:{ .lg .middle } __Two Robust Backends__
 
-Inspired by Karpathy's second-brain concept, but built for agents
-instead of humans — and with graphs instead of wikis.
+    ---
+
+    SQLite with `sqlite-vec` by default for zero-dependency local setups, or Neo4j for scale.
+
+-   :material-graph:{ .lg .middle } __The Power of Graphs__
+
+    ---
+
+    Native relationship queries. Ask "what projects use FastMCP" and get it in a 1-hop traversal.
+
+-   :material-brain:{ .lg .middle } __Hybrid Search__
+
+    ---
+
+    Combines Vector search, Fulltext, Graph topology boost, and Temporal recency.
+
+-   :material-connection:{ .lg .middle } __MCP Ready__
+
+    ---
+
+    Works out-of-the-box with Claude Desktop and any agents supporting Model Context Protocol.
+
+</div>
 
 ---
 
@@ -397,7 +420,7 @@ You should now see the twelve Engrama tools:
 | `engrama_approve_insight` | Approve or dismiss an Insight |
 | `engrama_write_insight_to_vault` | Write approved Insight to Obsidian |
 
-See [`examples/claude_desktop/system-prompt.md`](../examples/claude_desktop/system-prompt.md)
+See [`examples/claude_desktop/system-prompt.md`](https://github.com/scops/engrama/blob/main/examples/claude_desktop/system-prompt.md)
 for a ready-to-paste system prompt that teaches Claude how to use the
 memory graph.
 
@@ -663,9 +686,9 @@ uv run engrama init --profile base --modules cooking teaching
 - Two modules defining the same label have their properties merged.
 - Relationship types should be verbs (USES, TREATS, COVERS), not nouns.
 
-See [`profiles/developer.yaml`](../profiles/developer.yaml) for a complete
+See [`profiles/developer.yaml`](https://github.com/scops/engrama/blob/main/profiles/developer.yaml) for a complete
 standalone profile, and
-[`engrama/skills/onboard/references/example-profiles.md`](../engrama/skills/onboard/references/example-profiles.md)
+[`engrama/skills/onboard/references/example-profiles.md`](https://github.com/scops/engrama/blob/main/engrama/skills/onboard/references/example-profiles.md)
 for worked profiles in nursing, law, project management, freelance
 creative.
 

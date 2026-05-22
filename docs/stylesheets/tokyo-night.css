@@ -1,0 +1,66 @@
+/* Tokyo Night / Cyberpunk theme overrides for Material for MkDocs */
+[data-md-color-scheme="slate"] {
+  /* Backgrounds */
+  --md-default-bg-color: #1a1b26;
+  --md-default-bg-color--light: #24283b;
+  --md-default-bg-color--lighter: #292e42;
+  --md-default-bg-color--lightest: #414868;
+  
+  /* Text colors */
+  --md-default-fg-color: #c0caf5;
+  --md-default-fg-color--light: #a9b1d6;
+  --md-default-fg-color--lighter: #9aa5ce;
+  --md-default-fg-color--lightest: #565f89;
+  
+  /* Primary color (Header, tabs, links) - Tokyo Night Blue */
+  --md-primary-fg-color: #7aa2f7;
+  --md-primary-fg-color--light: #89b4fa;
+  --md-primary-fg-color--dark: #2ac3de;
+  --md-primary-bg-color: #16161e;
+  --md-primary-bg-color--light: #24283b;
+  
+  /* Accent color (Buttons, active states) - Cyberpunk Magenta/Purple */
+  --md-accent-fg-color: #bb9af7;
+  --md-accent-fg-color--transparent: rgba(187, 154, 247, 0.1);
+  --md-accent-bg-color: #1a1b26;
+  --md-accent-bg-color--light: #24283b;
+
+  /* Code blocks */
+  --md-code-bg-color: #16161e;
+  --md-code-fg-color: #c0caf5;
+  --md-code-hl-color: rgba(122, 162, 247, 0.15);
+  
+  /* Admonitions */
+  --md-admonition-bg-color: #24283b;
+}
+
+/* Darker top header for Tokyo Night */
+[data-md-color-scheme="slate"] .md-header {
+  background-color: #16161e;
+  color: #c0caf5;
+}
+
+/* Cyberpunk glow effects for buttons */
+[data-md-color-scheme="slate"] .md-button--primary {
+  background-color: #bb9af7;
+  color: #1a1b26;
+  border-color: #bb9af7;
+  box-shadow: 0 0 15px rgba(187, 154, 247, 0.4);
+  transition: all 0.3s ease;
+}
+
+[data-md-color-scheme="slate"] .md-button--primary:hover {
+  background-color: #f7768e;
+  border-color: #f7768e;
+  box-shadow: 0 0 20px rgba(247, 118, 142, 0.6);
+  color: #16161e;
+}
+
+[data-md-color-scheme="slate"] .md-button {
+  border-color: #7aa2f7;
+  color: #7aa2f7;
+}
+
+[data-md-color-scheme="slate"] .md-button:hover {
+  background-color: rgba(122, 162, 247, 0.1);
+}

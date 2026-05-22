@@ -156,7 +156,7 @@ Los skills, el servidor MCP, la CLI y el SDK de Python están escritos
 contra los protocolos — no saben qué backend hay debajo. Por eso el
 cambio se reduce a una sola variable.
 
-Consulta [architecture.md](architecture.md#protocol-layer-and-backends)
+Consulta [architecture.md](architecture.md#capa-de-protocolo-y-backends)
 para el diagrama completo de capas, y [DDR-004](ddr-004.md) para la
 justificación de diseño del backend portable.
 
