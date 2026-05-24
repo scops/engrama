@@ -11,13 +11,41 @@ The HTTP transport is built on the MCP SDK's bundled FastMCP
 (`mcp.server.fastmcp`) — no extra dependency. The default stays `stdio`
 so existing Claude Desktop setups are untouched.
 
-!!! warning "No authentication in this phase"
-    The HTTP transport ships **without auth**. It binds to loopback
-    (`127.0.0.1`) by default and rejects cross-origin requests, but it
-    does **not** verify any token. Do not expose it on a public
-    interface. OAuth 2.1 against an external issuer is a later phase;
-    the `/.well-known/oauth-protected-resource` endpoint below is the
-    hook for it.
+!!! danger "Bind to loopback only — there is no authentication yet"
+    The HTTP transport ships **without auth**. Run it bound to
+    `127.0.0.1` (the default) and **never** expose it on a public or
+    LAN-reachable interface until the OAuth phase lands. See
+    [Security model](#security-model).
+
+## Security model { #security-model }
+
+**Local HTTP on loopback has the same attack surface as stdio.** With the
+default bind (`127.0.0.1`), the only processes that can reach `/mcp` are
+those already running on your machine — exactly the trust boundary stdio
+relies on (a local client launching and talking to a local server).
+Switching a local Claude Desktop / SDK client from stdio to loopback HTTP
+does **not** widen your exposure.
+
+The surface only grows if **you** change the deployment:
+
+- **Binding off-loopback** — `ENGRAMA_HTTP_HOST=0.0.0.0` or a LAN IP, a
+  reverse proxy, or an SSH / `ngrok`-style tunnel — turns the server into
+  an **unauthenticated remote endpoint**. Anyone who can reach the port
+  can read and write the entire memory graph. Don't, not in this phase.
+- **A malicious local web page** could try to script a browser into
+  POSTing to `http://127.0.0.1:8000/mcp` (a DNS-rebinding / CSRF-style
+  attack). The built-in [Origin/Host validation](#origin-validation) is
+  the guard: cross-origin requests are rejected with 403, and only
+  loopback `Host` values are accepted.
+
+Rules of thumb for this phase:
+
+- ✅ Loopback bind + local client → same trust as stdio. Fine.
+- ✅ Keep the default `ENGRAMA_ALLOWED_ORIGINS` (loopback only).
+- ❌ No off-loopback bind, no public / LAN exposure, no tunnel — unless
+  you put your own authenticated gateway **and** TLS in front.
+- ⏭ Real authentication (OAuth 2.1) is the next phase; the
+  `/.well-known/oauth-protected-resource` stub is its hook.
 
 ## Configuration
 
@@ -97,7 +125,7 @@ curl -s http://127.0.0.1:8000/.well-known/oauth-protected-resource
 The next phase only has to set `ENGRAMA_AUTH_ISSUER` (and wire a token
 verifier) — no change to this endpoint's code.
 
-## Origin validation (anti DNS-rebinding)
+## Origin validation (anti DNS-rebinding) { #origin-validation }
 
 The HTTP transport uses the MCP SDK's built-in DNS-rebinding protection.
 On every request to `/mcp` it validates:
