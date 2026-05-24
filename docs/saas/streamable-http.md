@@ -76,8 +76,8 @@ curl -i http://127.0.0.1:8000/health
 
 It is intentionally **not** guarded by the Origin check (probes send no
 `Origin` header). It owns a small cached connection of its own — see
-[Stateless mode](#why-stateless) for why custom routes can't reuse the
-per-request store.
+[Session mode](#session-mode) for why custom routes can't reuse the
+MCP session store.
 
 ### `/.well-known/oauth-protected-resource`
 
@@ -137,25 +137,28 @@ curl -i -H "Accept: application/json, text/event-stream" \
   http://127.0.0.1:8000/mcp
 ```
 
-## Why stateless { #why-stateless }
+## Session mode (stateful) { #session-mode }
 
-The server runs with `stateless_http=True`. Engrama's MCP tools are
-plain request/response calls — none of them use MCP **sampling** or
-**elicitation**, which are the features that require a sticky session
-between client and server. Running stateless keeps the server simple and
-horizontally scalable (any instance can serve any request).
+The server runs **stateful** (`stateless_http=False`, the SDK default).
+On `initialize` the server returns an `Mcp-Session-Id` header; the client
+reuses it on every following POST, and the server lifespan — opening the
+graph store, vault and embedder — runs **once per session** rather than
+once per request.
 
-The trade-off: in stateless mode the SDK creates a fresh transport for
-each request and re-enters the server lifespan on every MCP call, so the
-graph store is opened and closed per request. For SQLite (the default)
-this is cheap; for Neo4j it means a driver handshake per call. This is
-acceptable for local/single-user use; a future deployment phase can
-revisit connection pooling if it becomes a bottleneck.
+This is required by conversational MCP clients (claude.ai, Claude
+Desktop). Under `stateless_http=True` the SDK assigns no session id and
+re-enters the lifespan on every POST (re-initialising Neo4j/Ollama/vault
+each time); those clients see the session die after each request and
+**fail to register the tools**. Stateless is only worthwhile for
+horizontally-scaled, fan-out deployments backed by a shared event store —
+not the local/single-server case here. Engrama's tools are plain
+request/response calls (no MCP **sampling** or **elicitation**), so a
+sticky session costs nothing functionally.
 
-A direct consequence: **custom routes (`/health`) never see the
-per-request lifespan context**, which is why `/health` maintains its own
-lazily-created, cached backend connection rather than reaching into the
-MCP request state.
+A consequence of the SDK's design: **custom routes (`/health`) never see
+the MCP session lifespan context** (it belongs to the MCP server, not the
+ASGI app), which is why `/health` maintains its own lazily-created, cached
+backend connection rather than reaching into the MCP request state.
 
 ## Connecting clients
 
@@ -203,7 +206,7 @@ phase depending on your build.
 |---|-------|-----------------|
 | Process model | Launched as a subprocess by the client. | Long-lived server you start and connect to. |
 | Lifecycle | One process per client session. | One process, many requests. |
-| Store lifespan | Opened once, reused for the session. | Re-opened per request (stateless). |
+| Store lifespan | Opened once, reused for the session. | Opened once per session (stateful). |
 | Network exposure | None (pipes). | Binds a TCP port; Origin/Host validated. |
 | Health probe | N/A. | `GET /health`. |
 | Auth | N/A (local trust). | None yet — loopback + Origin check only. |

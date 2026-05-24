@@ -329,7 +329,7 @@ def create_engrama_mcp(
     host: str = "127.0.0.1",
     port: int = 8000,
     mcp_path: str = "/mcp",
-    stateless_http: bool = True,
+    stateless_http: bool = False,
     allowed_origins: list[str] | None = None,
     auth_issuer: str | None = None,
 ) -> FastMCP:
@@ -351,11 +351,16 @@ def create_engrama_mcp(
             stdio.
         mcp_path: URL path for the MCP endpoint (default ``/mcp``).
         stateless_http: Run the HTTP transport statelessly (default
-            ``True``). Stateless keeps the server horizontally scalable
-            and avoids per-session state, at the cost of re-entering the
-            lifespan (re-opening the store) on every request — Engrama
-            exposes no sampling/elicitation that would need a sticky
-            session, so this is the right default. Ignored under stdio.
+            ``False`` — stateful). Stateful is required by conversational
+            MCP clients (claude.ai / Claude Desktop): ``initialize``
+            returns an ``Mcp-Session-Id`` the client reuses, and the
+            server lifespan runs **once per session** instead of once per
+            request. Under ``stateless_http=True`` the SDK assigns no
+            session id and re-enters the lifespan (re-opening the store,
+            vault and embedder) on every POST, which those clients treat
+            as a dead session and fail to register tools. Stateless is
+            only useful for horizontally-scaled, fan-out request patterns
+            with a shared event store — not our case. Ignored under stdio.
         allowed_origins: Origin header allow-list for DNS-rebinding
             protection. Defaults to loopback only. Ignored under stdio.
         auth_issuer: OAuth issuer URL advertised by the

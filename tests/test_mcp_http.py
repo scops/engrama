@@ -49,6 +49,21 @@ def _sqlite_mcp(**kwargs: Any):
 
 
 # ---------------------------------------------------------------------------
+# Session mode (stateful)
+# ---------------------------------------------------------------------------
+
+
+def test_server_is_stateful_by_default() -> None:
+    """Conversational clients need a persistent session — stateless breaks
+    tool registration (no Mcp-Session-Id, lifespan re-run per request)."""
+    assert _sqlite_mcp().settings.stateless_http is False
+
+
+def test_stateless_http_can_be_opted_in() -> None:
+    assert _sqlite_mcp(stateless_http=True).settings.stateless_http is True
+
+
+# ---------------------------------------------------------------------------
 # Transport switching (entry point)
 # ---------------------------------------------------------------------------
 

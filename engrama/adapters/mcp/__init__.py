@@ -155,9 +155,15 @@ def main() -> None:
     )
 
     if args.transport == "http":
-        # Streamable HTTP via the MCP SDK's FastMCP. Host/port/path and
-        # stateless mode are already baked into the instance by
-        # create_engrama_mcp; run() just selects the transport.
+        # Streamable HTTP via the MCP SDK's FastMCP. We run the FastMCP
+        # app directly (run() -> streamable_http_app()) and never wrap it
+        # in a Starlette(routes=[Mount(...)]): mounting the FastMCP app as
+        # a sub-app traps its lifespan inside the request scope, so the
+        # backend (Neo4j/Ollama/vault) re-initialises on every POST. Run
+        # it as the root ASGI app so its lifespan is the process lifespan.
+        # The server is stateful by default (see create_engrama_mcp) so
+        # conversational clients get a persistent Mcp-Session-Id; host,
+        # port, path and session mode are already baked into the instance.
         mcp.run(transport="streamable-http")
     else:
         mcp.run()
