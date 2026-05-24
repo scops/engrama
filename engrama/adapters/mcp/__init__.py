@@ -15,7 +15,6 @@ backend-specific env vars: ``ENGRAMA_DB_PATH`` for SQLite,
 """
 
 import argparse
-import asyncio
 import os
 import sys
 from pathlib import Path
@@ -87,16 +86,41 @@ def main() -> None:
     parser.add_argument(
         "--transport",
         choices=["stdio", "http"],
-        default="stdio",
-        help="MCP transport (default: stdio)",
+        default=os.getenv("ENGRAMA_TRANSPORT", "stdio"),
+        help="MCP transport (default: stdio, override with $ENGRAMA_TRANSPORT)",
     )
     parser.add_argument(
         "--vault-path",
         default=os.getenv("VAULT_PATH"),
         help="Absolute path to the Obsidian vault root (default: $VAULT_PATH)",
     )
-    parser.add_argument("--host", default="127.0.0.1", help="HTTP host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8000, help="HTTP port (default: 8000)")
+    parser.add_argument(
+        "--host",
+        default=os.getenv("ENGRAMA_HTTP_HOST", "127.0.0.1"),
+        help="HTTP bind host (default: 127.0.0.1, override with $ENGRAMA_HTTP_HOST)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("ENGRAMA_HTTP_PORT", "8000")),
+        help="HTTP port (default: 8000, override with $ENGRAMA_HTTP_PORT)",
+    )
+    parser.add_argument(
+        "--allowed-origins",
+        default=os.getenv("ENGRAMA_ALLOWED_ORIGINS"),
+        help=(
+            "CSV of allowed Origin headers for HTTP transport "
+            "(default: loopback only, override with $ENGRAMA_ALLOWED_ORIGINS)"
+        ),
+    )
+    parser.add_argument(
+        "--auth-issuer",
+        default=os.getenv("ENGRAMA_AUTH_ISSUER"),
+        help=(
+            "OAuth issuer URL advertised by /.well-known/oauth-protected-resource "
+            "(default: unset -> endpoint returns 404; env: $ENGRAMA_AUTH_ISSUER)"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -116,14 +140,25 @@ def main() -> None:
     elif args.backend == "sqlite" and args.db_path:
         config["ENGRAMA_DB_PATH"] = args.db_path
 
+    from .http import parse_origins
+
+    allowed_origins = parse_origins(args.allowed_origins) if args.allowed_origins else None
+
     mcp = create_engrama_mcp(
         backend=args.backend,
         config=config,
         vault_path=args.vault_path,
+        host=args.host,
+        port=args.port,
+        allowed_origins=allowed_origins,
+        auth_issuer=args.auth_issuer,
     )
 
     if args.transport == "http":
-        asyncio.run(mcp.run_http_async(host=args.host, port=args.port))
+        # Streamable HTTP via the MCP SDK's FastMCP. Host/port/path and
+        # stateless mode are already baked into the instance by
+        # create_engrama_mcp; run() just selects the transport.
+        mcp.run(transport="streamable-http")
     else:
         mcp.run()
 

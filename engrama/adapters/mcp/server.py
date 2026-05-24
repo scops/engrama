@@ -325,6 +325,13 @@ def create_engrama_mcp(
     backend: str | None = None,
     config: dict[str, Any] | None = None,
     vault_path: str | None = None,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    mcp_path: str = "/mcp",
+    stateless_http: bool = True,
+    allowed_origins: list[str] | None = None,
+    auth_issuer: str | None = None,
 ) -> FastMCP:
     """Create and return a configured Engrama MCP server.
 
@@ -338,10 +345,34 @@ def create_engrama_mcp(
             ``NEO4J_DATABASE``, ``EMBEDDING_DIMENSIONS``).
         vault_path: Absolute path to the Obsidian vault root.
             Falls back to ``VAULT_PATH`` env var.
+        host: Bind address used by the Streamable HTTP transport and
+            baked into the ``Host`` allow-list. Ignored under stdio.
+        port: TCP port for the Streamable HTTP transport. Ignored under
+            stdio.
+        mcp_path: URL path for the MCP endpoint (default ``/mcp``).
+        stateless_http: Run the HTTP transport statelessly (default
+            ``True``). Stateless keeps the server horizontally scalable
+            and avoids per-session state, at the cost of re-entering the
+            lifespan (re-opening the store) on every request — Engrama
+            exposes no sampling/elicitation that would need a sticky
+            session, so this is the right default. Ignored under stdio.
+        allowed_origins: Origin header allow-list for DNS-rebinding
+            protection. Defaults to loopback only. Ignored under stdio.
+        auth_issuer: OAuth issuer URL advertised by the
+            ``/.well-known/oauth-protected-resource`` stub. When ``None``
+            the stub returns 404 (no auth configured).
 
     Returns:
         A :class:`FastMCP` instance ready to run.
     """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    from engrama.adapters.mcp.http import (
+        default_allowed_origins,
+        derive_allowed_hosts,
+        register_http_routes,
+    )
+
     cfg: dict[str, Any] = dict(config or {})
     if backend is not None:
         cfg["GRAPH_BACKEND"] = backend
@@ -404,7 +435,36 @@ def create_engrama_mcp(
                     pass
             logger.info("Engrama MCP shut down cleanly")
 
-    mcp = FastMCP("engrama_mcp", lifespan=lifespan)
+    # DNS-rebinding protection (only consulted by the Streamable HTTP
+    # transport — inert under stdio). Bad Origin → 403, bad Host → 421.
+    transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=derive_allowed_hosts(host, port),
+        allowed_origins=(
+            allowed_origins if allowed_origins is not None else default_allowed_origins()
+        ),
+    )
+
+    mcp = FastMCP(
+        "engrama_mcp",
+        lifespan=lifespan,
+        host=host,
+        port=port,
+        streamable_http_path=mcp_path,
+        stateless_http=stateless_http,
+        transport_security=transport_security,
+    )
+
+    # Register the HTTP-only custom routes (/health, OAuth metadata stub).
+    # Harmless under stdio — they are simply never served.
+    register_http_routes(
+        mcp,
+        cfg,
+        auth_issuer=auth_issuer,
+        host=host,
+        port=port,
+        mcp_path=mcp_path,
+    )
 
     # -- Helper: get async store from context -----
 
