@@ -68,3 +68,12 @@ Algunos valores por defecto que conviene conocer al desplegar Engrama:
   (Claude Desktop, un SDK, etc.). No está endurecido para exposición
   directa en internet público — poned vuestro propio gateway autenticado
   delante si necesitáis acceso remoto.
+- El **transporte Streamable HTTP** opcional (`ENGRAMA_TRANSPORT=http`) se
+  publica **sin autenticación**. Enlazado a su dirección loopback por
+  defecto (`127.0.0.1`) tiene la misma superficie de ataque que stdio —
+  solo los procesos locales pueden alcanzarlo. Enlazarlo fuera de loopback
+  (`0.0.0.0`, una IP de LAN, un proxy inverso o un túnel) lo convierte en
+  un endpoint de lectura/escritura sin autenticar sobre todo el grafo de
+  memoria: no lo hagáis hasta que llegue OAuth. La validación integrada de
+  `Origin`/`Host` protege frente a DNS-rebinding desde un navegador local.
+  Consultad la [guía de Streamable HTTP](saas/streamable-http.md).

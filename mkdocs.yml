@@ -97,6 +97,7 @@ nav:
       - Contributing: contributing.md
       - Releasing: releasing.md
       - Security: security.md
+      - Streamable HTTP: saas/streamable-http.md
       - Glossary: glosario.md
   - Design Decisions (DDRs):
       - DDR-001: ddr-001.md

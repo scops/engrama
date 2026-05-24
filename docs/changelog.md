@@ -7,6 +7,19 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Streamable HTTP transport for the MCP server.** Switchable via
+  `ENGRAMA_TRANSPORT=http` (default stays `stdio`, so existing Claude
+  Desktop setups are untouched). Binds loopback `127.0.0.1:8000` with the
+  MCP endpoint at `/mcp`, runs stateful so conversational clients keep an
+  `Mcp-Session-Id`, and validates `Origin`/`Host` (DNS-rebinding guard,
+  configurable via `ENGRAMA_ALLOWED_ORIGINS`). Adds a `/health` probe and
+  a `/.well-known/oauth-protected-resource` (RFC 9728) stub wired for the
+  upcoming OAuth phase via `ENGRAMA_AUTH_ISSUER`. No authentication yet —
+  intended for local use only. See the Streamable HTTP guide.
+
 ## [0.12.0] — 2026-05-22
 
 Two latency fixes on the MCP server path plus the documentation site
