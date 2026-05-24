@@ -63,3 +63,11 @@ A few defaults worth knowing when deploying Engrama:
   Desktop, an SDK, etc.). It is not hardened for direct exposure on the
   public internet — put it behind your own authenticated gateway if you
   need remote access.
+- The optional **Streamable HTTP transport** (`ENGRAMA_TRANSPORT=http`)
+  ships **without authentication**. Bound to its default loopback address
+  (`127.0.0.1`) it has the same attack surface as stdio — only local
+  processes can reach it. Binding it off-loopback (`0.0.0.0`, a LAN IP, a
+  reverse proxy or a tunnel) turns it into an unauthenticated read/write
+  endpoint for the whole memory graph: don't, until OAuth lands. The
+  built-in `Origin`/`Host` validation guards against DNS-rebinding from a
+  local browser. See the [Streamable HTTP guide](saas/streamable-http.md).
