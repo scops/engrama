@@ -1,9 +1,9 @@
 """Regression suite — embedder failures on write are surfaced, not silent.
 
 Incident (2026-05-25): when the embedder was configured but unreachable on a
-write (TEI cold-start), ``engrama_remember`` persisted the node without a
-vector and still returned ``status: "ok"`` with no signal — the node became
-permanently invisible to semantic search.
+write (a remote embeddings endpoint cold-starting), ``engrama_remember``
+persisted the node without a vector and still returned ``status: "ok"`` with no
+signal — the node became permanently invisible to semantic search.
 
 These tests pin the fix:
 * a failed embed surfaces ``embedded: false`` + an ``embedding_note`` (honest,
