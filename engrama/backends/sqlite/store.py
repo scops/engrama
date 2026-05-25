@@ -17,6 +17,7 @@ import json
 import logging
 import re
 import sqlite3
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -189,6 +190,9 @@ class SqliteGraphStore:
                 "confidence",
                 properties["confidence"] if "confidence" in properties else 1.0,
             )
+            # Stable node identity (#6): mint a UUID unless the caller adopted
+            # one (e.g. an existing Obsidian note's id). Mirrors the Neo4j store.
+            full.setdefault("engrama_id", str(uuid.uuid4()))
             cur = self._conn.execute(
                 "INSERT INTO nodes(label, key_field, key_value, props, "
                 "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -208,6 +212,12 @@ class SqliteGraphStore:
             # Revival: clear valid_to unless caller explicitly set one.
             if "valid_to" not in properties:
                 merged.pop("valid_to", None)
+            # Stable identity (#6): an existing id always wins (a caller can't
+            # rewrite it); backfill nodes written before this field existed.
+            if existing.get("engrama_id"):
+                merged["engrama_id"] = existing["engrama_id"]
+            elif not merged.get("engrama_id"):
+                merged["engrama_id"] = str(uuid.uuid4())
             self._conn.execute(
                 "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
                 (json.dumps(merged), now, node_id),
