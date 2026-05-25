@@ -19,6 +19,24 @@ Versioning: [Semantic Versioning](https://semver.org/)
   a `/.well-known/oauth-protected-resource` (RFC 9728) stub wired for the
   upcoming OAuth phase via `ENGRAMA_AUTH_ISSUER`. No authentication yet —
   intended for local use only. See the Streamable HTTP guide.
+- **`engrama_reindex` tool** — repairs nodes that are missing their vector
+  embedding (e.g. written while the embedder was unreachable, or predating
+  embeddings). Three phases run as separate calls: `detect` (scan, read-only),
+  `classify` (which candidates have embeddable text), and `apply`
+  (`dry_run` defaults to `true`). Heals legacy/corrupted nodes so they become
+  semantically searchable again.
+
+### Fixed
+- **Silent embedding corruption on write.** When an embedder was configured
+  but unreachable at write time (Ollama / OpenAI-compatible cold-start,
+  restart, or network blip), `engrama_remember` persisted the node *without* a
+  vector yet still returned `status: "ok"` — leaving it permanently invisible
+  to semantic search with no signal to anyone. The write path is now honest:
+  the response reports `embedded: true|false` (with an `embedding_note` when a
+  vector was deferred), failures log a WARNING that includes the `engrama_id`,
+  and a vector-less node is healed automatically by an opportunistic sweep on
+  the next successful write — or on demand via `engrama_reindex`. Proactive
+  writes are still never lost: the node always persists.
 
 ## [0.12.0] — 2026-05-22
 

@@ -1472,6 +1472,45 @@ class SqliteGraphStore:
             for r in cur.fetchall()
         ]
 
+    def list_unembedded_nodes(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Return nodes that carry no vector, newest-agnostic, capped at ``limit``.
+
+        Source of truth is the presence of a row in the ``node_embeddings``
+        vec0 table (mirrors the ``:Embedded`` label on Neo4j). A node whose
+        embed-on-write failed has no vector row and shows up here. Backs the
+        opportunistic sweep and ``engrama_reindex``. Returns
+        ``{engrama_id, label, key_field, key_value, props}``.
+        """
+        try:
+            cur = self._conn.execute(
+                "SELECT n.label AS label, n.key_field AS key_field, "
+                "       n.key_value AS key_value, n.props AS props "
+                "FROM nodes n "
+                "WHERE NOT EXISTS (SELECT 1 FROM node_embeddings v WHERE v.node_id = n.id) "
+                "LIMIT ?",
+                (limit,),
+            )
+        except sqlite3.OperationalError:
+            # vec table never created (no embedder configured) → every node
+            # is unembedded.
+            cur = self._conn.execute(
+                "SELECT label, key_field, key_value, props FROM nodes LIMIT ?",
+                (limit,),
+            )
+        out: list[dict[str, Any]] = []
+        for r in cur.fetchall():
+            props = json.loads(r["props"]) if r["props"] else {}
+            out.append(
+                {
+                    "engrama_id": props.get("engrama_id"),
+                    "label": r["label"],
+                    "key_field": r["key_field"],
+                    "key_value": r["key_value"],
+                    "props": props,
+                }
+            )
+        return out
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------

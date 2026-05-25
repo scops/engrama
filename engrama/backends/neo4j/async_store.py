@@ -25,6 +25,7 @@ from engrama.backends.neo4j.backend import (
     _SERVER_MANAGED_TIMESTAMPS,
     _TEMPORAL_PROPERTIES,
 )
+from engrama.core.schema import TITLE_KEYED_LABELS
 from engrama.core.scope import MemoryScope, scope_filter_cypher
 
 logger = logging.getLogger("engrama.backends.neo4j.async_store")
@@ -846,6 +847,40 @@ class Neo4jAsyncStore:
             database_=self._database,
         )
         return len(records) > 0
+
+    async def list_unembedded_nodes(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Return nodes that carry no vector (no ``:Embedded`` label).
+
+        Source of truth is the ``:Embedded`` label, set only by
+        :meth:`store_embedding`. A node whose embed-on-write failed (or that
+        predates embeddings) lacks it and shows up here — this is what backs
+        both the opportunistic sweep and ``engrama_reindex``. Returns up to
+        ``limit`` rows as ``{engrama_id, label, key_field, key_value, props}``.
+        """
+        records, _, _ = await self._driver.execute_query(
+            "MATCH (n) WHERE NOT n:Embedded "
+            "WITH n, [l IN labels(n) WHERE l <> 'Embedded'][0] AS label "
+            "WHERE label IS NOT NULL "
+            "RETURN label AS label, properties(n) AS props "
+            "LIMIT $limit",
+            parameters_={"limit": limit},
+            database_=self._database,
+        )
+        out: list[dict[str, Any]] = []
+        for r in records:
+            props = dict(r["props"])
+            label = r["label"]
+            key_field = "title" if label in TITLE_KEYED_LABELS else "name"
+            out.append(
+                {
+                    "engrama_id": props.get("engrama_id"),
+                    "label": label,
+                    "key_field": key_field,
+                    "key_value": props.get(key_field),
+                    "props": props,
+                }
+            )
+        return out
 
     async def search_similar(
         self,
