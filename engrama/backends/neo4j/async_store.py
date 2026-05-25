@@ -1117,7 +1117,7 @@ class Neo4jAsyncStore:
         packaged ``schema.cypher``. Every statement is ``IF NOT EXISTS``, so
         this is safe to run on every startup against a populated graph — it
         never drops or rebuilds an index in use. This is what lets a fresh
-        Neo4j (e.g. a headless/SaaS pod with no repo checkout) serve
+        Neo4j (e.g. a headless deploy with no repo checkout) serve
         ``engrama_search`` without anyone running ``engrama init`` first.
 
         Best-effort: individual statement failures are logged, not raised, so

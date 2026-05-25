@@ -509,8 +509,9 @@ def create_engrama_mcp(
             if async_store is not None:
                 # Bootstrap the graph schema (fulltext/vector indexes +
                 # constraints) idempotently. Neo4j needs this on a fresh
-                # graph — e.g. a headless/SaaS pod with no repo checkout to
-                # run `engrama init` — or engrama_search has no index to hit.
+                # graph — e.g. a headless deploy installed as a dependency,
+                # with no repo checkout to run `engrama init` — or
+                # engrama_search has no index to hit.
                 # SQLite applies its schema at connection time and exposes no
                 # ensure_schema, so this is a Neo4j-only step.
                 if hasattr(async_store, "ensure_schema"):

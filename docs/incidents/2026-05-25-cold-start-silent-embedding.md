@@ -4,8 +4,8 @@
 **Severity:** high (data quality — silent, permanent)
 **Status:** diagnosed (Phase 0); fix pending review before implementation
 **Affected:** `engrama_remember` write path when an embedder is configured but
-transiently unreachable (observed first on a SaaS pod whose TEI embedder was
-cold-starting).
+transiently unreachable (observed when a remote HTTP embeddings endpoint was
+cold-starting after a restart).
 
 ## Summary
 
@@ -19,16 +19,16 @@ node is never retried.
 error handling — **any** transient embedder failure (restart, network blip, OOM,
 rate-limit, 5xx) produces the same permanently-unembedded node.
 
-### Live reproduction (real writes on the pod, not synthetic)
+### Live reproduction (real writes against a remote embedder, not synthetic)
 
 | write | timing | `vector_score` on paraphrastic query | embedding |
 |---|---|---|---|
-| `lightning-network` (Concept) | 1st write after TEI deploy | `0.0` (even on literal English) | **lost** |
-| `pagos-instantaneos-btc` | ~9s later | `1.0` | ok |
-| `liquidez-entrante-lightning` | ~2min later | `0.3726` | ok |
+| node A (Concept) | 1st write after the embedder came up | `0.0` (even on literal terms) | **lost** |
+| node B | ~9s later | `1.0` | ok |
+| node C | ~2min later | `0.3726` | ok |
 
-Writes 2 and 3 prove the embedder works; write 1 hit TEI before it was ready and
-lost its vector silently.
+Writes 2 and 3 prove the embedder works; write 1 hit the embedder before it was
+ready and lost its vector silently.
 
 ## Phase 0 — answers
 
@@ -68,7 +68,7 @@ persisted:
 
 - **(A)+(C) — exception swallowed.** `aembed` raises on a transient failure. The
   openai-compatible provider uses `httpx` with a timeout (`openai_compat.py`;
-  `raise_for_status()` + timeout), so a cold/unreachable TEI surfaces as
+  `raise_for_status()` + timeout), so a cold/unreachable embedder surfaces as
   `ConnectTimeout` / `ConnectError` / `HTTPStatusError`. The `except` at (C)
   catches it, logs a **WARNING** (so it is *not* invisible in logs) **but the
   warning carries `label/merge_value`, not the `engrama_id`**, and the tool
@@ -145,8 +145,8 @@ intent behind B without a fragile in-process worker.
      embedding:` path that currently logs nothing.
   4. Backward compatible: nodes without `embedding_status` keep working.
 - **`engrama_reindex` (Phase 2)** is the durable retry/recovery: it detects
-  vector-less / degenerate nodes (incl. already-corrupted ones like
-  `lightning-network`), classifies which to re-embed, and applies. This delivers
+  vector-less / degenerate nodes (incl. already-corrupted ones), classifies
+  which to re-embed, and applies. This delivers
   B's "eventually embedded, never lost" guarantee without a daemon, and there is
   already partial machinery to build on (`list_nodes_for_embedding` in the SQLite
   store).
@@ -175,7 +175,7 @@ in-process retry daemon (its robust form converges to a graph sweep anyway).
   re-embedded in the same request — auto-healing without a daemon and without
   piling timeouts against a down embedder.
 - **`engrama_reindex` tool** (`detect`/`classify`/`apply`, `dry_run` default
-  true): on-demand repair that also fixes legacy/already-corrupted nodes. Backed
+  true): on-demand repair that also fixes already-corrupted nodes. Backed
   by `list_unembedded_nodes` on both async stores (`:Embedded` label on Neo4j /
   vec-table presence on SQLite as the source of truth — no parallel marker).
 
