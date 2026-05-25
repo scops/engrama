@@ -91,6 +91,70 @@ def _with_mcp_provenance(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     return {**cleaned, **_MCP_PROVENANCE_PROPS, **_MCP_SCOPE_PROPS}
 
 
+# Opportunistic re-embeds per healthy write (see _sweep_pending_embeddings).
+_SWEEP_LIMIT = 3
+
+
+async def _embed_text(embedder: Any, text: str) -> list[float]:
+    """Embed via the async API when available, else the sync one."""
+    if hasattr(embedder, "aembed"):
+        return await embedder.aembed(text)
+    return embedder.embed(text)
+
+
+async def _reembed_node(store: Any, embedder: Any, label: str, props: dict[str, Any]) -> bool:
+    """Embed one node from its stored props and attach the vector.
+
+    Returns ``True`` if a vector was stored, ``False`` if the node has no
+    embeddable text or the embedder produced nothing. Raises on embedder /
+    transport failure so callers can tell "nothing to embed" from
+    "embedder unreachable".
+    """
+    from engrama.embeddings.text import node_to_text
+
+    text = node_to_text(label, props)
+    if not text or not text.strip():
+        return False
+    key_field = "title" if label in TITLE_KEYED_LABELS else "name"
+    key_value = props.get(key_field) or props.get("name") or props.get("title")
+    if not key_value:
+        return False
+    embedding = await _embed_text(embedder, text)
+    if not embedding:
+        return False
+    await store.store_embedding(label, key_field, key_value, embedding)
+    return True
+
+
+async def _sweep_pending_embeddings(store: Any, embedder: Any, limit: int = _SWEEP_LIMIT) -> int:
+    """Opportunistically re-embed up to ``limit`` vector-less nodes.
+
+    Called **only after a write whose own embed succeeded** — i.e. there is
+    live evidence the embedder is reachable right now, so this never piles up
+    timeouts against a down embedder. Best-effort: per-node failures are
+    logged and skipped, never raised. Returns how many nodes were healed.
+    """
+    healed = 0
+    try:
+        candidates = await store.list_unembedded_nodes(limit=limit)
+    except Exception as e:  # noqa: BLE001 — sweep must never break the write
+        logger.warning("Embedding sweep: could not list candidates: %s", e)
+        return 0
+    for cand in candidates:
+        try:
+            if await _reembed_node(store, embedder, cand["label"], cand["props"]):
+                healed += 1
+        except Exception as e:  # noqa: BLE001 — one bad node must not abort the sweep
+            logger.warning(
+                "Embedding sweep: re-embed failed for engrama_id=%s: %s",
+                cand.get("engrama_id"),
+                e,
+            )
+    if healed:
+        logger.info("Embedding sweep: healed %d vector-less node(s)", healed)
+    return healed
+
+
 # ---------------------------------------------------------------------------
 # Proactivity state (module-level — survives across tool calls within process)
 # ---------------------------------------------------------------------------
@@ -316,6 +380,28 @@ class WriteInsightInput(BaseModel):
     title: str = Field(description="Exact title of the approved Insight.")
     target_note: str = Field(
         description="Relative path to the Obsidian note to append to.",
+    )
+
+
+class ReindexInput(BaseModel):
+    """Input for engrama_reindex."""
+
+    model_config = ConfigDict(extra="forbid")
+    mode: str = Field(
+        description="One of 'detect' | 'classify' | 'apply'. Run them in that order.",
+    )
+    dry_run: bool = Field(
+        default=True,
+        description=(
+            "Only meaningful for mode='apply'. Default true (simulate). Pass "
+            "false explicitly to actually re-embed and write."
+        ),
+    )
+    limit: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description="Maximum number of vector-less nodes to process in this call.",
     )
 
 
@@ -957,27 +1043,38 @@ def create_engrama_mcp(
         engrama_id = node.get("engrama_id", engrama_id)
 
         # --- DDR-003 Phase C: Embed on write (async) ---
+        # The node is already persisted above; embedding is best-effort
+        # enrichment. We track the outcome so the response is HONEST about it
+        # — a transient embedder failure (cold-start, restart, network) must
+        # not return status:ok while silently dropping the vector. A
+        # vector-less node stays detectable by ``list_unembedded_nodes`` and is
+        # healed by the opportunistic sweep below or by ``engrama_reindex``.
         _embedder = state.get("embedder")
-        if _embedder is not None and getattr(_embedder, "dimensions", 0) > 0:
+        embed_attempted = _embedder is not None and getattr(_embedder, "dimensions", 0) > 0
+        embedded = False
+        if embed_attempted:
             try:
-                from engrama.embeddings.text import node_to_text
-
-                text = node_to_text(label, props)
-                # Use async embed if available (non-blocking), fallback to sync
-                if hasattr(_embedder, "aembed"):
-                    embedding = await _embedder.aembed(text)
-                else:
-                    embedding = _embedder.embed(text)
-                if embedding:
-                    # Store via async store (preferred) or sync vector store
-                    await store.store_embedding(
+                embedded = await _reembed_node(store, _embedder, label, props)
+                if not embedded:
+                    logger.info(
+                        "No embeddable text for %s/%s (engrama_id=%s); stored without vector",
                         label,
-                        merge_key,
                         merge_value,
-                        embedding,
+                        engrama_id,
                     )
             except Exception as e:
-                logger.warning("Embed-on-write failed for %s/%s: %s", label, merge_value, e)
+                logger.warning(
+                    "Embed-on-write failed for %s/%s (engrama_id=%s): %s — "
+                    "node stored without vector, will be reindexed",
+                    label,
+                    merge_value,
+                    engrama_id,
+                    e,
+                )
+            # Opportunistic sweep: only when THIS write embedded successfully,
+            # i.e. the embedder is provably reachable right now.
+            if embedded:
+                await _sweep_pending_embeddings(store, _embedder)
 
         # --- BUG-005: Process inline relations ---
         # Normalise targets to (name, explicit_label) pairs. A target is
@@ -1108,7 +1205,15 @@ def create_engrama_mcp(
             "vault_path": vault_path,
             "engrama_id": engrama_id,
             "relations_created": relations_created,
+            # Honest embedding outcome — never silently drop a vector.
+            "embedded": embedded,
         }
+        if embed_attempted and not embedded:
+            result_data["embedding_note"] = (
+                "embedder unavailable at write time; node stored without a vector. "
+                "It stays fulltext-searchable and will be re-embedded on the next "
+                "successful write or via engrama_reindex."
+            )
         # DDR-003 Phase D: propagate valid_to conflict warning
         if result.get("warning"):
             result_data["warning"] = result["warning"]
@@ -2518,6 +2623,143 @@ def create_engrama_mcp(
             "  first time, create the node proactively.\n"
             "- Keep node properties concise — the graph is for structure and\n"
             "  connections, not full documents.\n"
+        )
+
+    @mcp.tool(
+        name="engrama_reindex",
+        annotations=ToolAnnotations(
+            title="Reindex Embeddings",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def engrama_reindex(params: ReindexInput, ctx: Context) -> str:
+        """Find and repair nodes that are missing their vector embedding.
+
+        Nodes can end up without an embedding when the embedder was
+        unreachable at write time (a write reports ``embedded: false``), or
+        when the graph predates embeddings. Such nodes are invisible to
+        semantic search — reachable only by fulltext. This tool heals them.
+
+        **Three phases, run as separate calls in this order:**
+
+        1. ``mode="detect"`` — scan for vector-less nodes. Read-only; returns a
+           count and a sample of `engrama_id`s. Nothing is written.
+        2. ``mode="classify"`` — split candidates into *re-embeddable* (they
+           have summary/details/other text) vs *skip* (no embeddable text).
+           Read-only; returns the plan.
+        3. ``mode="apply"`` — re-embed the eligible nodes. ``dry_run`` defaults
+           to ``true`` (simulate); pass ``dry_run=false`` to actually write.
+
+        Run ``classify`` before ``apply`` in the same session — the server
+        cannot enforce this, so the caller must respect it. Use ``limit`` to
+        process in batches; if ``detect`` reports ``unembedded_found ==
+        limit`` there may be more, so raise the limit or re-run after applying.
+        """
+        store = _store(ctx)
+        state = ctx.request_context.lifespan_context
+        embedder = state.get("embedder")
+
+        if params.mode not in {"detect", "classify", "apply"}:
+            return f"Error: invalid mode {params.mode!r}. Use 'detect' | 'classify' | 'apply'."
+
+        from engrama.embeddings.text import node_to_text
+
+        candidates = await store.list_unembedded_nodes(limit=params.limit)
+
+        def _sample(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return [
+                {"engrama_id": c["engrama_id"], "label": c["label"], "name": c["key_value"]}
+                for c in items[:20]
+            ]
+
+        if params.mode == "detect":
+            return json.dumps(
+                {
+                    "mode": "detect",
+                    "scanned_limit": params.limit,
+                    "unembedded_found": len(candidates),
+                    "sample": _sample(candidates),
+                    "next": "run mode='classify' to see which can be re-embedded",
+                },
+                default=str,
+                indent=2,
+            )
+
+        def _has_text(c: dict[str, Any]) -> bool:
+            text = node_to_text(c["label"], c["props"])
+            return bool(text and text.strip())
+
+        reembed = [c for c in candidates if _has_text(c)]
+        skip = [c for c in candidates if not _has_text(c)]
+
+        if params.mode == "classify":
+            return json.dumps(
+                {
+                    "mode": "classify",
+                    "candidates": len(candidates),
+                    "to_reembed": len(reembed),
+                    "skip_no_text": len(skip),
+                    "sample_reembed": _sample(reembed),
+                    "sample_skip": _sample(skip),
+                    "next": "run mode='apply' dry_run=false to re-embed",
+                },
+                default=str,
+                indent=2,
+            )
+
+        # mode == "apply"
+        if embedder is None or getattr(embedder, "dimensions", 0) <= 0:
+            return json.dumps(
+                {
+                    "mode": "apply",
+                    "error": "no functional embedder configured (dimensions=0); "
+                    "cannot re-embed. Configure an embedding provider first.",
+                },
+                indent=2,
+            )
+
+        if params.dry_run:
+            return json.dumps(
+                {
+                    "mode": "apply",
+                    "dry_run": True,
+                    "would_reembed": len(reembed),
+                    "would_skip_no_text": len(skip),
+                    "sample": _sample(reembed),
+                    "next": "re-run with dry_run=false to write",
+                },
+                default=str,
+                indent=2,
+            )
+
+        reembedded = 0
+        failed = 0
+        for c in reembed:
+            try:
+                if await _reembed_node(store, embedder, c["label"], c["props"]):
+                    reembedded += 1
+                else:
+                    failed += 1  # had text but the embedder returned nothing
+            except Exception as e:  # noqa: BLE001 — keep going; report failures
+                failed += 1
+                logger.warning(
+                    "Reindex: re-embed failed for engrama_id=%s: %s", c.get("engrama_id"), e
+                )
+
+        return json.dumps(
+            {
+                "mode": "apply",
+                "dry_run": False,
+                "reembedded": reembedded,
+                "failed": failed,
+                "skipped_no_text": len(skip),
+                "note": "re-run detect to confirm the remaining count (0 = healed for this batch)",
+            },
+            default=str,
+            indent=2,
         )
 
     return mcp
