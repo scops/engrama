@@ -1100,6 +1100,12 @@ def create_engrama_mcp(
                     merged.append((name, explicit_label))
 
         relations_created = 0
+        # Relation types the caller requested that aren't in the schema. The
+        # explicit engrama_relate path returns a hard error for these; the
+        # inline path used to skip them with a server-log-only warning, so the
+        # caller saw status:ok with no idea a relation was dropped. Surface them
+        # in the response (non-fatal — the node and valid relations still land).
+        relations_rejected: list[str] = []
         if all_relations:
             from engrama.adapters.obsidian.sync import ObsidianSync
 
@@ -1107,6 +1113,8 @@ def create_engrama_mcp(
                 rel_type_upper = rel_type.upper()
                 if rel_type_upper not in _VALID_RELATIONS:
                     logger.warning("Skipping unknown relation type: %s", rel_type)
+                    if rel_type_upper not in relations_rejected:
+                        relations_rejected.append(rel_type_upper)
                     continue
 
                 for target_name, explicit_label in targets:
@@ -1214,6 +1222,13 @@ def create_engrama_mcp(
                 "embedder unavailable at write time; node stored without a vector. "
                 "It stays fulltext-searchable and will be re-embedded on the next "
                 "successful write or via engrama_reindex."
+            )
+        if relations_rejected:
+            result_data["relations_rejected"] = relations_rejected
+            valid = ", ".join(sorted(_VALID_RELATIONS))
+            result_data["relations_rejected_note"] = (
+                f"these relation types are not in the schema and were skipped: "
+                f"{', '.join(relations_rejected)}. Valid types: {valid}."
             )
         # DDR-003 Phase D: propagate valid_to conflict warning
         if result.get("warning"):
