@@ -37,6 +37,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
   and a vector-less node is healed automatically by an opportunistic sweep on
   the next successful write — or on demand via `engrama_reindex`. Proactive
   writes are still never lost: the node always persists.
+- **Inline relations report rejected relation types.** `engrama_remember`'s
+  inline `relations={...}` used to skip a relation type that isn't in the schema
+  with only a server-side log, returning `status: "ok"` / `relations_created: 0`
+  — so the caller couldn't tell a relation had been dropped (the explicit
+  `engrama_relate` already errors loudly on the same input). The response now
+  includes `relations_rejected` (and a note) listing the skipped types, while
+  still persisting the node and any valid relations.
 
 ## [0.12.0] — 2026-05-22
 
