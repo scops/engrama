@@ -120,7 +120,10 @@ async def test_status_search_mode_fulltext_only_when_embedder_null(
     )
     payload = await _call_status(server)
 
-    assert payload["embedder"]["configured"] is True
+    # ``configured`` reports capability, not presence: a NullProvider is
+    # wired up but produces no vectors, so it must read False — otherwise
+    # status contradicts itself (configured:true / provider:none) (#2).
+    assert payload["embedder"]["configured"] is False
     assert payload["embedder"]["provider"] == "none"
     assert payload["embedder"]["dimensions"] == 0
     assert payload["search"]["mode"] == "fulltext_only"

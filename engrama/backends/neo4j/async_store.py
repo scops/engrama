@@ -16,6 +16,7 @@ All writes use ``MERGE`` — never bare ``CREATE``.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from neo4j import AsyncDriver
@@ -27,6 +28,21 @@ from engrama.backends.neo4j.backend import (
 from engrama.core.scope import MemoryScope, scope_filter_cypher
 
 logger = logging.getLogger("engrama.backends.neo4j.async_store")
+
+# Runtime schema packaged alongside this module so it ships in the wheel and
+# is reachable when Engrama is installed as a dependency (no repo checkout).
+_SCHEMA_PATH = Path(__file__).with_name("schema.cypher")
+
+
+def _load_schema_statements() -> list[str]:
+    """Parse the packaged ``schema.cypher`` into individual statements.
+
+    Drops ``//`` comment lines, then splits on the ``;`` terminator. No
+    statement in the file contains an inner semicolon, so this is safe.
+    """
+    text = _SCHEMA_PATH.read_text(encoding="utf-8")
+    body = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+    return [stmt.strip() for stmt in body.split(";") if stmt.strip()]
 
 
 class Neo4jAsyncStore:
@@ -89,6 +105,14 @@ class Neo4jAsyncStore:
         valid_to = properties.pop("valid_to", None)
         confidence = properties.pop("confidence", None)
 
+        # Stable node identity (#6). Minted storage-native so every node has
+        # an ``engrama_id`` regardless of whether a vault is configured. A
+        # caller may supply one (e.g. to adopt an existing Obsidian note's id
+        # so vault and graph agree); otherwise the DB mints a UUID on create.
+        # ON MATCH never overwrites an existing id — it only backfills nodes
+        # written before this field existed.
+        caller_engrama_id = properties.pop("engrama_id", None)
+
         # Server-managed timestamps are never taken from the caller: drop
         # them so a caller-supplied ISO string can't override datetime().
         # See #76.
@@ -133,6 +157,11 @@ class Neo4jAsyncStore:
             params["confidence_val"] = confidence
         else:
             set_create.append("n.confidence = 1.0")
+
+        # Stable identity (#6): mint on create, keep on match, backfill legacy.
+        set_create.append("n.engrama_id = coalesce($engrama_id_val, randomUUID())")
+        set_match.append("n.engrama_id = coalesce(n.engrama_id, $engrama_id_val, randomUUID())")
+        params["engrama_id_val"] = caller_engrama_id
 
         for idx, (key, value) in enumerate(properties.items()):
             pname = f"p{idx}"
@@ -1045,6 +1074,21 @@ class Neo4jAsyncStore:
                 )
             except Exception as e:
                 logger.warning("Schema statement failed: %s — %s", stmt, e)
+
+    async def ensure_schema(self) -> None:
+        """Idempotently apply the packaged Neo4j schema on connect.
+
+        Applies the constraints + fulltext/vector/range indexes from the
+        packaged ``schema.cypher``. Every statement is ``IF NOT EXISTS``, so
+        this is safe to run on every startup against a populated graph — it
+        never drops or rebuilds an index in use. This is what lets a fresh
+        Neo4j (e.g. a headless/SaaS pod with no repo checkout) serve
+        ``engrama_search`` without anyone running ``engrama init`` first.
+
+        Best-effort: individual statement failures are logged, not raised, so
+        a partial-permission Neo4j role can't take the whole server down.
+        """
+        await self.init_schema(_load_schema_statements())
 
     async def health_check(self) -> dict[str, Any]:
         """Return backend status."""

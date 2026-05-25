@@ -162,13 +162,16 @@ class RememberInput(BaseModel):
             '{"name": "kerberoasting-lab", "description": "Lab about kerberoasting"}'
         ),
     )
-    relations: dict[str, list[str]] = Field(
+    relations: dict[str, list[Any]] = Field(
         default_factory=dict,
         description=(
             "Optional relations to create in the same call. "
             'Format: {"REL_TYPE": ["target_name", ...]}. '
-            'Example: {"TEACHES": ["Java"], "IN_DOMAIN": ["teaching"], "FOR": ["Accenture"]}. '
-            "Target nodes are found by name; if missing, stub nodes are created."
+            'Example: {"USES": ["BDK"], "IN_DOMAIN": ["teaching"], "FOR": ["Accenture"]}. '
+            "Targets are matched by name; a missing target is created as a "
+            "stub. By default the stub's label is inferred from the relation "
+            "type, which is lossy. To pin it, pass an object instead of a "
+            'string: {"RELATED_TO": [{"name": "BDK", "label": "Tool"}]}.'
         ),
     )
 
@@ -418,6 +421,17 @@ def create_engrama_mcp(
 
         try:
             if async_store is not None:
+                # Bootstrap the graph schema (fulltext/vector indexes +
+                # constraints) idempotently. Neo4j needs this on a fresh
+                # graph — e.g. a headless/SaaS pod with no repo checkout to
+                # run `engrama init` — or engrama_search has no index to hit.
+                # SQLite applies its schema at connection time and exposes no
+                # ensure_schema, so this is a Neo4j-only step.
+                if hasattr(async_store, "ensure_schema"):
+                    try:
+                        await async_store.ensure_schema()
+                    except Exception as e:
+                        logger.warning("Schema bootstrap failed (non-fatal): %s", e)
                 health = await async_store.health_check()
                 logger.info("Engrama MCP backend ready: %s", health)
             yield {
@@ -586,7 +600,13 @@ def create_engrama_mcp(
                 vault_info["error"] = str(e)
 
         # --- Embedder ---
-        embedder_info: dict[str, Any] = {"configured": embedder is not None}
+        # ``configured`` reports *capability*, not mere presence: a
+        # NullProvider is wired up (``embedder is not None``) but produces no
+        # vectors (dimensions == 0), so it must read ``configured: false``.
+        # Otherwise status contradicts itself — configured:true / provider:none
+        # / fulltext-only — which is exactly what confused testers (#2).
+        embedder_dims = int(getattr(embedder, "dimensions", 0)) if embedder is not None else 0
+        embedder_info: dict[str, Any] = {"configured": embedder_dims > 0}
         if embedder is not None:
             cls_name = type(embedder).__name__
             provider_label = {
@@ -607,15 +627,15 @@ def create_engrama_mcp(
         # time of the status call — runtime degradation (provider
         # unreachable mid-search) only surfaces on engrama_search's
         # response.
-        would_hybrid = (
-            embedder is not None
-            and int(getattr(embedder, "dimensions", 0)) > 0
-            and hasattr(embedder, "aembed")
-        )
+        would_hybrid = embedder_dims > 0 and hasattr(embedder, "aembed")
         search_info: dict[str, Any] = {
             "mode": "hybrid" if would_hybrid else "fulltext_only",
+            # Not degraded: no search has been *attempted* yet, and a
+            # fulltext-only deploy (no embedder) is a configured mode, not a
+            # failure. Runtime degradation (provider unreachable mid-search)
+            # only ever surfaces on engrama_search's own response.
             "degraded": False,
-            "reason": "" if would_hybrid else "embedder unavailable or dimensions=0",
+            "reason": "" if would_hybrid else "no functional embedder; search is fulltext-only",
         }
 
         response: dict[str, Any] = {
@@ -781,26 +801,37 @@ def create_engrama_mcp(
 
         Properties should include rich context for future retrieval:
 
-        * ``name`` (required): unique identifier for the node.
+        * ``name`` — or ``title`` for the title-keyed labels (Decision,
+          Problem, Vulnerability, Exercise, Photo, Experiment, Insight):
+          the unique merge key. Send the one that matches the label; the
+          other is accepted as an alias and canonicalised.
         * ``summary``: 2–3 sentence overview — what this is, why it matters.
         * ``details``: comprehensive context — techniques used, decisions
           made, approaches taken, alternatives considered, key examples.
           The richer this field, the more useful the memory becomes.
         * ``tags``: freeform list for filtering, e.g.
           ``["active-directory", "credential-access", "windows"]``.
-        * ``source``: how this knowledge was captured
-          (``"conversation"``, ``"ingest"``, ``"manual"``, ``"sync"``).
+        * ``origin``: where this knowledge came from, *semantically*
+          (``"conversation"``, ``"ingest"``, ``"manual"``). This is a free
+          property you control, preserved on the node (and fulltext-indexed on
+          the Neo4j backend). Note: ``source`` is **not** settable — it is a
+          system-managed provenance/trust bucket stamped with the transport
+          (always ``"mcp"`` here), so a semantic origin must go in ``origin``,
+          not ``source``.
         * ``status``: current state
           (``"active"``, ``"resolved"``, ``"superseded"``).
 
-        If a node with the same ``name`` (or ``title``) already exists, its
-        properties are updated (MERGE semantics).  ``description`` is still
-        accepted for backward compatibility and is used as a fallback when
-        ``summary`` is absent.
+        If a node with the same merge key already exists, its properties are
+        updated (MERGE semantics).  ``description`` is still accepted for
+        backward compatibility and is used as a fallback when ``summary`` is
+        absent.
 
-        When a vault is configured, a corresponding .md note is created (or
-        updated) with full YAML frontmatter including engrama_id and an empty
-        relations block (DDR-002).
+        Every node gets a stable ``engrama_id`` — minted on first write,
+        unchanged on update — returned in the response and persisted on the
+        node whether or not a vault is configured. When a vault is configured,
+        a corresponding .md note is created (or updated) with full YAML
+        frontmatter carrying that same ``engrama_id`` and an empty relations
+        block (DDR-002).
         """
         import re as _re
 
@@ -910,12 +941,20 @@ def create_engrama_mcp(
         if vault_path:
             props["obsidian_path"] = vault_path
         if engrama_id:
+            # Vault is configured: hand the note's id to the store so the
+            # graph node adopts it (vault and graph share one engrama_id).
             props["obsidian_id"] = engrama_id
+            props["engrama_id"] = engrama_id
 
         extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
 
         result = await store.merge_node(label, merge_key, merge_value, _with_mcp_provenance(extra))
         node = result["node"]
+
+        # The store always mints a stable engrama_id (#6); without a vault we
+        # had none to pass, so adopt the one the store returned so the
+        # response contract holds whether or not a vault is configured.
+        engrama_id = node.get("engrama_id", engrama_id)
 
         # --- DDR-003 Phase C: Embed on write (async) ---
         _embedder = state.get("embedder")
@@ -941,13 +980,26 @@ def create_engrama_mcp(
                 logger.warning("Embed-on-write failed for %s/%s: %s", label, merge_value, e)
 
         # --- BUG-005: Process inline relations ---
-        all_relations: dict[str, list[str]] = {}
+        # Normalise targets to (name, explicit_label) pairs. A target is
+        # either a bare string (label inferred from the relation type) or an
+        # object {"name": ..., "label": ...} that pins the stub's label
+        # explicitly. Inference is lossy — one relation type maps to a single
+        # default label — so callers that know the real type can say so (#3).
+        all_relations: dict[str, list[tuple[str, str | None]]] = {}
         for src in (params.relations, inline_relations):
             for rtype, targets in (src or {}).items():
                 merged = all_relations.setdefault(rtype, [])
+                seen = {n for (n, _) in merged}
                 for t in targets if isinstance(targets, list) else [targets]:
-                    if t not in merged:
-                        merged.append(t)
+                    if isinstance(t, dict):
+                        name = t.get("name") or t.get("title")
+                        explicit_label = t.get("label")
+                    else:
+                        name, explicit_label = t, None
+                    if not name or name in seen:
+                        continue
+                    seen.add(name)
+                    merged.append((name, explicit_label))
 
         relations_created = 0
         if all_relations:
@@ -959,7 +1011,7 @@ def create_engrama_mcp(
                     logger.warning("Skipping unknown relation type: %s", rel_type)
                     continue
 
-                for target_name in targets:
+                for target_name, explicit_label in targets:
                     # Find or create the target node. ``lookup_node_label``
                     # already COALESCEs ``name`` and ``title``, so an
                     # existing title-keyed target (Decision, Problem,
@@ -967,12 +1019,25 @@ def create_engrama_mcp(
                     target_label = await store.lookup_node_label(target_name)
 
                     if target_label is None:
-                        # Target doesn't exist yet — infer label from the
-                        # relation type and create a stub. Stubs are
-                        # always written under the ``name`` key; the
-                        # MERGE below reuses the same key.
-                        target_label = ObsidianSync._infer_stub_label(rel_type_upper)
-                        target_key = "name"
+                        # Target doesn't exist yet — create a stub. Prefer the
+                        # caller's explicit label (validated against the
+                        # schema); otherwise fall back to inferring from the
+                        # relation type. Key the stub canonically (title for
+                        # title-keyed labels) so a later remember of the same
+                        # node by its real key doesn't create a duplicate.
+                        if explicit_label and explicit_label in _VALID_LABELS:
+                            target_label = explicit_label
+                        else:
+                            if explicit_label:
+                                logger.warning(
+                                    "Ignoring invalid stub label %r for %s; "
+                                    "inferring from relation %s",
+                                    explicit_label,
+                                    target_name,
+                                    rel_type_upper,
+                                )
+                            target_label = ObsidianSync._infer_stub_label(rel_type_upper)
+                        target_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
                         try:
                             await store.merge_node(
                                 target_label,
@@ -2447,7 +2512,8 @@ def create_engrama_mcp(
             "\n"
             "- Use `engrama_search` before `engrama_remember` to avoid duplicates.\n"
             "- Title-keyed labels (Decision, Problem, Vulnerability, Exercise,\n"
-            "  Photo, Experiment) use `title` instead of `name` as the merge key.\n"
+            "  Photo, Experiment, Insight) use `title` instead of `name` as the\n"
+            "  merge key.\n"
             "- When the user mentions a person, technology, or project for the\n"
             "  first time, create the node proactively.\n"
             "- Keep node properties concise — the graph is for structure and\n"
