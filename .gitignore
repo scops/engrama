@@ -44,3 +44,6 @@ site/
 # source of truth; the zip is never committed.
 *.skill
 GEMINI.md
+CLAUDE.md
+.specify
+specs

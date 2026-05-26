@@ -41,6 +41,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
+from engrama.core.identity import resolve_local_sub
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
 from engrama.core.scope import MemoryScope
 from engrama.core.security import Provenance, Sanitiser
@@ -61,34 +62,78 @@ _VALID_RELATIONS: set[str] = {member.value for member in RelationType}
 _SANITISER = Sanitiser(valid_labels=_VALID_LABELS, valid_relations=_VALID_RELATIONS)
 _MCP_PROVENANCE_PROPS = Provenance(source="mcp").to_properties()
 
-# Process-wide scope for the MCP server — one scope per running
-# process, populated at import time from the operator's env vars
-# (ENGRAMA_ORG_ID, ENGRAMA_USER_ID, ENGRAMA_AGENT_ID, ENGRAMA_SESSION_ID).
-# Empty when nothing is exported, so single-user deployments behave
-# exactly as before this PR.
-#
-# **Stability requirement:** the scope is captured ONCE at module
-# import time. Operators must export these env vars *before* the MCP
-# process starts (e.g. in the launching shell or the service unit
-# definition). Mutating ``os.environ`` after the server is loaded has
-# no effect on the live scope — the snapshot is already taken, and
-# the helpers below reuse :data:`_MCP_SCOPE_PROPS` directly. Restart
-# the MCP server to pick up changes.
-_MCP_SCOPE: MemoryScope = MemoryScope.from_env()
-_MCP_SCOPE_PROPS: dict[str, Any] = _MCP_SCOPE.to_properties()
+# Scope is resolved PER REQUEST from the inbound identity headers (Spec 001,
+# FR-3) — never pinned at process/import time. A gateway in front sets the
+# headers per request; bare OSS has no gateway and no headers, so it falls
+# back to a single stable standalone identity (FR-7, computed once in the
+# lifespan and read from the request context here).
+_HDR_ORG = "x-engrama-org-id"
+_HDR_USER = "x-engrama-user-id"
 
 
-def _with_mcp_provenance(extra: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Sanitise an MCP-supplied extras dict and stamp it with MCP metadata.
+class ScopeUnresolved(Exception):
+    """A request carried partial/malformed identity (exactly one of the two
+    headers). Reads translate this to zero results; writes reject it.
 
-    The caller's extras are cleaned first (reserved provenance + scope
-    keys stripped, control chars removed, long strings truncated) and
-    then the system-managed properties are applied — they always win,
-    so a malicious agent cannot forge its own ``source``, ``trust_level``
-    or scope dimensions.
+    Both headers absent is NOT unresolved — that is the standalone
+    single-user path (FR-7)."""
+
+
+def _request_headers(ctx: Context) -> Any:
+    """Return the inbound request headers, or ``{}`` under stdio/in-process."""
+    try:
+        request = ctx.request_context.request
+    except Exception:
+        request = None
+    if request is None:
+        return {}
+    return getattr(request, "headers", None) or {}
+
+
+def _standalone_sub(ctx: Context) -> str:
+    """Stable single-user identity for a no-gateway (standalone) run."""
+    try:
+        sub = ctx.request_context.lifespan_context.get("standalone_sub")
+        if sub:
+            return sub
+    except Exception:
+        pass
+    return resolve_local_sub()
+
+
+def resolve_scope(ctx: Context) -> MemoryScope:
+    """Resolve the active tenant scope for THIS request (Spec 001, R-3).
+
+    Both headers present → that ``(org_id, user_id)``. Both absent →
+    standalone single-user ``(sub_local, sub_local)``. Exactly one present →
+    :class:`ScopeUnresolved` (fail-closed: malformed identity is never
+    silently broadened).
+    """
+    headers = _request_headers(ctx)
+    org = (headers.get(_HDR_ORG) or "").strip()
+    user = (headers.get(_HDR_USER) or "").strip()
+    if org and user:
+        return MemoryScope(org_id=org, user_id=user)
+    if not org and not user:
+        sub = _standalone_sub(ctx)
+        return MemoryScope(org_id=sub, user_id=sub)
+    raise ScopeUnresolved(
+        "incomplete identity: both X-Engrama-Org-Id and X-Engrama-User-Id are required"
+    )
+
+
+def _with_mcp_provenance(extra: dict[str, Any] | None, scope: MemoryScope) -> dict[str, Any]:
+    """Sanitise an MCP-supplied extras dict and stamp provenance + scope.
+
+    ``scope`` is the per-request resolved :class:`MemoryScope`; its
+    ``org_id``/``user_id`` are written onto the node so every write carries
+    identity (Spec 001, FR-4). The caller's extras are cleaned first
+    (reserved provenance + scope keys stripped, control chars removed, long
+    strings truncated) so a malicious agent cannot forge its own ``source``,
+    ``trust_level`` or identity.
     """
     cleaned = _SANITISER.sanitise_properties(extra or {})
-    return {**cleaned, **_MCP_PROVENANCE_PROPS, **_MCP_SCOPE_PROPS}
+    return {**cleaned, **_MCP_PROVENANCE_PROPS, **scope.to_properties()}
 
 
 # Opportunistic re-embeds per healthy write (see _sweep_pending_embeddings).
@@ -521,12 +566,19 @@ def create_engrama_mcp(
                         logger.warning("Schema bootstrap failed (non-fatal): %s", e)
                 health = await async_store.health_check()
                 logger.info("Engrama MCP backend ready: %s", health)
+            # Standalone single-user identity (Spec 001, FR-7). A gateway's
+            # X-Engrama-* headers override this per request; with no headers
+            # we resolve one stable sub and persist it next to the DB.
+            _db_path = cfg.get("ENGRAMA_DB_PATH") or os.environ.get("ENGRAMA_DB_PATH")
+            _state_dir = os.path.dirname(os.path.expanduser(_db_path)) if _db_path else None
+            standalone_sub = resolve_local_sub(state_dir=_state_dir or None)
             yield {
                 "async_store": async_store,
                 "obsidian": obsidian,
                 "parser": NoteParser(),
                 "embedder": embedder,
                 "startup_error": startup_error,
+                "standalone_sub": standalone_sub,
             }
         finally:
             if embedder is not None and hasattr(embedder, "aclose"):
@@ -768,6 +820,13 @@ def create_engrama_mcp(
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
 
+        # Fail-closed: an unresolved (partial-identity) request returns no
+        # results rather than broadening the read (Spec 001, FR-5).
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved:
+            return f"No results found for '{params.query}'."
+
         # --- DDR-003 Phase C: Hybrid search when available ---
         _embedder = state.get("embedder")
         use_hybrid = (
@@ -781,7 +840,7 @@ def create_engrama_mcp(
                 from engrama.core.search import HybridSearchEngine
 
                 # Use the async store as both graph and vector backend
-                hybrid = HybridSearchEngine(store, store, _embedder, scope=_MCP_SCOPE)
+                hybrid = HybridSearchEngine(store, store, _embedder, scope=scope)
                 hybrid_results = await hybrid.asearch(params.query, limit=params.limit)
                 results = [
                     {
@@ -804,7 +863,7 @@ def create_engrama_mcp(
                     return f"No results found for '{params.query}'."
 
                 # --- Proactivity: check for pending Insights ---
-                response = await _build_search_response(results, params.query, store)
+                response = await _build_search_response(results, params.query, store, scope)
                 # Surface the actual execution mode so the caller can
                 # tell a healthy hybrid run from a silent fallback when
                 # the embeddings provider is unreachable (issue #17).
@@ -818,11 +877,11 @@ def create_engrama_mcp(
                 logger.warning("Hybrid search failed, falling back to fulltext: %s", e)
 
         # --- Fulltext fallback ---
-        results = await store.fulltext_search(params.query, params.limit, scope=_MCP_SCOPE)
+        results = await store.fulltext_search(params.query, params.limit, scope=scope)
         if not results:
             return f"No results found for '{params.query}'."
 
-        response = await _build_search_response(results, params.query, store)
+        response = await _build_search_response(results, params.query, store, scope)
         # Same degradation signal as the hybrid branch above (issue #17).
         # If hybrid was not even attempted (``use_hybrid`` False) we
         # mark it as a non-degraded fulltext-only run; if hybrid was
@@ -840,13 +899,14 @@ def create_engrama_mcp(
         results: list[dict[str, Any]],
         query: str,
         store: Any,
+        scope: MemoryScope,
     ) -> dict[str, Any]:
         """Build the search response with optional proactivity hints."""
         # --- Proactivity: check for pending Insights related to search ---
         related_insights: list[dict[str, Any]] = []
         if _proactive_state.get("enabled", True):
             try:
-                insight_results = await store.fulltext_search(query, limit=3, scope=_MCP_SCOPE)
+                insight_results = await store.fulltext_search(query, limit=3, scope=scope)
                 # Filter for pending Insights
                 related_insights = [
                     {k: v for k, v in r.items() if k in ("title", "body", "confidence", "score")}
@@ -961,6 +1021,13 @@ def create_engrama_mcp(
         merge_key = canonical_key
         merge_value = props[merge_key]
 
+        # Identity is mandatory on every write (Spec 001, FR-4). Reject a
+        # partial/unresolved request before any graph or vault mutation.
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "error": str(e)})
+
         # --- Vault note creation (BUG-002 / DDR-002) ---
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -1035,7 +1102,9 @@ def create_engrama_mcp(
 
         extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
 
-        result = await store.merge_node(label, merge_key, merge_value, _with_mcp_provenance(extra))
+        result = await store.merge_node(
+            label, merge_key, merge_value, _with_mcp_provenance(extra, scope)
+        )
         node = result["node"]
 
         # The store always mints a stable engrama_id (#6); without a vault we
@@ -1149,7 +1218,7 @@ def create_engrama_mcp(
                                 target_label,
                                 target_key,
                                 target_name,
-                                _with_mcp_provenance({"status": "stub"}),
+                                _with_mcp_provenance({"status": "stub"}, scope),
                             )
                         except Exception as e:
                             logger.warning("Could not create stub %s: %s", target_name, e)
@@ -1280,6 +1349,12 @@ def create_engrama_mcp(
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
 
+        # Identity is mandatory on every write (Spec 001, FR-4).
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "error": str(e)})
+
         # Determine merge keys
         from_key = "title" if params.from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if params.to_label in TITLE_KEYED_LABELS else "name"
@@ -1348,7 +1423,9 @@ def create_engrama_mcp(
                             params.from_label,
                             from_key,
                             params.from_name,
-                            _with_mcp_provenance({"obsidian_path": from_path, "obsidian_id": _eid}),
+                            _with_mcp_provenance(
+                                {"obsidian_path": from_path, "obsidian_id": _eid}, scope
+                            ),
                         )
                     except Exception as e:
                         logger.warning(
@@ -1411,8 +1488,14 @@ def create_engrama_mcp(
         store = _store(ctx)
         merge_key = "title" if params.label in TITLE_KEYED_LABELS else "name"
 
+        # Fail-closed: unresolved request → node not visible (Spec 001, FR-5).
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved:
+            return f"No node found: (:{params.label} {{name: '{params.name}'}})."
+
         data = await store.get_node_with_neighbours(
-            params.label, merge_key, params.name, params.hops, scope=_MCP_SCOPE
+            params.label, merge_key, params.name, params.hops, scope=scope
         )
         if data is None:
             return f"No node found: (:{params.label} {{name: '{params.name}'}})."
@@ -1470,6 +1553,12 @@ def create_engrama_mcp(
                 },
                 indent=2,
             )
+
+        # Identity is mandatory on every write (Spec 001, FR-4).
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "message": str(e)}, indent=2)
 
         note_data = await asyncio.to_thread(obsidian.read_note, params.path)
         if not note_data["success"]:
@@ -1535,7 +1624,7 @@ def create_engrama_mcp(
 
         extra = {k: v for k, v in props.items() if k not in {merge_key, "created_at", "updated_at"}}
         result = await store.merge_node(
-            node_label, merge_key, merge_value, _with_mcp_provenance(extra)
+            node_label, merge_key, merge_value, _with_mcp_provenance(extra, scope)
         )
         node = result["node"]
         created = result["created"]
@@ -1655,6 +1744,13 @@ def create_engrama_mcp(
             )
 
         store = _store(ctx)
+
+        # Identity is mandatory on every write (Spec 001, FR-4).
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "message": str(e)}, indent=2)
+
         created_count = 0
         updated_count = 0
         skipped_count = 0
@@ -1730,7 +1826,7 @@ def create_engrama_mcp(
                         if k not in {merge_key, "created_at", "updated_at"}
                     }
                     result = await store.merge_node(
-                        node_label, merge_key, merge_value, _with_mcp_provenance(extra)
+                        node_label, merge_key, merge_value, _with_mcp_provenance(extra, scope)
                     )
                     if result["created"]:
                         created_count += 1
@@ -1943,6 +2039,14 @@ def create_engrama_mcp(
         present them to the user via engrama_surface_insights for review.
         """
         store = _store(ctx)
+
+        # reflect both reads and writes Insights, so it needs a resolved
+        # identity (Spec 001, FR-4/FR-12); unresolved → reject.
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "error": str(e)})
+
         insights: list[dict[str, Any]] = []
         queries_run: list[str] = []
         queries_skipped: list[str] = []
@@ -2032,7 +2136,8 @@ def create_engrama_mcp(
                             "confidence": 0.85,
                             "status": "pending",
                             "source_query": "cross_project_solution",
-                        }
+                        },
+                        scope,
                     ),
                 )
                 insights.append(
@@ -2061,7 +2166,8 @@ def create_engrama_mcp(
                             "confidence": confidence,
                             "status": "pending",
                             "source_query": "shared_technology",
-                        }
+                        },
+                        scope,
                     ),
                 )
                 insights.append(
@@ -2092,7 +2198,8 @@ def create_engrama_mcp(
                             "confidence": 0.65,
                             "status": "pending",
                             "source_query": "training_opportunity",
-                        }
+                        },
+                        scope,
                     ),
                 )
                 insights.append(
@@ -2126,7 +2233,8 @@ def create_engrama_mcp(
                             "confidence": confidence,
                             "status": "pending",
                             "source_query": "technique_transfer",
-                        }
+                        },
+                        scope,
                     ),
                 )
                 insights.append(
@@ -2157,7 +2265,8 @@ def create_engrama_mcp(
                             "confidence": confidence,
                             "status": "pending",
                             "source_query": "concept_clustering",
-                        }
+                        },
+                        scope,
                     ),
                 )
                 insights.append(
@@ -2188,7 +2297,8 @@ def create_engrama_mcp(
                             "confidence": 0.5,
                             "status": "pending",
                             "source_query": "stale_knowledge",
-                        }
+                        },
+                        scope,
                     ),
                 )
                 insights.append({"query": "stale_knowledge", "title": title, "confidence": 0.5})
@@ -2230,7 +2340,8 @@ def create_engrama_mcp(
                         "confidence": 0.4,
                         "status": "pending",
                         "source_query": "under_connected",
-                    }
+                    },
+                    scope,
                 ),
             )
             insights.append({"query": "under_connected", "title": title, "confidence": 0.4})

@@ -5,18 +5,22 @@ that locates a write inside the org → user → agent → session hierarchy
 — and the helpers that translate it into SQL or Cypher WHERE fragments
 on the read side.
 
-Visibility rule (PR-F2): a node ``N`` is visible at scope ``S`` iff for
-each dimension ``d`` where ``S.d`` is set, ``N.d IS NULL OR N.d == S.d``.
-Dimensions that are ``None`` on ``S`` are not filtered — they act as a
-wildcard. This implements DDR-003 Part 6's "broader-scope inheritance":
-a query at ``user_id="alice"`` sees her writes, the matching org-level
-writes (no ``user_id``), and the truly global writes (no scope at all).
+Visibility rule (Spec 001, FR-2 — fail-closed): the isolation boundary is
+the ``(org_id, user_id)`` pair only (research R-1; ``agent_id``/``session_id``
+are provenance, never filtered). A node ``N`` is visible at a resolved scope
+``S`` iff ``N.org_id == S.org_id`` **and** ``N.user_id IN (S.user_id,
+"__entity__")``. There is no ``IS NULL OR`` inheritance: a node missing the
+matching identity is simply not visible. ``"__entity__"`` is the org-shared
+sentinel ``user_id`` — visible to every request carrying the same ``org_id``.
 
-Per DDR-003 Part 6, for v1 Engrama stays single-user: every dimension
-defaults to ``None``, ``MemoryScope().to_properties()`` is empty, and
-the node carries no scope properties. Switching to multi-user is an
-operator decision (set the dimensions when constructing the engine or
-the SDK), not a code change.
+Hard fail-closed (Spec 001, FR-5): a scope that is ``None`` or is missing
+either ``org_id`` or ``user_id`` is an **illegal state for a tenant read** —
+it must never resolve to "see everything". The helpers return a match-nothing
+clause (``(false)`` / ``(1 = 0)``) in that case, so a bug that lets an
+incomplete scope reach a read yields **zero** rows rather than a leak. There
+is no "unscoped = admin" path through these helpers; genuine cross-tenant
+admin operations (export, migration backfill, GC of identity-less orphans)
+use their own explicit, CI-allowlisted queries and never call these helpers.
 """
 
 from __future__ import annotations
@@ -27,6 +31,14 @@ from typing import Any
 
 # Ordered for stable parameter generation / readable WHERE clauses.
 _DIMENSIONS: tuple[str, ...] = ("org_id", "user_id", "agent_id", "session_id")
+
+# The isolation boundary (Spec 001, R-1). agent_id/session_id are provenance
+# only and are never used to filter reads.
+_FILTER_DIMENSIONS: tuple[str, ...] = ("org_id", "user_id")
+
+# Sentinel user_id for org-shared nodes: visible to every request carrying the
+# same org_id (Spec 001, FR-8). A real identity may never equal this value.
+ENTITY_SENTINEL: str = "__entity__"
 
 # Operators set these to opt a deployment into multi-scope memory.
 _ENV_VARS: dict[str, str] = {
@@ -156,22 +168,23 @@ def scope_filter_sql(
     _check_identifier(table_alias, "table_alias")
     if json_column is not None:
         _check_identifier(json_column, "json_column")
-    if scope is None or scope.is_empty():
-        return "", {}
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    for dim in _DIMENSIONS:
-        value = getattr(scope, dim)
-        if value is None:
-            continue
-        param_name = f"scope_{dim}"
-        if json_column:
-            col_expr = f"json_extract({table_alias}.{json_column}, '$.{dim}')"
-        else:
-            col_expr = f"{table_alias}.{dim}"
-        clauses.append(f"({col_expr} IS NULL OR {col_expr} = :{param_name})")
-        params[param_name] = value
-    return " AND ".join(clauses), params
+    # Hard fail-closed: a read without a complete (org_id, user_id) is a bug,
+    # never "see all" — match nothing.
+    if scope is None or not scope.org_id or not scope.user_id:
+        return "(1 = 0)", {}
+    if json_column:
+        org_col = f"json_extract({table_alias}.{json_column}, '$.org_id')"
+        user_col = f"json_extract({table_alias}.{json_column}, '$.user_id')"
+    else:
+        org_col = f"{table_alias}.org_id"
+        user_col = f"{table_alias}.user_id"
+    clause = f"({org_col} = :scope_org_id AND {user_col} IN (:scope_user_id, :scope_entity))"
+    params: dict[str, Any] = {
+        "scope_org_id": scope.org_id,
+        "scope_user_id": scope.user_id,
+        "scope_entity": ENTITY_SENTINEL,
+    }
+    return clause, params
 
 
 def scope_filter_cypher(
@@ -186,18 +199,20 @@ def scope_filter_cypher(
     validated as a Python identifier before interpolation.
     """
     _check_identifier(node_var, "node_var")
-    if scope is None or scope.is_empty():
-        return "", {}
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    for dim in _DIMENSIONS:
-        value = getattr(scope, dim)
-        if value is None:
-            continue
-        param_name = f"scope_{dim}"
-        clauses.append(f"({node_var}.{dim} IS NULL OR {node_var}.{dim} = ${param_name})")
-        params[param_name] = value
-    return " AND ".join(clauses), params
+    # Hard fail-closed: a read without a complete (org_id, user_id) is a bug,
+    # never "see all" — match nothing.
+    if scope is None or not scope.org_id or not scope.user_id:
+        return "(false)", {}
+    clause = (
+        f"({node_var}.org_id = $scope_org_id "
+        f"AND {node_var}.user_id IN [$scope_user_id, $scope_entity])"
+    )
+    params: dict[str, Any] = {
+        "scope_org_id": scope.org_id,
+        "scope_user_id": scope.user_id,
+        "scope_entity": ENTITY_SENTINEL,
+    }
+    return clause, params
 
 
-__all__ = ["MemoryScope", "scope_filter_cypher", "scope_filter_sql"]
+__all__ = ["ENTITY_SENTINEL", "MemoryScope", "scope_filter_cypher", "scope_filter_sql"]

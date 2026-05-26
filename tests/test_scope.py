@@ -164,13 +164,18 @@ class TestEngineScopeTagging:
 
 
 class TestSDKScope:
-    def test_sdk_no_scope_engine_default_is_none(self, tmp_path, monkeypatch):
+    def test_sdk_no_scope_defaults_to_standalone(self, tmp_path, monkeypatch):
+        # Spec 001 FR-7: unscoped zero-config resolves to a standalone
+        # single-user identity (org_id == user_id == sub_local), never None.
+        monkeypatch.delenv("ENGRAMA_LOCAL_SUB", raising=False)
         monkeypatch.setenv("ENGRAMA_DB_PATH", str(tmp_path / "scope-test.db"))
         monkeypatch.setenv("EMBEDDING_PROVIDER", "null")
         from engrama import Engrama
 
         with Engrama(backend="sqlite") as eng:
-            assert eng._engine.default_scope is None
+            scope = eng._engine.default_scope
+            assert scope is not None
+            assert scope.org_id and scope.org_id == scope.user_id
 
     def test_sdk_threads_user_and_org(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ENGRAMA_DB_PATH", str(tmp_path / "scope-test.db"))
@@ -185,7 +190,8 @@ class TestSDKScope:
             assert scope.agent_id is None
             assert scope.session_id is None
 
-    def test_sdk_all_none_is_treated_as_no_scope(self, tmp_path, monkeypatch):
+    def test_sdk_all_none_defaults_to_standalone(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("ENGRAMA_LOCAL_SUB", raising=False)
         monkeypatch.setenv("ENGRAMA_DB_PATH", str(tmp_path / "scope-test.db"))
         monkeypatch.setenv("EMBEDDING_PROVIDER", "null")
         from engrama import Engrama
@@ -197,4 +203,6 @@ class TestSDKScope:
             agent_id=None,
             session_id=None,
         ) as eng:
-            assert eng._engine.default_scope is None
+            scope = eng._engine.default_scope
+            assert scope is not None
+            assert scope.org_id and scope.org_id == scope.user_id
