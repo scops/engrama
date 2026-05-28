@@ -10,13 +10,17 @@ import pytest
 
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
+
+# Spec 001 T011: engine writes need a complete (org_id, user_id) scope.
+_TEST_SCOPE = MemoryScope(org_id="test-adapters", user_id="test-adapters")
 
 
 @pytest.fixture()
 def engine() -> EngramaEngine:
     """Create an EngramaEngine connected to the test Neo4j instance."""
     client = EngramaClient()
-    eng = EngramaEngine(client)
+    eng = EngramaEngine(client, default_scope=_TEST_SCOPE)
     yield eng
     client.close()
 

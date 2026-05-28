@@ -130,6 +130,23 @@ class SqliteGraphStore:
     def _init_schema_from_file(self) -> None:
         with open(_SCHEMA_PATH, encoding="utf-8") as f:
             self._conn.executescript(f.read())
+        # CREATE TABLE IF NOT EXISTS doesn't add columns to a pre-existing
+        # table, so pre-Spec-001 DBs need idempotent ALTERs to gain the
+        # new ``edges.org_id`` / ``edges.user_id`` columns. SQLite raises
+        # "duplicate column name" if the column already exists, which we
+        # swallow so the call is safe on every connection.
+        for stmt in (
+            "ALTER TABLE edges ADD COLUMN org_id TEXT",
+            "ALTER TABLE edges ADD COLUMN user_id TEXT",
+        ):
+            try:
+                self._conn.execute(stmt)
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_edges_scope ON edges(org_id, user_id)"
+        )
         self._conn.commit()
 
     def init_schema(self, schema: Any = None) -> None:
@@ -385,9 +402,19 @@ class SqliteGraphStore:
         to_label: str,
         to_key: str,
         to_value: str,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Idempotent relationship insert. Silently no-op if an endpoint
         does not exist (mirrors Neo4j's MATCH-then-MERGE behaviour).
+
+        Spec 001 FR-1: when ``scope`` is supplied, the writer's
+        ``(org_id, user_id)`` is persisted on the edge so a future
+        relation-scoped read can filter without re-walking endpoints. On
+        an existing row, the scope is refreshed via ``ON CONFLICT … DO
+        UPDATE`` so a tenant re-asserting a relation reclaims it
+        idempotently. ``scope=None`` keeps the legacy unscoped path
+        intact for callers (export/import, migration) that don't have an
+        identity.
         """
         cur = self._conn.execute(
             "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
@@ -402,9 +429,15 @@ class SqliteGraphStore:
         if from_row is None or to_row is None:
             return []
         now = _now_iso()
+        org_id = scope.org_id if scope is not None else None
+        user_id = scope.user_id if scope is not None else None
         self._conn.execute(
-            "INSERT OR IGNORE INTO edges(from_id, rel_type, to_id, created_at) VALUES (?, ?, ?, ?)",
-            (from_row["id"], rel_type, to_row["id"], now),
+            "INSERT INTO edges(from_id, rel_type, to_id, created_at, org_id, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(from_id, rel_type, to_id) DO UPDATE SET "
+            "    org_id = COALESCE(excluded.org_id, edges.org_id), "
+            "    user_id = COALESCE(excluded.user_id, edges.user_id)",
+            (from_row["id"], rel_type, to_row["id"], now, org_id, user_id),
         )
         self._conn.commit()
         return [{"rel_type": rel_type}]

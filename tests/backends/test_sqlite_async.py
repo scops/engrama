@@ -6,19 +6,119 @@ These tests assert the **rich async contract** that mirrors
 properties}``).  Cross-backend equivalence lives in the parameterised
 ``tests/contracts/test_async_graphstore_contract.py`` suite — these
 tests focus on SQLite-specific edges (vector ops, name aliases).
+
+Spec 001 fail-closed migration: a ``_ScopedAsyncStoreProxy`` wraps the
+real ``SqliteAsyncStore`` so writes auto-stamp the test scope and
+scoped reads auto-forward it — keeping each test focused on the
+backend contract rather than scoping plumbing.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from engrama.backends.sqlite import SqliteAsyncStore
+from engrama.core.scope import MemoryScope
+
+_TEST_SCOPE = MemoryScope(org_id="test-sqlite-async", user_id="test-sqlite-async")
+_SCOPE_PROPS = {"org_id": "test-sqlite-async", "user_id": "test-sqlite-async"}
+
+
+class _ScopedAsyncStoreProxy:
+    """Auto-stamp scope on writes; auto-forward scope to scoped reads.
+
+    Mirrors ``tests/backends/test_sqlite.py``'s sync proxy. Methods not
+    enumerated here pass through unchanged.
+    """
+
+    def __init__(self, inner: SqliteAsyncStore, scope: MemoryScope) -> None:
+        self._inner = inner
+        self._scope = scope
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    @property
+    def dimensions(self) -> int:
+        return self._inner.dimensions
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+    # ---- writes ------------------------------------------------------
+
+    async def merge_node(self, label, key_field, key_value, properties, embedding=None):
+        properties = {**_SCOPE_PROPS, **properties}
+        return await self._inner.merge_node(label, key_field, key_value, properties, embedding)
+
+    async def merge_relation(
+        self, from_label, from_key, from_value, rel_type, to_label, to_key, to_value, scope=None
+    ):
+        return await self._inner.merge_relation(
+            from_label,
+            from_key,
+            from_value,
+            rel_type,
+            to_label,
+            to_key,
+            to_value,
+            scope=scope or self._scope,
+        )
+
+    # ---- scoped reads ------------------------------------------------
+
+    async def get_neighbours(self, label, key_field, key_value, hops=1, limit=50, scope=None):
+        return await self._inner.get_neighbours(
+            label, key_field, key_value, hops=hops, limit=limit, scope=scope or self._scope
+        )
+
+    async def get_node_with_neighbours(self, label, key_field, key_value, hops=1, scope=None):
+        return await self._inner.get_node_with_neighbours(
+            label, key_field, key_value, hops=hops, scope=scope or self._scope
+        )
+
+    async def fulltext_search(self, query, limit=10, scope=None):
+        return await self._inner.fulltext_search(query, limit=limit, scope=scope or self._scope)
+
+    async def count_labels(self, scope=None):
+        return await self._inner.count_labels(scope=scope or self._scope)
+
+    async def lookup_node_label(self, name, scope=None):
+        return await self._inner.lookup_node_label(name, scope=scope or self._scope)
+
+    async def list_existing_nodes(self, limit=200, scope=None):
+        return await self._inner.list_existing_nodes(limit=limit, scope=scope or self._scope)
+
+    async def get_dismissed_titles(self, scope=None):
+        return await self._inner.get_dismissed_titles(scope=scope or self._scope)
+
+    async def get_approved_titles(self, scope=None):
+        return await self._inner.get_approved_titles(scope=scope or self._scope)
+
+    async def get_pending_insights(self, limit=10, scope=None):
+        return await self._inner.get_pending_insights(limit=limit, scope=scope or self._scope)
+
+    async def get_insight_by_title(self, title, scope=None):
+        return await self._inner.get_insight_by_title(title, scope=scope or self._scope)
+
+    async def find_insight_by_source_query(self, source_query, statuses=None, scope=None):
+        return await self._inner.find_insight_by_source_query(
+            source_query, statuses=statuses, scope=scope or self._scope
+        )
+
+    async def search_similar(self, query_embedding, limit=10, scope=None):
+        return await self._inner.search_similar(
+            query_embedding, limit=limit, scope=scope or self._scope
+        )
 
 
 @pytest.fixture()
 async def store(tmp_path):
     s = SqliteAsyncStore(tmp_path / "async.db", vector_dimensions=4)
-    yield s
+    proxy = _ScopedAsyncStoreProxy(s, _TEST_SCOPE)
+    yield proxy
     await s.close()
 
 

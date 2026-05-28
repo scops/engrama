@@ -1930,6 +1930,15 @@ def create_engrama_mcp(
 
         This is the primary way to populate the graph from existing content.
         """
+        # Spec 001 T012/FR-4: ingest precedes a wave of writes (one
+        # ``engrama_remember`` per extracted entity), so it must also
+        # require a resolved identity — an unscoped caller cannot drive
+        # downstream writes that would land identity-less in the graph.
+        try:
+            resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "error": str(e)})
+
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
 
@@ -2839,6 +2848,15 @@ def create_engrama_mcp(
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
         embedder = state.get("embedder")
+
+        # Spec 001 T012/FR-4: reindex apply writes embeddings to existing
+        # nodes; even though the operation is admin-flavoured, the caller
+        # must declare identity for audit and to gate the write path. We
+        # require it for every mode so the contract is uniform.
+        try:
+            resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "error": str(e)})
 
         if params.mode not in {"detect", "classify", "apply"}:
             return f"Error: invalid mode {params.mode!r}. Use 'detect' | 'classify' | 'apply'."

@@ -157,12 +157,16 @@ class SqliteAsyncStore:
         to_label: str,
         to_key: str,
         to_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any]:
         """Idempotent MERGE of a relationship.
 
         Returns ``{"rel_type", "from_name", "to_name",
         "from_obsidian_path"}`` on success, ``{}`` if either endpoint is
         missing — mirrors :meth:`Neo4jAsyncStore.merge_relation`.
+
+        Spec 001 FR-1: ``scope`` is forwarded to the sync store, which
+        stamps ``(org_id, user_id)`` on the edge.
         """
         rows = await self._run(
             self._sync.merge_relation,
@@ -173,6 +177,7 @@ class SqliteAsyncStore:
             to_label,
             to_key,
             to_value,
+            scope,
         )
         if not rows:
             return {}
@@ -457,6 +462,7 @@ class SqliteAsyncStore:
         self,
         query_embedding: list[float],
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """k-ANN search returning ``[{node_id, label, name, score,
         summary, tags, confidence, updated_at}]``.
@@ -464,12 +470,14 @@ class SqliteAsyncStore:
         Renames the sync vec store's ``key`` field to ``name`` and
         forwards the enrichment fields so the hybrid scorer can populate
         ``summary``/``tags`` for pure-semantic hits (matches
-        :meth:`Neo4jAsyncStore.search_similar`).
+        :meth:`Neo4jAsyncStore.search_similar`). Spec 001 FR-2: ``scope``
+        flows through to the underlying vec store's scope filter.
         """
         rows = await self._run(
             self._vector.search_similar,
             query_embedding,
             limit,
+            scope,
         )
         return [
             {

@@ -21,7 +21,7 @@ from typing import Any
 
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
-from engrama.core.scope import MemoryScope
+from engrama.core.scope import MemoryScope, ScopeIncomplete
 from engrama.core.security import Provenance, Sanitiser
 
 logger = logging.getLogger("engrama.core.engine")
@@ -146,9 +146,22 @@ class EngramaEngine:
             prov_props = effective_provenance.to_properties()
             properties = {**properties, **prov_props}
 
-        effective_scope = scope or self.default_scope
-        if effective_scope is not None and not effective_scope.is_empty():
-            properties = {**properties, **effective_scope.to_properties()}
+        effective_scope = scope if scope is not None else self.default_scope
+        if (
+            effective_scope is None
+            or not effective_scope.org_id
+            or not effective_scope.user_id
+        ):
+            # Spec 001 T011 / FR-4: writes without a complete (org_id,
+            # user_id) are an illegal state — fail closed rather than
+            # persist an identity-less node that future reads will treat
+            # as invisible (silent data loss).
+            raise ScopeIncomplete(
+                "EngramaEngine.merge_node requires a complete (org_id, user_id) "
+                f"scope; got {effective_scope!r}",
+                scope=effective_scope,
+            )
+        properties = {**properties, **effective_scope.to_properties()}
 
         extra_props = {
             k: v for k, v in properties.items() if k not in {merge_key, "created_at", "updated_at"}
@@ -218,15 +231,34 @@ class EngramaEngine:
         rel_type: str,
         to_name: str,
         to_label: str,
+        *,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Create or update a relationship between two existing nodes.
 
         DDR-003 Phase E layer 1: ``from_label``, ``to_label`` and
         ``rel_type`` are validated against the schema whitelists.
+
+        Spec 001 T011/T012a/FR-1: like :meth:`merge_node`, this rejects
+        a missing or incomplete effective scope and stamps the resolved
+        ``(org_id, user_id)`` onto the edge so a future query can filter
+        relations directly.
         """
         self.sanitiser.validate_label(from_label)
         self.sanitiser.validate_label(to_label)
         self.sanitiser.validate_relation(rel_type)
+
+        effective_scope = scope if scope is not None else self.default_scope
+        if (
+            effective_scope is None
+            or not effective_scope.org_id
+            or not effective_scope.user_id
+        ):
+            raise ScopeIncomplete(
+                "EngramaEngine.merge_relation requires a complete (org_id, "
+                f"user_id) scope; got {effective_scope!r}",
+                scope=effective_scope,
+            )
 
         from_key = "title" if from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if to_label in TITLE_KEYED_LABELS else "name"
@@ -239,6 +271,7 @@ class EngramaEngine:
             to_label,
             to_key,
             to_name,
+            scope=effective_scope,
         )
 
     def run(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:

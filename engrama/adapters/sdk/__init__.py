@@ -154,13 +154,22 @@ class Engrama:
         # identity rather than an empty/None scope, which a fail-closed read
         # would (correctly) treat as "see nothing". An explicit partial scope
         # is honoured as-is (and will simply read nothing until complete).
-        if scope.is_empty():
+        if scope.is_empty() or (not scope.org_id and not scope.user_id):
+            # Spec 001 FR-7: a scope that carries no identity (either fully
+            # empty OR provenance-only with ``agent_id``/``session_id``
+            # set but no ``org_id``/``user_id``) resolves to the standalone
+            # single-user identity. Agent/session pass through as provenance.
             import os
 
             _db = config.get("ENGRAMA_DB_PATH") or os.environ.get("ENGRAMA_DB_PATH")
             _state_dir = os.path.dirname(os.path.expanduser(_db)) if _db else None
             sub = resolve_local_sub(state_dir=_state_dir or None)
-            scope = MemoryScope(org_id=sub, user_id=sub)
+            scope = MemoryScope(
+                org_id=sub,
+                user_id=sub,
+                agent_id=scope.agent_id,
+                session_id=scope.session_id,
+            )
         elif scope.user_id and not scope.org_id:
             # Non-B2B model: a lone user identity is its own org (org == user).
             scope = MemoryScope(

@@ -289,22 +289,42 @@ class Neo4jAsyncStore:
         to_label: str,
         to_key: str,
         to_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any]:
         """Create a relationship (idempotent MERGE).
 
         Returns relation info or empty dict if either endpoint not found.
+
+        Spec 001 FR-1: when ``scope`` is supplied, the writer's
+        ``(org_id, user_id)`` is stamped onto the edge with ``SET`` so a
+        future relation-scoped read can filter without re-walking
+        endpoints. ``coalesce`` keeps the original values when the
+        relation already exists and the caller passes no scope (admin /
+        import paths).
         """
+        set_clause = ""
+        params: dict[str, Any] = {"from_value": from_value, "to_value": to_value}
+        if scope is not None and scope.org_id and scope.user_id:
+            # SET on every MERGE — idempotent because we coalesce against
+            # any prior values; an explicit caller can reassert the scope.
+            set_clause = (
+                "SET r.org_id = coalesce(r.org_id, $scope_org_id), "
+                "    r.user_id = coalesce(r.user_id, $scope_user_id) "
+            )
+            params["scope_org_id"] = scope.org_id
+            params["scope_user_id"] = scope.user_id
         cypher = (
             f"MATCH (a:{from_label} {{{from_key}: $from_value}}) "
             f"MATCH (b:{to_label} {{{to_key}: $to_value}}) "
             f"MERGE (a)-[r:{rel_type}]->(b) "
+            f"{set_clause}"
             f"RETURN type(r) AS rel_type, "
             f"a.{from_key} AS from_name, b.{to_key} AS to_name, "
             f"a.obsidian_path AS from_obsidian_path"
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
-            parameters_={"from_value": from_value, "to_value": to_value},
+            parameters_=params,
             database_=self._database,
         )
         if records:

@@ -1,10 +1,67 @@
-"""Tests for the SQLite vector store (sqlite-vec)."""
+"""Tests for the SQLite vector store (sqlite-vec).
+
+Spec 001 fail-closed migration: writes auto-stamp the test scope so vec
+search (which IS scope-filtered) sees the seeded nodes; scoped reads
+auto-forward the scope via the wrapper below.
+"""
 
 from __future__ import annotations
 
 import pytest
 
 from engrama.backends.sqlite import SqliteGraphStore, SqliteVecStore
+from engrama.core.scope import MemoryScope
+
+_TEST_SCOPE = MemoryScope(org_id="test-sqlite-vec", user_id="test-sqlite-vec")
+_SCOPE_PROPS = {"org_id": "test-sqlite-vec", "user_id": "test-sqlite-vec"}
+
+
+class _ScopedGraph:
+    """Auto-stamp scope on ``merge_node``; pass-through for everything else.
+
+    Tests in this file write via ``graph`` then read via ``vec`` — the
+    proxy ensures the node carries the scope so vec's scope-filtered
+    search can find it.
+    """
+
+    def __init__(self, inner: SqliteGraphStore, scope: MemoryScope) -> None:
+        self._inner = inner
+        self._scope = scope
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def merge_node(self, label, key_field, key_value, properties, embedding=None):
+        properties = {**_SCOPE_PROPS, **properties}
+        return self._inner.merge_node(label, key_field, key_value, properties, embedding)
+
+    def close(self):
+        self._inner.close()
+
+    @property
+    def _conn(self):
+        return self._inner._conn
+
+
+class _ScopedVec:
+    """Forward scope to ``search_vectors`` / ``search_similar``; pass everything else."""
+
+    def __init__(self, inner: SqliteVecStore, scope: MemoryScope) -> None:
+        self._inner = inner
+        self._scope = scope
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def search_vectors(self, query_embedding, limit=10, scope=None):
+        return self._inner.search_vectors(
+            query_embedding, limit=limit, scope=scope or self._scope
+        )
+
+    def search_similar(self, query_embedding, limit=10, scope=None):
+        return self._inner.search_similar(
+            query_embedding, limit=limit, scope=scope or self._scope
+        )
 
 
 @pytest.fixture()
@@ -13,7 +70,7 @@ def store_pair(tmp_path):
     graph = SqliteGraphStore(tmp_path / "vec.db")
     vec = SqliteVecStore(graph._conn, dimensions=4)
     vec.ensure_index()
-    yield graph, vec
+    yield _ScopedGraph(graph, _TEST_SCOPE), _ScopedVec(vec, _TEST_SCOPE)
     graph.close()
 
 

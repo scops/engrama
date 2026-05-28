@@ -49,6 +49,23 @@ _ENV_VARS: dict[str, str] = {
 }
 
 
+class ScopeIncomplete(Exception):
+    """Raised when a write reaches the engine with a missing or partial
+    scope. The MCP boundary rejects such requests up front with
+    :class:`engrama.adapters.mcp.server.ScopeUnresolved`; this
+    engine-layer exception is defence-in-depth (Spec 001, T011): a direct
+    SDK or skill bypass that forgets to set ``default_scope`` cannot
+    silently persist an identity-less node.
+
+    The exception carries the offending scope so callers can log it
+    without re-deriving the failure context.
+    """
+
+    def __init__(self, message: str, scope: MemoryScope | None = None) -> None:
+        super().__init__(message)
+        self.scope = scope
+
+
 @dataclass(frozen=True)
 class MemoryScope:
     """The four-dimensional scope of a memory operation.
@@ -215,4 +232,10 @@ def scope_filter_cypher(
     return clause, params
 
 
-__all__ = ["ENTITY_SENTINEL", "MemoryScope", "scope_filter_cypher", "scope_filter_sql"]
+__all__ = [
+    "ENTITY_SENTINEL",
+    "MemoryScope",
+    "ScopeIncomplete",
+    "scope_filter_cypher",
+    "scope_filter_sql",
+]

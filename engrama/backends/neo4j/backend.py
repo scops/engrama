@@ -385,19 +385,34 @@ class Neo4jGraphStore:
         to_label: str,
         to_key: str,
         to_value: str,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Create a relationship between two existing nodes (idempotent).
 
         If either endpoint does not exist, the relationship simply won't
         be created (no error).
+
+        Spec 001 FR-1: when ``scope`` is supplied, ``(org_id, user_id)``
+        is stamped on the edge so a future relation-scoped read can
+        filter without re-walking endpoints. ``coalesce`` preserves any
+        pre-existing scope on the relation when this caller is unscoped.
         """
+        set_clause = ""
+        params: dict[str, Any] = {"from_value": from_value, "to_value": to_value}
+        if scope is not None and scope.org_id and scope.user_id:
+            set_clause = (
+                "SET r.org_id = coalesce(r.org_id, $scope_org_id), "
+                "    r.user_id = coalesce(r.user_id, $scope_user_id) "
+            )
+            params["scope_org_id"] = scope.org_id
+            params["scope_user_id"] = scope.user_id
         query = (
             f"MATCH (a:{from_label} {{{from_key}: $from_value}}) "
             f"MATCH (b:{to_label} {{{to_key}: $to_value}}) "
             f"MERGE (a)-[r:{rel_type}]->(b) "
+            f"{set_clause}"
             "RETURN type(r) AS rel_type"
         )
-        params = {"from_value": from_value, "to_value": to_value}
         return _records_to_dicts(self._client.run(query, params))
 
     # ------------------------------------------------------------------

@@ -13,11 +13,18 @@ import pytest
 
 from engrama.adapters.mcp.server import _with_mcp_provenance
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
 from engrama.core.security import (
     DEFAULT_TRUST_LEVELS,
     Provenance,
     default_trust_for,
 )
+
+# Spec 001 T011: engine writes require a complete (org_id, user_id). The
+# provenance tests here exercise engine.merge_node; pin a test scope on
+# every constructor so the guard never trips during these tests, leaving
+# the provenance assertions as the sole subject under test.
+_TEST_SCOPE = MemoryScope(org_id="test-provenance", user_id="test-provenance")
 
 # ---------------------------------------------------------------------------
 # 1. Provenance dataclass
@@ -119,7 +126,7 @@ def _stub_store_returning_record():
 class TestEngineMergeNodeProvenance:
     def test_no_provenance_no_fields_written(self):
         store = _stub_store_returning_record()
-        engine = EngramaEngine(store)
+        engine = EngramaEngine(store, default_scope=_TEST_SCOPE)
         engine.merge_node("Concept", {"name": "Async", "notes": "n"})
         _, _, _, extra, *_ = store.merge_node.call_args[0]
         assert "source" not in extra
@@ -127,7 +134,9 @@ class TestEngineMergeNodeProvenance:
 
     def test_default_provenance_is_applied(self):
         store = _stub_store_returning_record()
-        engine = EngramaEngine(store, default_provenance=Provenance(source="sdk"))
+        engine = EngramaEngine(
+            store, default_provenance=Provenance(source="sdk"), default_scope=_TEST_SCOPE
+        )
         engine.merge_node("Concept", {"name": "Async"})
         _, _, _, extra, *_ = store.merge_node.call_args[0]
         assert extra["source"] == "sdk"
@@ -135,7 +144,9 @@ class TestEngineMergeNodeProvenance:
 
     def test_explicit_provenance_overrides_default(self):
         store = _stub_store_returning_record()
-        engine = EngramaEngine(store, default_provenance=Provenance(source="sdk"))
+        engine = EngramaEngine(
+            store, default_provenance=Provenance(source="sdk"), default_scope=_TEST_SCOPE
+        )
         engine.merge_node(
             "Concept",
             {"name": "Async"},
@@ -152,6 +163,7 @@ class TestEngineMergeNodeProvenance:
             default_provenance=Provenance(
                 source="sdk", source_agent="agent-x", source_session="sess-1"
             ),
+            default_scope=_TEST_SCOPE,
         )
         engine.merge_node("Concept", {"name": "Async"})
         _, _, _, extra, *_ = store.merge_node.call_args[0]
@@ -165,20 +177,28 @@ class TestEngineMergeNodeProvenance:
 
 
 class TestMCPProvenanceHelper:
+    # Spec 001 T009: _with_mcp_provenance now takes the resolved scope as a
+    # required second arg so the produced extras carry (org_id, user_id) too.
     def test_empty_extras(self):
-        out = _with_mcp_provenance()
+        out = _with_mcp_provenance(None, _TEST_SCOPE)
         assert out["source"] == "mcp"
         assert out["trust_level"] == DEFAULT_TRUST_LEVELS["mcp"]
 
     def test_merges_user_extras(self):
-        out = _with_mcp_provenance({"body": "hello", "confidence": 0.7})
+        out = _with_mcp_provenance({"body": "hello", "confidence": 0.7}, _TEST_SCOPE)
         assert out["body"] == "hello"
         assert out["confidence"] == 0.7
         assert out["source"] == "mcp"
 
     def test_none_extras(self):
-        out = _with_mcp_provenance(None)
-        assert out == {"source": "mcp", "trust_level": DEFAULT_TRUST_LEVELS["mcp"]}
+        out = _with_mcp_provenance(None, _TEST_SCOPE)
+        expected = {
+            "source": "mcp",
+            "trust_level": DEFAULT_TRUST_LEVELS["mcp"],
+            "org_id": _TEST_SCOPE.org_id,
+            "user_id": _TEST_SCOPE.user_id,
+        }
+        assert out == expected
 
 
 # ---------------------------------------------------------------------------

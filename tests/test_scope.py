@@ -88,13 +88,16 @@ def _stub_store():
 
 
 class TestEngineScopeTagging:
-    def test_no_scope_no_scope_fields(self):
+    def test_no_scope_rejects_write(self):
+        # Spec 001 T011: an engine constructed without a default scope
+        # refuses the write fail-closed (no identity-less node can land).
         store = _stub_store()
         engine = EngramaEngine(store)
-        engine.merge_node("Concept", {"name": "Async"})
-        _, _, _, extra, *_ = store.merge_node.call_args[0]
-        for key in RESERVED_SCOPE_KEYS:
-            assert key not in extra
+        from engrama.core.scope import ScopeIncomplete
+
+        with pytest.raises(ScopeIncomplete):
+            engine.merge_node("Concept", {"name": "Async"})
+        store.merge_node.assert_not_called()
 
     def test_default_scope_is_applied(self):
         store = _stub_store()
@@ -114,48 +117,57 @@ class TestEngineScopeTagging:
         store = _stub_store()
         engine = EngramaEngine(
             store,
-            default_scope=MemoryScope(user_id="alice"),
+            default_scope=MemoryScope(user_id="alice", org_id="acme"),
         )
         engine.merge_node(
             "Concept",
             {"name": "Async"},
-            scope=MemoryScope(user_id="bob"),
+            scope=MemoryScope(user_id="bob", org_id="globex"),
         )
         _, _, _, extra, *_ = store.merge_node.call_args[0]
         assert extra["user_id"] == "bob"
+        assert extra["org_id"] == "globex"
 
-    def test_empty_explicit_scope_writes_no_scope_fields(self):
-        # An explicit `MemoryScope()` is the caller saying "this write
-        # is unscoped" — it shadows the default and persists nothing.
-        # Callers who want the default should just not pass `scope=`.
+    def test_empty_explicit_scope_rejects_write(self):
+        # Spec 001 T011: an explicit ``MemoryScope()`` shadows the default
+        # with an empty scope — the engine treats that as an illegal write
+        # rather than silently persisting an identity-less node.
         store = _stub_store()
         engine = EngramaEngine(
             store,
-            default_scope=MemoryScope(user_id="alice"),
+            default_scope=MemoryScope(user_id="alice", org_id="acme"),
         )
-        engine.merge_node("Concept", {"name": "Async"}, scope=MemoryScope())
-        _, _, _, extra, *_ = store.merge_node.call_args[0]
-        for key in RESERVED_SCOPE_KEYS:
-            assert key not in extra
+        from engrama.core.scope import ScopeIncomplete
+
+        with pytest.raises(ScopeIncomplete):
+            engine.merge_node("Concept", {"name": "Async"}, scope=MemoryScope())
+        store.merge_node.assert_not_called()
 
     def test_caller_cannot_smuggle_scope_via_properties(self):
         store = _stub_store()
-        engine = EngramaEngine(store, default_scope=MemoryScope(user_id="alice"))
+        engine = EngramaEngine(
+            store, default_scope=MemoryScope(user_id="alice", org_id="acme")
+        )
         engine.merge_node(
             "Concept",
             {"name": "Async", "user_id": "bob", "org_id": "evil_corp"},
         )
         _, _, _, extra, *_ = store.merge_node.call_args[0]
+        # The sanitiser dropped the smuggled keys; default_scope filled
+        # them back in with the engine's real identity.
         assert extra["user_id"] == "alice"
-        assert "org_id" not in extra  # default_scope didn't set org_id
+        assert extra["org_id"] == "acme"
 
-    def test_empty_default_scope_writes_no_scope_fields(self):
+    def test_empty_default_scope_rejects_write(self):
+        # Spec 001 T011: an empty default scope on the engine is the same
+        # illegal state as no default scope at all — write fails closed.
         store = _stub_store()
         engine = EngramaEngine(store, default_scope=MemoryScope())
-        engine.merge_node("Concept", {"name": "Async"})
-        _, _, _, extra, *_ = store.merge_node.call_args[0]
-        for key in RESERVED_SCOPE_KEYS:
-            assert key not in extra
+        from engrama.core.scope import ScopeIncomplete
+
+        with pytest.raises(ScopeIncomplete):
+            engine.merge_node("Concept", {"name": "Async"})
+        store.merge_node.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

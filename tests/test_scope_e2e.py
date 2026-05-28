@@ -113,6 +113,10 @@ class TestSDKAutoEnv:
     def test_any_explicit_kwarg_disables_env_fallback(self, _hermetic_env):
         # If the caller passes ANY scope kwarg, env is ignored entirely
         # — explicit takes over. (Mixing the two would be confusing.)
+        # Spec 001 FR-7: a provenance-only override (e.g. ``session_id``
+        # without ``org_id``/``user_id``) still demands a complete identity
+        # on the engine, so org/user fall back to ``sub_local``. The session
+        # kwarg passes through as provenance.
         _hermetic_env.setenv("ENGRAMA_USER_ID", "alice")
         _hermetic_env.setenv("ENGRAMA_ORG_ID", "acme")
         from engrama import Engrama
@@ -121,8 +125,11 @@ class TestSDKAutoEnv:
             scope = eng._engine.default_scope
             assert scope is not None
             assert scope.session_id == "conv-1"
-            assert scope.user_id is None
-            assert scope.org_id is None
+            # Env values were ignored — the explicit kwarg disabled them.
+            assert scope.user_id != "alice"
+            assert scope.org_id != "acme"
+            # Spec 001 FR-7: org_id == user_id == sub_local (standalone).
+            assert scope.user_id and scope.user_id == scope.org_id
 
 
 # ---------------------------------------------------------------------------

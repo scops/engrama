@@ -17,8 +17,18 @@ removes them between tests.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import pytest
+
+from engrama.core.scope import MemoryScope
+
+# Spec 001 fail-closed: writes auto-stamp this test scope; scoped reads
+# auto-forward it. The contract under test is "backend behaves the same
+# across backends" — keeping scoping at the fixture boundary lets the
+# tests stay focused on shape and semantics.
+_TEST_SCOPE = MemoryScope(org_id="test-contract", user_id="test-contract")
+_SCOPE_PROPS = {"org_id": "test-contract", "user_id": "test-contract"}
 
 
 def _unique(prefix: str = "ct") -> str:
@@ -28,13 +38,81 @@ def _unique(prefix: str = "ct") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
+class _ScopedSyncStoreProxy:
+    """Auto-stamp scope on ``merge_node``; forward scope to scoped reads."""
+
+    def __init__(self, inner, scope: MemoryScope, *, add_test_flag: bool = False) -> None:
+        self._inner = inner
+        self._scope = scope
+        self._add_test_flag = add_test_flag
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def merge_node(self, label, key_field, key_value, properties, embedding=None):
+        properties = {**_SCOPE_PROPS, **properties}
+        if self._add_test_flag:
+            properties.setdefault("test", True)
+        return self._inner.merge_node(label, key_field, key_value, properties, embedding)
+
+    def merge_relation(
+        self, from_label, from_key, from_value, rel_type, to_label, to_key, to_value, scope=None
+    ):
+        return self._inner.merge_relation(
+            from_label,
+            from_key,
+            from_value,
+            rel_type,
+            to_label,
+            to_key,
+            to_value,
+            scope=scope or self._scope,
+        )
+
+    def count_labels(self, scope=None):
+        return self._inner.count_labels(scope=scope or self._scope)
+
+    def lookup_node_label(self, name, scope=None):
+        return self._inner.lookup_node_label(name, scope=scope or self._scope)
+
+    def fulltext_search(self, query, limit=10, scope=None):
+        return self._inner.fulltext_search(query, limit=limit, scope=scope or self._scope)
+
+    def get_neighbours(self, label, key_field, key_value, hops=1, limit=50, scope=None):
+        return self._inner.get_neighbours(
+            label, key_field, key_value, hops=hops, limit=limit, scope=scope or self._scope
+        )
+
+    def get_node_with_neighbours(self, label, key_field, key_value, hops=1, scope=None):
+        return self._inner.get_node_with_neighbours(
+            label, key_field, key_value, hops=hops, scope=scope or self._scope
+        )
+
+    def get_dismissed_insight_titles(self, scope=None):
+        return self._inner.get_dismissed_insight_titles(scope=scope or self._scope)
+
+    def get_approved_insight_titles(self, scope=None):
+        return self._inner.get_approved_insight_titles(scope=scope or self._scope)
+
+    def get_pending_insights(self, limit=10, scope=None):
+        return self._inner.get_pending_insights(limit=limit, scope=scope or self._scope)
+
+    def get_insight_by_title(self, title, scope=None):
+        return self._inner.get_insight_by_title(title, scope=scope or self._scope)
+
+    def find_insight_by_source_query(self, source_query, statuses=None, scope=None):
+        return self._inner.find_insight_by_source_query(
+            source_query, statuses=statuses, scope=scope or self._scope
+        )
+
+
 @pytest.fixture(params=["sqlite", "neo4j"])
 def store(request, tmp_path):
     if request.param == "sqlite":
         from engrama.backends.sqlite import SqliteGraphStore
 
         s = SqliteGraphStore(tmp_path / "contract.db")
-        yield s
+        yield _ScopedSyncStoreProxy(s, _TEST_SCOPE)
         s.close()
         return
 
@@ -50,17 +128,7 @@ def store(request, tmp_path):
 
         client = EngramaClient()
         s = Neo4jGraphStore(client)
-        # Tag every created node with test=true so the conftest cleanup
-        # pass removes it. Wraps merge_node transparently.
-        original_merge = s.merge_node
-
-        def _tagged_merge(label, key_field, key_value, properties, embedding=None):
-            tagged = dict(properties)
-            tagged.setdefault("test", True)
-            return original_merge(label, key_field, key_value, tagged, embedding=embedding)
-
-        s.merge_node = _tagged_merge  # type: ignore[method-assign]
-        yield s
+        yield _ScopedSyncStoreProxy(s, _TEST_SCOPE, add_test_flag=True)
         try:
             s.client.run("MATCH (n) WHERE n.test = true DETACH DELETE n")
         except Exception:
