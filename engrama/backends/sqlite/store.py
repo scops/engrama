@@ -782,6 +782,9 @@ class SqliteGraphStore:
 
         Re-merging the node later clears ``valid_to`` (revival).
         """
+        # scope-exempt: temporal write helper invoked by the SDK
+        # `engine.expire_node` which the caller has already scoped; the
+        # lookup-by-key here just resolves the row to update.
         cur = self._conn.execute(
             "SELECT id, props FROM nodes WHERE label = ? AND key_value = ?",
             (label, key_value),
@@ -812,6 +815,9 @@ class SqliteGraphStore:
         native ``exp``. For typical graphs (<100k nodes) this is fast
         enough; if it ever bites we'll move to a SQLite extension.
         """
+        # scope-exempt: admin temporal-decay sweep — `engrama decay` runs
+        # cross-tenant maintenance; a SaaS gateway should restrict
+        # invocation. Matches Neo4j's `decay_confidence` exemption.
         import math
 
         label_filter = "AND label = ?" if label else ""
@@ -905,6 +911,9 @@ class SqliteGraphStore:
         label: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
+        # scope-exempt: admin temporal-view helper used by `engrama decay
+        # --dry-run` to preview affected rows; the matching Neo4j method
+        # carries the same exemption.
         """Return what was true at a given date (ISO string).
 
         Uses ISO lexicographic ordering — works because ISO timestamps
@@ -944,6 +953,10 @@ class SqliteGraphStore:
         """Soft-archive (or DELETE) nodes whose ``updated_at`` is older
         than *days*. Returns ``{"affected": int}``.
         """
+        # scope-exempt: admin TTL sweep — `engrama forget --ttl` runs
+        # cross-tenant maintenance. SaaS surface should gate this at a
+        # higher layer; OSS standalone is single-tenant so the unscoped
+        # sweep matches user intent.
         cutoff = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)).isoformat()
         cur = self._conn.execute(
             "SELECT id, props FROM nodes "
@@ -1014,6 +1027,11 @@ class SqliteGraphStore:
         return [dict(r) for r in cur.fetchall()]
 
     def update_insight_status(self, title: str, new_status: str) -> bool:
+        # scope-exempt: write path — the MCP `engrama_approve_insight` and SDK
+        # `ProactiveSkill.approve/dismiss` first call `get_insight_by_title`
+        # (scoped, fail-closed) to confirm ownership, then route here only
+        # when the read returned a row. Cross-tenant promotion is therefore
+        # blocked at the prior read.
         cur = self._conn.execute(
             "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
             (title,),
@@ -1060,6 +1078,10 @@ class SqliteGraphStore:
         return dict(row) if row else None
 
     def mark_insight_synced(self, title: str, obsidian_path: str) -> bool:
+        # scope-exempt: write path — same shape as `update_insight_status`.
+        # `ProactiveSkill.write_to_vault` first reads the Insight via the
+        # scoped `get_insight_by_title`, so cross-tenant marking is blocked
+        # upstream.
         cur = self._conn.execute(
             "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
             (title,),
@@ -1505,6 +1527,10 @@ class SqliteGraphStore:
     # ------------------------------------------------------------------
 
     def find_obsidian_path(self, label: str, name: str) -> str | None:
+        # scope-exempt: obsidian-sync internal — VAULT_PATH is per-deployment
+        # (Engrama-owned), not per-tenant; the caller (`ObsidianSync`) drives
+        # writes via the scoped engine. Surface this through a scoped wrapper
+        # only when a SaaS deployment carries per-tenant vaults.
         cur = self._conn.execute(
             "SELECT json_extract(props, '$.obsidian_path') AS path "
             "FROM nodes WHERE label = ? AND key_value = ?",
@@ -1514,6 +1540,8 @@ class SqliteGraphStore:
         return row["path"] if row and row["path"] else None
 
     def list_documented_nodes(self) -> list[dict[str, Any]]:
+        # scope-exempt: obsidian-sync internal listing for the
+        # archive-missing pass; runs against the single Engrama-owned vault.
         cur = self._conn.execute(
             "SELECT label, key_value AS name, "
             "       json_extract(props, '$.obsidian_path') AS path "
@@ -1525,6 +1553,8 @@ class SqliteGraphStore:
         """Like ``archive_node_by_name`` but used by the obsidian sync's
         archive-missing pass. Returns ``True`` if a node was matched.
         """
+        # scope-exempt: obsidian-sync archive-missing write. Same vault
+        # scope as `list_documented_nodes` above.
         cur = self._conn.execute(
             "SELECT id, props FROM nodes WHERE label = ? AND key_value = ?",
             (label, name),
@@ -1577,6 +1607,9 @@ class SqliteGraphStore:
         Returns ``1`` to mirror the unconditional counter in the Neo4j
         version (caller increments per call regardless of success).
         """
+        # scope-exempt: obsidian-sync wiki-link resolution; relies on the
+        # vault being single-tenant per deployment. A SaaS multi-tenant
+        # variant should add a scoped lookup wrapper alongside this one.
         cur = self._conn.execute(
             "SELECT label, key_value FROM nodes WHERE LOWER(key_value) = LOWER(?) LIMIT 1",
             (target_name,),
@@ -1646,6 +1679,9 @@ class SqliteGraphStore:
         vector (issue #18), so a follow-up ``engrama reindex`` heals
         them.
         """
+        # scope-exempt: admin reindex backfill — same rationale as
+        # `list_unembedded_nodes`. Embeddings stay on the source node so
+        # this never relocates data across tenants.
         if force:
             cur = self._conn.execute("SELECT id, label, props FROM nodes")
         else:
@@ -1712,6 +1748,10 @@ class SqliteGraphStore:
 
     def _sync_fts(self, node_id: int, props: dict[str, Any]) -> None:
         """Mirror node text fields into the FTS5 index."""
+        # scope-exempt: internal write-side helper — called after a node's
+        # row has already been persisted (which the engine guard scoped).
+        # The FTS rowid is the nodes.id, so this writes only to the row
+        # the caller just touched.
         self._conn.execute("DELETE FROM nodes_fts WHERE rowid = ?", (node_id,))
         cols = ", ".join(_FTS_FIELDS)
         placeholders = ", ".join(["?"] * len(_FTS_FIELDS))

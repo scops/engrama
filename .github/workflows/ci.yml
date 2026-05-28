@@ -39,6 +39,33 @@ jobs:
       - name: ruff check
         run: uv run ruff check .
 
+  scope-guard:
+    name: Scope CI guard (Spec 001 T015, warn-only)
+    runs-on: ubuntu-latest
+    # Spec 001 T015 — runs scripts/check_scoped_queries.py against the
+    # backend modules and reports any MATCH ( / FROM nodes / FROM edges
+    # literal that does not route through scope_filter_* and is not
+    # auto-exempt by function family. Warn-only today (continue-on-error)
+    # because the migration is still mid-flight: T026 flips this to
+    # blocking once US-2 is fully shippable.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.13"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      # No extras needed — the script uses only stdlib (ast, pathlib).
+      - name: Run scope guard
+        run: uv run python scripts/check_scoped_queries.py
+
   import-smoke:
     name: Base install import smoke (DDR-004 promise)
     runs-on: ubuntu-latest

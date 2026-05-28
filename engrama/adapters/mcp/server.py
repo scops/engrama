@@ -49,6 +49,93 @@ from engrama.core.security import Provenance, Sanitiser
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
 
+
+# ---------------------------------------------------------------------------
+# Per-request scope in logging context (Spec 001, T009a / NFR-2)
+# ---------------------------------------------------------------------------
+#
+# Every tool body resolves a :class:`MemoryScope` from request headers and
+# binds it to the logging context here. A :class:`logging.Filter` injects
+# ``scope_org`` / ``scope_user`` onto every record produced inside the
+# request, so a log aggregator can group lines by tenant without the tool
+# bodies having to pass the scope through every ``logger.info`` call.
+#
+# Identifiers are **hashed** (sha256, truncated to 8 chars) before they hit
+# the record, so logs never carry raw ``(org_id, user_id)`` even when
+# verbose log levels are enabled. A truncated hash is enough for grouping
+# and incident correlation; reversal needs the raw value from the request
+# context anyway.
+#
+# The ContextVar is set per-request and reset on tool exit — ``contextvars``
+# handles async-task boundaries correctly (asyncio copies the context on
+# task creation), so concurrent requests cannot bleed scopes into each
+# other's logs.
+
+import contextvars as _ctxvars  # noqa: E402
+import hashlib as _hashlib  # noqa: E402
+
+_LOG_SCOPE: _ctxvars.ContextVar[tuple[str, str] | None] = _ctxvars.ContextVar(
+    "engrama_mcp_scope", default=None
+)
+
+
+def _hash_id(value: str | None) -> str:
+    """Stable 8-char sha256 prefix; ``-`` when no identity is bound.
+
+    Hash is one-way and short; collisions inside a single tenant deployment
+    are astronomically unlikely. Safe to surface in logs and tracing
+    backends (Sentry, Loki, CloudWatch) without leaking customer IDs.
+    """
+    if not value:
+        return "-"
+    return _hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+
+
+def _bind_scope_to_logging(scope: MemoryScope) -> _ctxvars.Token:
+    """Bind ``scope`` to the logging context for the current request.
+
+    Returns the :class:`ContextVar.Token` so callers can ``reset(token)``
+    on tool exit. Idempotent within a single contextvar context: re-binding
+    overwrites the previous binding.
+    """
+    return _LOG_SCOPE.set((_hash_id(scope.org_id), _hash_id(scope.user_id)))
+
+
+class _ScopeLogFilter(logging.Filter):
+    """Inject the bound scope onto every :class:`logging.LogRecord`.
+
+    Adds ``record.scope_org`` and ``record.scope_user`` (hashed). A format
+    string like ``%(scope_org)s/%(scope_user)s`` will pick them up; older
+    format strings just see the existing fields and the new ones are
+    ignored — no log line gets dropped.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        bound = _LOG_SCOPE.get()
+        if bound is None:
+            record.scope_org = "-"
+            record.scope_user = "-"
+        else:
+            record.scope_org, record.scope_user = bound
+        return True
+
+
+logger.addFilter(_ScopeLogFilter())
+
+
+def _resolve_and_bind(ctx: Context) -> MemoryScope:
+    """Resolve the request scope and bind it to the logging context.
+
+    Single call site for the "resolve, then make every subsequent log line
+    in this tool carry the tenant" pattern. Tool bodies should call this
+    in place of :func:`resolve_scope`; a :class:`ScopeUnresolved` thrown
+    here still propagates so the boundary rejection happens before any
+    binding side-effect.
+    """
+    scope = resolve_scope(ctx)
+    _bind_scope_to_logging(scope)
+    return scope
+
 # ---------------------------------------------------------------------------
 # Valid labels / relations (used for validation)
 # ---------------------------------------------------------------------------
@@ -823,7 +910,7 @@ def create_engrama_mcp(
         # Fail-closed: an unresolved (partial-identity) request returns no
         # results rather than broadening the read (Spec 001, FR-5).
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved:
             return f"No results found for '{params.query}'."
 
@@ -1024,7 +1111,7 @@ def create_engrama_mcp(
         # Identity is mandatory on every write (Spec 001, FR-4). Reject a
         # partial/unresolved request before any graph or vault mutation.
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
@@ -1351,7 +1438,7 @@ def create_engrama_mcp(
 
         # Identity is mandatory on every write (Spec 001, FR-4).
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
@@ -1490,7 +1577,7 @@ def create_engrama_mcp(
 
         # Fail-closed: unresolved request → node not visible (Spec 001, FR-5).
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved:
             return f"No node found: (:{params.label} {{name: '{params.name}'}})."
 
@@ -1556,7 +1643,7 @@ def create_engrama_mcp(
 
         # Identity is mandatory on every write (Spec 001, FR-4).
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "message": str(e)}, indent=2)
 
@@ -1747,7 +1834,7 @@ def create_engrama_mcp(
 
         # Identity is mandatory on every write (Spec 001, FR-4).
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "message": str(e)}, indent=2)
 
@@ -1935,7 +2022,7 @@ def create_engrama_mcp(
         # require a resolved identity — an unscoped caller cannot drive
         # downstream writes that would land identity-less in the graph.
         try:
-            resolve_scope(ctx)
+            _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
@@ -2052,7 +2139,7 @@ def create_engrama_mcp(
         # reflect both reads and writes Insights, so it needs a resolved
         # identity (Spec 001, FR-4/FR-12); unresolved → reject.
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
@@ -2455,7 +2542,7 @@ def create_engrama_mcp(
         # Spec 001 FR-2: Insights are tenant-scoped; surface only the
         # caller's pending ones.
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
@@ -2520,7 +2607,7 @@ def create_engrama_mcp(
         # resolve scope before touching the graph, error fail-closed when
         # unresolved.
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
@@ -2623,7 +2710,7 @@ def create_engrama_mcp(
         # Spec 001 FR-2: vault-write of an Insight is scoped to the caller —
         # the read fails closed when the Insight belongs to a different scope.
         try:
-            scope = resolve_scope(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
@@ -2854,7 +2941,7 @@ def create_engrama_mcp(
         # must declare identity for audit and to gate the write path. We
         # require it for every mode so the contract is uniform.
         try:
-            resolve_scope(ctx)
+            _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
