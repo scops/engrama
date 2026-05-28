@@ -783,6 +783,11 @@ def create_engrama_mcp(
           "startup_error": "..."   // present only when something failed at boot
         }
         ```
+
+        **Identity (Spec 001).** No identity requirement — this is
+        runtime introspection (FR-11), explicitly admin and CI-allowlisted
+        as ``# scope-exempt``. Counts are deployment-wide so an operator
+        can verify boot state without a tenant identity bound.
         """
         state = ctx.request_context.lifespan_context
         store = state.get("async_store")
@@ -903,6 +908,12 @@ def create_engrama_mcp(
         without a second ``engrama_context`` call.  ``details`` is *not*
         returned here; call ``engrama_context`` when you need the full
         content of a node.
+
+        **Identity (Spec 001 FR-3).** Both ``X-Engrama-Org-Id`` and
+        ``X-Engrama-User-Id`` request headers, or neither for standalone.
+        Unresolved (exactly one) → 0 results (no error). **Degradation
+        (NFR-5).** With ``EMBEDDING_PROVIDER=null`` the tool falls back to
+        the fulltext path; the scope filter still applies on the fallback.
         """
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
@@ -1066,6 +1077,15 @@ def create_engrama_mcp(
         a corresponding .md note is created (or updated) with full YAML
         frontmatter carrying that same ``engrama_id`` and an empty relations
         block (DDR-002).
+
+        **Identity (Spec 001 FR-4).** Required: both ``X-Engrama-Org-Id``
+        and ``X-Engrama-User-Id`` request headers, or neither for
+        standalone (resolves to ``sub_local``). Unresolved (exactly one)
+        → explicit error, graph untouched. The node persists with
+        ``(org_id, user_id)`` stamped from the resolved scope. **Vault.**
+        Writes target Engrama's own vault (``VAULT_PATH``) — distinct
+        from any user-managed Obsidian vault exposed by a separate
+        ``obsidian-mcp`` server.
         """
         import re as _re
 
@@ -1424,6 +1444,14 @@ def create_engrama_mcp(
         engrama_remember if needed).
 
         Returns a confirmation or a message if either node was not found.
+
+        **Identity (Spec 001 FR-4 / FR-1).** Required: both
+        ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
+        neither for standalone. Unresolved → explicit error, graph
+        untouched. The edge is stamped with ``(org_id, user_id)`` so a
+        future relation-scoped read can filter without re-walking
+        endpoints. Endpoint lookup is scoped fail-closed — an existing
+        node owned by another tenant resolves to "not found".
         """
         if params.from_label not in _VALID_LABELS:
             return f"Error: Invalid from_label '{params.from_label}'."
@@ -1568,6 +1596,12 @@ def create_engrama_mcp(
         (it can be long) but keep ``summary`` and ``tags`` so you can
         decide whether a neighbour is worth exploring — call
         ``engrama_context`` on that neighbour if you need its full details.
+
+        **Identity (Spec 001 FR-2).** Both ``X-Engrama-Org-Id`` and
+        ``X-Engrama-User-Id`` headers, or neither for standalone.
+        Unresolved → "not found". The root lookup AND neighbour
+        traversal are scope-filtered: an existing node owned by another
+        tenant is invisible.
         """
         if params.label not in _VALID_LABELS:
             return f"Error: Invalid label '{params.label}'."
@@ -1627,6 +1661,12 @@ def create_engrama_mcp(
         Returns JSON with status, label, name, engrama_id, dry_run, and
         either ``created`` + ``node`` (real run) or ``would_create`` +
         ``would_inject_engrama_id`` (dry run).
+
+        **Identity (Spec 001 FR-4).** Required: both
+        ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
+        neither for standalone. Unresolved → explicit error, vault and
+        graph untouched. The merged node carries the resolved
+        ``(org_id, user_id)``.
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -1816,6 +1856,12 @@ def create_engrama_mcp(
 
         Returns JSON with status, dry_run, and either the live counts
         or the ``would_*`` projection.
+
+        **Identity (Spec 001 FR-4).** Required: both
+        ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
+        neither for standalone. Unresolved → explicit error, vault and
+        graph untouched. Every merged node carries the resolved
+        ``(org_id, user_id)``.
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -2016,6 +2062,12 @@ def create_engrama_mcp(
         one as ``source_type='text'``.
 
         This is the primary way to populate the graph from existing content.
+
+        **Identity (Spec 001 FR-4).** Required even though this tool
+        doesn't itself write nodes: it precedes a wave of
+        ``engrama_remember`` calls, and an unscoped caller would drive
+        downstream writes that the engine guard would then reject. The
+        rejection is surfaced here so the caller sees it immediately.
         """
         # Spec 001 T012/FR-4: ingest precedes a wave of writes (one
         # ``engrama_remember`` per extracted entity), so it must also
@@ -2133,6 +2185,13 @@ def create_engrama_mcp(
 
         Detected patterns are stored as Insight nodes with status "pending" —
         present them to the user via engrama_surface_insights for review.
+
+        **Identity (Spec 001 FR-4 / FR-12).** Required: both
+        ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
+        neither for standalone. Unresolved → explicit error, no
+        Insights written. Reflect profiles, detects, and writes
+        Insights **only** within the caller's scope: another tenant's
+        graph is invisible end-to-end.
         """
         store = _store(ctx)
 
@@ -2536,6 +2595,11 @@ def create_engrama_mcp(
         graph has detected.  Present each Insight and ask the user to
         approve or dismiss it — never act on an Insight without explicit
         approval.
+
+        **Identity (Spec 001 FR-2).** Both ``X-Engrama-Org-Id`` and
+        ``X-Engrama-User-Id`` headers, or neither for standalone.
+        Unresolved → error. Only Insights owned by the caller are
+        surfaced; another tenant's pending Insights remain invisible.
         """
         store = _store(ctx)
 
@@ -2600,6 +2664,12 @@ def create_engrama_mcp(
         Sets the Insight's status to ``"approved"`` or ``"dismissed"``
         and records a timestamp.  Only approved Insights can later be
         written to Obsidian.
+
+        **Identity (Spec 001 FR-2 / FR-4).** Required: both
+        ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
+        neither for standalone. Unresolved → explicit error, graph
+        untouched. The Insight is looked up under the caller's scope;
+        promoting another tenant's Insight is blocked at the read.
         """
         store = _store(ctx)
 
@@ -2692,6 +2762,14 @@ def create_engrama_mcp(
         Only Insights with ``status: "approved"`` are written.  The Insight
         is appended as a Markdown section with a horizontal rule separator,
         including confidence, source query, and approval timestamp.
+
+        **Identity (Spec 001 FR-2 / FR-4).** Required: both
+        ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
+        neither for standalone. Unresolved → explicit error, vault
+        untouched. The Insight lookup is scope-filtered; writing another
+        tenant's approved Insight is blocked at the read. **Vault.**
+        Targets Engrama's own vault (``VAULT_PATH``) — never the
+        user-managed external Obsidian vault.
         """
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -2931,6 +3009,14 @@ def create_engrama_mcp(
         cannot enforce this, so the caller must respect it. Use ``limit`` to
         process in batches; if ``detect`` reports ``unembedded_found ==
         limit`` there may be more, so raise the limit or re-run after applying.
+
+        **Identity (Spec 001 FR-4).** Required: both
+        ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
+        neither for standalone — every mode, even read-only ``detect``,
+        enforces this so the operator/audit trail is uniform. The
+        underlying candidate scan is admin-flavoured (cross-tenant,
+        explicitly ``# scope-exempt``); a SaaS deployment that wants
+        per-tenant reindex should gate this tool at a higher layer.
         """
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
