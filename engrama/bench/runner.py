@@ -376,18 +376,36 @@ class BenchmarkRunner:
                 "questions_with_evidence": 0,
                 "mean_score": 0.0,
                 "mean_latency_ms": 0.0,
+                "p50_latency_ms": 0.0,
+                "p95_latency_ms": 0.0,
+                "p99_latency_ms": 0.0,
                 "duration_seconds": (completed - started).total_seconds(),
                 "failed_turns": self._failed_turns,
             }
         with_evidence = sum(1 for q in results if q.expected_evidence)
         mean_score = sum(q.score for q in results) / len(results)
         mean_latency = sum(q.latency_ms for q in results) / len(results)
+        # Per-question latencies sorted once; percentiles use nearest-rank
+        # so a small N (e.g. locomo_mini = 3) still produces a stable
+        # number rather than interpolating into noise. Spec 001 SC-5
+        # compares p95 across runs, so this is the column that matters.
+        latencies = sorted(q.latency_ms for q in results)
+        n = len(latencies)
+
+        def _percentile(p: float) -> float:
+            # Nearest-rank percentile: index = ceil(p * n) - 1, clamped.
+            idx = max(0, min(n - 1, int(round(p * n)) - 1))
+            return latencies[idx]
+
         return {
             "questions_total": len(results),
             "questions_scored": len(results),
             "questions_with_evidence": with_evidence,
             "mean_score": round(mean_score, 4),
             "mean_latency_ms": round(mean_latency, 2),
+            "p50_latency_ms": round(_percentile(0.50), 2),
+            "p95_latency_ms": round(_percentile(0.95), 2),
+            "p99_latency_ms": round(_percentile(0.99), 2),
             "duration_seconds": round((completed - started).total_seconds(), 2),
             # Non-zero ``failed_turns`` means the replay loop swallowed
             # an exception while ingesting one or more turns — the
