@@ -113,6 +113,11 @@ class SqliteVecStore:
         """Engine convenience: look up the node by ``(label, key_value)``
         and store the embedding against its id.
         """
+        # scope-exempt: internal embed-on-write helper. The caller (engine)
+        # has already passed the fail-closed write guard for this same
+        # (label, key_value), so the node we're about to vectorise belongs
+        # to the scope that just wrote it. The lookup just resolves the
+        # nodes.id needed for the vec0 row.
         if self._dimensions == 0:
             return False
         cur = self._conn.execute(
@@ -157,6 +162,9 @@ class SqliteVecStore:
         embedding, resolved against the nodes table so the dump is
         portable across backends.
         """
+        # scope-exempt: migration/export path — needed by ``engrama export``
+        # to dump every embedding regardless of tenant. Never called from a
+        # tenant-visible read path.
         if self._dimensions == 0 or not self._index_ready:
             return
         cur = self._conn.execute(
@@ -257,6 +265,8 @@ class SqliteVecStore:
         return self.search_vectors(query_embedding, limit=limit, scope=scope)
 
     def count(self) -> int:
+        # scope-exempt: engrama_status runtime introspection only — deployment-
+        # wide vector total, never wired into tenant-visible responses.
         if self._dimensions == 0 or not self._index_ready:
             return 0
         cur = self._conn.execute(f"SELECT COUNT(*) AS n FROM {self._index_name}")

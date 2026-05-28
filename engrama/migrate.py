@@ -517,3 +517,205 @@ def _apply_neo4j(store: Any, entry: dict[str, Any]) -> None:
         f"REMOVE n.{alias}"
     )
     store._client.run(query, {"node_id": node_id})
+
+
+# ---------------------------------------------------------------------------
+# Spec 001 T040 — tenancy backfill migration
+# ---------------------------------------------------------------------------
+
+
+def migrate_tenancy(
+    graph_store: Any,
+    owner_sub: str,
+    *,
+    dry_run: bool = False,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Backfill ``(owner_sub, owner_sub)`` onto every identity-less row.
+
+    A pre-Spec-001 graph carries no ``org_id`` / ``user_id`` on its nodes
+    and edges. Under the fail-closed read filter every such row is
+    invisible to every scope, so a fresh install of the new release would
+    appear to have lost its data until this migration runs.
+
+    Contract:
+
+    * ``dry_run=True`` counts and samples what would change, but writes
+      nothing. Safe to run repeatedly.
+    * ``apply=True`` stamps ``(owner_sub, owner_sub)`` onto every node /
+      relation that lacks identity, and purges nodes that are also missing
+      their merge-key (pre-existing corruption, not real data).
+    * Exactly one of ``dry_run`` or ``apply`` MUST be set.
+    * Rows that already carry a different identity are left alone — they
+      belong to a real tenant and overwriting them would be a leak.
+
+    Returns a report dict suitable for the CLI: counts plus a small
+    sample so the operator can sanity-check before re-running in apply
+    mode against production.
+
+    Backends:
+
+    * SQLite is detected via ``hasattr(graph_store, "_conn")``.
+    * Neo4j (sync) is detected via ``hasattr(graph_store, "_client")``.
+    """
+    if dry_run == apply:
+        raise ValueError("must pass exactly one of dry_run=True or apply=True")
+    if not isinstance(owner_sub, str) or not owner_sub.strip():
+        raise ValueError("owner_sub must be a non-empty identity string")
+    owner_sub = owner_sub.strip()
+
+    if hasattr(graph_store, "_conn"):
+        return _migrate_tenancy_sqlite(graph_store, owner_sub, dry_run=dry_run, apply=apply)
+    if hasattr(graph_store, "_client"):
+        return _migrate_tenancy_neo4j(graph_store, owner_sub, dry_run=dry_run, apply=apply)
+    raise TypeError(
+        "migrate_tenancy requires a SqliteGraphStore or Neo4jGraphStore; "
+        f"got {type(graph_store).__name__}"
+    )
+
+
+_SQL_NODES_NEED_STAMP = (
+    "(json_extract(props, '$.org_id') IS NULL  OR json_extract(props, '$.user_id') IS NULL)"
+)
+_SQL_NODES_ARE_ORPHAN = _SQL_NODES_NEED_STAMP + " AND (key_value IS NULL OR TRIM(key_value) = '')"
+
+
+def _migrate_tenancy_sqlite(
+    store: Any,
+    owner_sub: str,
+    *,
+    dry_run: bool,
+    apply: bool,
+) -> dict[str, Any]:
+    conn = store._conn
+    # --- count + sample ------------------------------------------------
+    node_total = conn.execute(
+        f"SELECT COUNT(*) AS n FROM nodes WHERE {_SQL_NODES_NEED_STAMP}"
+    ).fetchone()["n"]
+    orphan_total = conn.execute(
+        f"SELECT COUNT(*) AS n FROM nodes WHERE {_SQL_NODES_ARE_ORPHAN}"
+    ).fetchone()["n"]
+    rel_total = conn.execute(
+        "SELECT COUNT(*) AS n FROM edges WHERE org_id IS NULL OR user_id IS NULL"
+    ).fetchone()["n"]
+    node_sample = [
+        {"label": r["label"], "key_value": r["key_value"]}
+        for r in conn.execute(
+            f"SELECT label, key_value FROM nodes WHERE {_SQL_NODES_NEED_STAMP} LIMIT 10"
+        ).fetchall()
+    ]
+
+    report: dict[str, Any] = {
+        "owner_sub": owner_sub,
+        "dry_run": dry_run,
+        # The "real" stamp work excludes orphans (those get purged below).
+        "nodes_to_stamp": max(0, node_total - orphan_total),
+        "relations_to_stamp": rel_total,
+        "orphans_to_purge": orphan_total,
+        "sample": {"nodes_to_stamp": node_sample},
+    }
+    if dry_run:
+        return report
+
+    # --- apply ---------------------------------------------------------
+    # 1) Stamp identity onto every node that lacks it (and isn't an orphan).
+    nodes_stamped = conn.execute(
+        "UPDATE nodes SET "
+        "  props = json_set(props, '$.org_id', ?, '$.user_id', ?) "
+        f"WHERE {_SQL_NODES_NEED_STAMP} "
+        "  AND NOT (key_value IS NULL OR TRIM(key_value) = '')",
+        (owner_sub, owner_sub),
+    ).rowcount
+    # 2) Stamp identity onto every edge that lacks it. Edges' endpoint
+    #    nodes were stamped just above, so by the time this UPDATE runs,
+    #    every edge whose org_id/user_id was NULL belongs to the same
+    #    owner_sub.
+    relations_stamped = conn.execute(
+        "UPDATE edges SET org_id = ?, user_id = ? WHERE org_id IS NULL OR user_id IS NULL",
+        (owner_sub, owner_sub),
+    ).rowcount
+    # 3) Purge true orphans (no identity AND no merge key). Any edges that
+    #    referenced them go away via ON DELETE CASCADE.
+    orphans_purged = conn.execute(f"DELETE FROM nodes WHERE {_SQL_NODES_ARE_ORPHAN}").rowcount
+    conn.commit()
+
+    report.update(
+        {
+            "nodes_stamped": nodes_stamped,
+            "relations_stamped": relations_stamped,
+            "orphans_purged": orphans_purged,
+        }
+    )
+    return report
+
+
+_CYPHER_NODES_NEED_STAMP = "MATCH (n) WHERE n.org_id IS NULL OR n.user_id IS NULL"
+
+
+def _migrate_tenancy_neo4j(
+    store: Any,
+    owner_sub: str,
+    *,
+    dry_run: bool,
+    apply: bool,
+) -> dict[str, Any]:
+    client = store._client
+    node_total = client.run(f"{_CYPHER_NODES_NEED_STAMP} RETURN count(n) AS n")[0]["n"]
+    rel_total = client.run(
+        "MATCH ()-[r]->() WHERE r.org_id IS NULL OR r.user_id IS NULL RETURN count(r) AS n"
+    )[0]["n"]
+    # Orphan: identity-less AND missing both possible merge keys.
+    orphan_total = client.run(
+        "MATCH (n) WHERE (n.org_id IS NULL OR n.user_id IS NULL) "
+        "AND n.name IS NULL AND n.title IS NULL "
+        "RETURN count(n) AS n"
+    )[0]["n"]
+    node_sample = [
+        {"label": r["label"], "key_value": r["key"]}
+        for r in client.run(
+            "MATCH (n) WHERE n.org_id IS NULL OR n.user_id IS NULL "
+            "RETURN labels(n)[0] AS label, "
+            "coalesce(n.name, n.title) AS key LIMIT 10"
+        )
+    ]
+
+    report: dict[str, Any] = {
+        "owner_sub": owner_sub,
+        "dry_run": dry_run,
+        "nodes_to_stamp": max(0, node_total - orphan_total),
+        "relations_to_stamp": rel_total,
+        "orphans_to_purge": orphan_total,
+        "sample": {"nodes_to_stamp": node_sample},
+    }
+    if dry_run:
+        return report
+
+    nodes_stamped = client.run(
+        "MATCH (n) WHERE (n.org_id IS NULL OR n.user_id IS NULL) "
+        "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
+        "SET n.org_id = coalesce(n.org_id, $owner), "
+        "    n.user_id = coalesce(n.user_id, $owner) "
+        "RETURN count(n) AS n",
+        {"owner": owner_sub},
+    )[0]["n"]
+    relations_stamped = client.run(
+        "MATCH ()-[r]->() WHERE r.org_id IS NULL OR r.user_id IS NULL "
+        "SET r.org_id = coalesce(r.org_id, $owner), "
+        "    r.user_id = coalesce(r.user_id, $owner) "
+        "RETURN count(r) AS n",
+        {"owner": owner_sub},
+    )[0]["n"]
+    orphans_purged = client.run(
+        "MATCH (n) WHERE (n.org_id IS NULL OR n.user_id IS NULL) "
+        "AND n.name IS NULL AND n.title IS NULL "
+        "DETACH DELETE n RETURN count(*) AS n"
+    )[0]["n"]
+
+    report.update(
+        {
+            "nodes_stamped": nodes_stamped,
+            "relations_stamped": relations_stamped,
+            "orphans_purged": orphans_purged,
+        }
+    )
+    return report

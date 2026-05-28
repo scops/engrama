@@ -39,6 +39,35 @@ jobs:
       - name: ruff check
         run: uv run ruff check .
 
+  scope-guard:
+    name: Scope CI guard (Spec 001 T026)
+    runs-on: ubuntu-latest
+    # Spec 001 T026 — runs scripts/check_scoped_queries.py against the
+    # backend modules and FAILS the build on any MATCH ( / FROM nodes /
+    # FROM edges literal that does not route through scope_filter_* and
+    # is not auto-exempt by function family. Flipped from warn-only
+    # (T015) to blocking once US-2 closed every unscoped read path
+    # (T021–T025) and the migration backfill landed in prod (T042).
+    # A new unscoped read in a backend module is a fail-closed regression
+    # — the operator wants CI to refuse it rather than swallow the
+    # signal in a yellow check.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.13"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      # No extras needed — the script uses only stdlib (ast, pathlib).
+      - name: Run scope guard
+        run: uv run python scripts/check_scoped_queries.py
+
   import-smoke:
     name: Base install import smoke (DDR-004 promise)
     runs-on: ubuntu-latest

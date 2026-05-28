@@ -12,11 +12,17 @@ import pytest
 
 from engrama import Engrama
 
+# Spec 001 fail-closed: writes/reads filter by (org_id, user_id). Pin a
+# test scope on the SDK fixture and stamp the same identity on every
+# seed Cypher so the round-trip works.
+_TEST_SCOPE_KW = {"org_id": "test-sdk", "user_id": "test-sdk"}
+_SCOPE_CYPHER_PARAMS = {"org_id": "test-sdk", "user_id": "test-sdk"}
+
 
 @pytest.fixture()
 def eng() -> Engrama:
     """SDK pinned to the Neo4j backend (matches neo4j_session writes)."""
-    e = Engrama(backend="neo4j")
+    e = Engrama(backend="neo4j", **_TEST_SCOPE_KW)
     yield e
     e.close()
 
@@ -92,11 +98,13 @@ class TestRecall:
         neo4j_session.run(
             "MERGE (p:Project {name: $proj}) "
             "SET p.test = true, p.status = 'active', "
+            "    p.org_id = $org_id, p.user_id = $user_id, "
             "    p.created_at = datetime(), p.updated_at = datetime() "
             "MERGE (t:Technology {name: $tech}) "
-            "SET t.test = true, t.created_at = datetime(), t.updated_at = datetime() "
+            "SET t.test = true, t.org_id = $org_id, t.user_id = $user_id, "
+            "    t.created_at = datetime(), t.updated_at = datetime() "
             "MERGE (p)-[:USES]->(t)",
-            {"proj": "SDK_RecallProject", "tech": "SDK_RecallTech"},
+            {"proj": "SDK_RecallProject", "tech": "SDK_RecallTech", **_SCOPE_CYPHER_PARAMS},
         )
         # Neo4j fulltext indexes are populated asynchronously after MERGE;
         # without awaiting, recall() can race the index and return [] in
@@ -196,8 +204,9 @@ class TestReflectAndProactive:
             "SET i.test = true, i.body = 'SDK test insight', "
             "    i.confidence = 0.9, i.status = 'pending', "
             "    i.source_query = 'test', "
+            "    i.org_id = $org_id, i.user_id = $user_id, "
             "    i.created_at = datetime(), i.updated_at = datetime()",
-            {"title": "SDK_TestInsight"},
+            {"title": "SDK_TestInsight", **_SCOPE_CYPHER_PARAMS},
         )
 
         pending = eng.surface_insights(limit=50)

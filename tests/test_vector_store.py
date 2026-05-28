@@ -20,8 +20,11 @@ from engrama.backends.neo4j.vector import Neo4jVectorStore
 from engrama.backends.null import NullVectorStore
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
 from engrama.core.search import HybridConfig, HybridSearchEngine
 from engrama.embeddings.null import NullProvider
+
+_TEST_SCOPE = MemoryScope(org_id="test-vector", user_id="test-vector")
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -164,13 +167,18 @@ class TestNeo4jVectorStore:
 
     def test_search_vectors(self, client, vector_store):
         """search_vectors finds nodes by embedding similarity."""
-        embedder = FakeEmbedder()
+        from engrama.core.scope import MemoryScope
 
-        # Create and embed two nodes with different content
+        embedder = FakeEmbedder()
+        scope = MemoryScope(org_id="test-vector", user_id="test-vector")
+
+        # Create and embed two nodes with different content (stamped with
+        # the test scope so the fail-closed vector search can find them).
         for name in ("test_vec_search_a", "test_vec_search_b"):
             client.run(
-                "CREATE (n:Concept {name: $name, _test_phase_c: true})",
-                {"name": name},
+                "CREATE (n:Concept {name: $name, _test_phase_c: true, "
+                "org_id: $org_id, user_id: $user_id})",
+                {"name": name, "org_id": scope.org_id, "user_id": scope.user_id},
             )
             emb = embedder.embed(f"Concept: {name}")
             vector_store.store_vector_by_key("Concept", "name", name, emb)
@@ -182,7 +190,7 @@ class TestNeo4jVectorStore:
 
         # Search with the embedding of node "a" — should find it
         query_emb = embedder.embed("Concept: test_vec_search_a")
-        results = vector_store.search_vectors(query_emb, limit=5)
+        results = vector_store.search_vectors(query_emb, limit=5, scope=scope)
         assert len(results) >= 1
 
         # Top result should be the matching node
@@ -368,7 +376,9 @@ class TestEngineEmbedOnWrite:
         embedder.dimensions = 768
         embedder.embed.return_value = [0.1] * 768
 
-        engine = EngramaEngine(store, vector_store=vector, embedder=embedder)
+        engine = EngramaEngine(
+            store, vector_store=vector, embedder=embedder, default_scope=_TEST_SCOPE
+        )
         assert engine._embed_on_write is True
 
         engine.merge_node("Technology", {"name": "Python", "description": "Language"})
@@ -388,7 +398,9 @@ class TestEngineEmbedOnWrite:
         vector = NullVectorStore()
         embedder = NullProvider()
 
-        engine = EngramaEngine(store, vector_store=vector, embedder=embedder)
+        engine = EngramaEngine(
+            store, vector_store=vector, embedder=embedder, default_scope=_TEST_SCOPE
+        )
         assert engine._embed_on_write is False
 
         engine.merge_node("Technology", {"name": "Python"})
@@ -404,7 +416,9 @@ class TestEngineEmbedOnWrite:
         embedder.dimensions = 768
         embedder.embed.side_effect = ConnectionError("Ollama down")
 
-        engine = EngramaEngine(store, vector_store=vector, embedder=embedder)
+        engine = EngramaEngine(
+            store, vector_store=vector, embedder=embedder, default_scope=_TEST_SCOPE
+        )
         result = engine.merge_node("Technology", {"name": "Python"})
         # merge_node should still return the result
         assert result == [{"n": {"name": "Python"}}]
@@ -422,7 +436,9 @@ class TestEngineEmbedOnWrite:
         embedder.dimensions = 768
         embedder.embed.return_value = [0.1] * 768
 
-        engine = EngramaEngine(store, vector_store=vector, embedder=embedder)
+        engine = EngramaEngine(
+            store, vector_store=vector, embedder=embedder, default_scope=_TEST_SCOPE
+        )
         results = engine.hybrid_search("neo4j")
         assert len(results) >= 1
         assert results[0].name == "Neo4j"
@@ -434,7 +450,7 @@ class TestEngineEmbedOnWrite:
             {"type": "Technology", "name": "Neo4j", "score": 3.0},
         ]
 
-        engine = EngramaEngine(store)
+        engine = EngramaEngine(store, default_scope=_TEST_SCOPE)
         results = engine.hybrid_search("neo4j")
         assert len(results) == 1
         assert results[0].name == "Neo4j"

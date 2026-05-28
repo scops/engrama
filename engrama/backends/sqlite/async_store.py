@@ -137,8 +137,12 @@ class SqliteAsyncStore:
             soft,
         )
 
-    async def list_existing_nodes(self, limit: int = 200) -> list[dict[str, str]]:
-        return await self._run(self._sync.list_existing_nodes, limit)
+    async def list_existing_nodes(
+        self,
+        limit: int = 200,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, str]]:
+        return await self._run(self._sync.list_existing_nodes, limit, scope)
 
     # ------------------------------------------------------------------
     # Relationship operations
@@ -153,12 +157,16 @@ class SqliteAsyncStore:
         to_label: str,
         to_key: str,
         to_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any]:
         """Idempotent MERGE of a relationship.
 
         Returns ``{"rel_type", "from_name", "to_name",
         "from_obsidian_path"}`` on success, ``{}`` if either endpoint is
         missing — mirrors :meth:`Neo4jAsyncStore.merge_relation`.
+
+        Spec 001 FR-1: ``scope`` is forwarded to the sync store, which
+        stamps ``(org_id, user_id)`` on the edge.
         """
         rows = await self._run(
             self._sync.merge_relation,
@@ -169,6 +177,7 @@ class SqliteAsyncStore:
             to_label,
             to_key,
             to_value,
+            scope,
         )
         if not rows:
             return {}
@@ -287,11 +296,18 @@ class SqliteAsyncStore:
     ) -> list[dict[str, Any]]:
         return await self._run(self._sync.fulltext_search, query, limit, scope)
 
-    async def count_labels(self) -> dict[str, int]:
-        return await self._run(self._sync.count_labels)
+    async def count_labels(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> dict[str, int]:
+        return await self._run(self._sync.count_labels, scope)
 
-    async def lookup_node_label(self, name: str) -> str | None:
-        return await self._run(self._sync.lookup_node_label, name)
+    async def lookup_node_label(
+        self,
+        name: str,
+        scope: MemoryScope | None = None,
+    ) -> str | None:
+        return await self._run(self._sync.lookup_node_label, name, scope)
 
     async def run_pattern(
         self,
@@ -310,23 +326,34 @@ class SqliteAsyncStore:
     # Insight operations
     # ------------------------------------------------------------------
 
-    async def get_dismissed_titles(self) -> set[str]:
+    async def get_dismissed_titles(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> set[str]:
         # Sync method has a longer name (``get_dismissed_insight_titles``);
         # the async contract uses ``get_dismissed_titles`` to match Neo4j.
-        return await self._run(self._sync.get_dismissed_insight_titles)
+        return await self._run(self._sync.get_dismissed_insight_titles, scope)
 
-    async def get_approved_titles(self) -> set[str]:
+    async def get_approved_titles(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> set[str]:
         # Symmetric with get_dismissed_titles — sync has a longer name.
-        return await self._run(self._sync.get_approved_insight_titles)
+        return await self._run(self._sync.get_approved_insight_titles, scope)
 
-    async def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
-        return await self._run(self._sync.get_pending_insights, limit)
+    async def get_pending_insights(
+        self,
+        limit: int = 10,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.get_pending_insights, limit, scope)
 
     async def get_insight_by_title(
         self,
         title: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        return await self._run(self._sync.get_insight_by_title, title)
+        return await self._run(self._sync.get_insight_by_title, title, scope)
 
     async def update_insight_status(
         self,
@@ -354,37 +381,60 @@ class SqliteAsyncStore:
         self,
         source_query: str,
         statuses: list[str] | None = None,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
         return await self._run(
             self._sync.find_insight_by_source_query,
             source_query,
             statuses,
+            scope,
         )
 
     # ------------------------------------------------------------------
     # Reflect — pattern detection
     # ------------------------------------------------------------------
 
-    async def detect_cross_project_solutions(self) -> list[dict[str, Any]]:
-        return await self._run(self._sync.detect_cross_project_solutions)
+    async def detect_cross_project_solutions(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_cross_project_solutions, scope)
 
-    async def detect_shared_technology(self) -> list[dict[str, Any]]:
-        return await self._run(self._sync.detect_shared_technology)
+    async def detect_shared_technology(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_shared_technology, scope)
 
-    async def detect_training_opportunities(self) -> list[dict[str, Any]]:
-        return await self._run(self._sync.detect_training_opportunities)
+    async def detect_training_opportunities(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_training_opportunities, scope)
 
-    async def detect_technique_transfer(self) -> list[dict[str, Any]]:
-        return await self._run(self._sync.detect_technique_transfer)
+    async def detect_technique_transfer(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_technique_transfer, scope)
 
-    async def detect_concept_clusters(self) -> list[dict[str, Any]]:
-        return await self._run(self._sync.detect_concept_clusters)
+    async def detect_concept_clusters(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_concept_clusters, scope)
 
-    async def detect_stale_knowledge(self) -> list[dict[str, Any]]:
-        return await self._run(self._sync.detect_stale_knowledge)
+    async def detect_stale_knowledge(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_stale_knowledge, scope)
 
-    async def detect_under_connected_nodes(self) -> list[dict[str, Any]]:
-        return await self._run(self._sync.detect_under_connected_nodes)
+    async def detect_under_connected_nodes(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_under_connected_nodes, scope)
 
     # ------------------------------------------------------------------
     # Vector operations
@@ -412,6 +462,7 @@ class SqliteAsyncStore:
         self,
         query_embedding: list[float],
         limit: int = 10,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """k-ANN search returning ``[{node_id, label, name, score,
         summary, tags, confidence, updated_at}]``.
@@ -419,12 +470,14 @@ class SqliteAsyncStore:
         Renames the sync vec store's ``key`` field to ``name`` and
         forwards the enrichment fields so the hybrid scorer can populate
         ``summary``/``tags`` for pure-semantic hits (matches
-        :meth:`Neo4jAsyncStore.search_similar`).
+        :meth:`Neo4jAsyncStore.search_similar`). Spec 001 FR-2: ``scope``
+        flows through to the underlying vec store's scope filter.
         """
         rows = await self._run(
             self._vector.search_similar,
             query_embedding,
             limit,
+            scope,
         )
         return [
             {

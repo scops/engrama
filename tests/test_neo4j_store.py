@@ -11,6 +11,13 @@ import pytest
 
 from engrama.backends.neo4j.backend import Neo4jGraphStore
 from engrama.core.client import EngramaClient
+from engrama.core.scope import MemoryScope
+
+# Spec 001: reads are fail-closed — a node is only visible under a matching
+# ``(org_id, user_id)`` scope. The raw store does not stamp identity, so these
+# tests write the scope as plain node properties and read under the same scope.
+_SCOPE = MemoryScope(org_id="store-test-org", user_id="store-test-user")
+_SCOPE_PROPS = {"org_id": _SCOPE.org_id, "user_id": _SCOPE.user_id}
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -159,9 +166,9 @@ class TestFulltextSearch:
             "Decision",
             "title",
             "store-test-decision-ft",
-            {"rationale": "testing fulltext", "test": True},
+            {"rationale": "testing fulltext", "test": True, **_SCOPE_PROPS},
         )
-        results = store.fulltext_search("store-test-decision-ft", limit=5)
+        results = store.fulltext_search("store-test-decision-ft", limit=5, scope=_SCOPE)
         names = [r["name"] for r in results]
         assert "store-test-decision-ft" in names
 
@@ -178,8 +185,8 @@ class TestGetNeighbours:
         self,
         store: Neo4jGraphStore,
     ) -> None:
-        store.merge_node("Project", "name", "store-nb-proj", {"test": True})
-        store.merge_node("Technology", "name", "store-nb-tech", {"test": True})
+        store.merge_node("Project", "name", "store-nb-proj", {"test": True, **_SCOPE_PROPS})
+        store.merge_node("Technology", "name", "store-nb-tech", {"test": True, **_SCOPE_PROPS})
         store.merge_relation(
             "Project",
             "name",
@@ -189,7 +196,7 @@ class TestGetNeighbours:
             "name",
             "store-nb-tech",
         )
-        results = store.get_neighbours("Project", "name", "store-nb-proj")
+        results = store.get_neighbours("Project", "name", "store-nb-proj", scope=_SCOPE)
         assert len(results) >= 1
 
 
@@ -205,8 +212,8 @@ class TestCountLabels:
         self,
         store: Neo4jGraphStore,
     ) -> None:
-        store.merge_node("Concept", "name", "store-count-concept", {"test": True})
-        counts = store.count_labels()
+        store.merge_node("Concept", "name", "store-count-concept", {"test": True, **_SCOPE_PROPS})
+        counts = store.count_labels(scope=_SCOPE)
         assert isinstance(counts, dict)
         # At least one label should have data
         assert sum(counts.values()) >= 1

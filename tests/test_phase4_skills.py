@@ -10,10 +10,16 @@ import pytest
 
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
 from engrama.skills.associate import AssociateSkill
 from engrama.skills.forget import ForgetSkill
 from engrama.skills.recall import RecallSkill
 from engrama.skills.remember import RememberSkill
+
+# Spec 001 fail-closed: every scoped read filters by (org_id, user_id), so
+# the engine fixture pins a test scope and every seeded node carries it.
+_TEST_SCOPE = MemoryScope(org_id="test-phase4", user_id="test-phase4")
+_SCOPE_CYPHER_PARAMS = {"org_id": _TEST_SCOPE.org_id, "user_id": _TEST_SCOPE.user_id}
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -22,9 +28,11 @@ from engrama.skills.remember import RememberSkill
 
 @pytest.fixture()
 def engine() -> EngramaEngine:
-    """Create an EngramaEngine connected to the test Neo4j instance."""
+    """Create an EngramaEngine connected to the test Neo4j instance, pre-bound
+    to the test scope so writes carry it and scoped reads find seeded data.
+    """
     client = EngramaClient()
-    eng = EngramaEngine(client)
+    eng = EngramaEngine(client, default_scope=_TEST_SCOPE)
     yield eng
     client.close()
 
@@ -41,14 +49,18 @@ def seed_recall_data(neo4j_session) -> None:
     neo4j_session.run(
         "MERGE (p:Project {name: $proj}) "
         "SET p.test = true, p.status = 'active', p.description = 'Recall test project', "
+        "    p.org_id = $org_id, p.user_id = $user_id, "
         "    p.created_at = datetime(), p.updated_at = datetime() "
         "MERGE (t:Technology {name: $tech}) "
-        "SET t.test = true, t.created_at = datetime(), t.updated_at = datetime() "
+        "SET t.test = true, t.org_id = $org_id, t.user_id = $user_id, "
+        "    t.created_at = datetime(), t.updated_at = datetime() "
         "MERGE (prob:Problem {title: $prob}) "
         "SET prob.test = true, prob.status = 'open', "
+        "    prob.org_id = $org_id, prob.user_id = $user_id, "
         "    prob.created_at = datetime(), prob.updated_at = datetime() "
         "MERGE (c:Concept {name: $concept}) "
-        "SET c.test = true, c.created_at = datetime(), c.updated_at = datetime() "
+        "SET c.test = true, c.org_id = $org_id, c.user_id = $user_id, "
+        "    c.created_at = datetime(), c.updated_at = datetime() "
         "MERGE (p)-[:USES]->(t) "
         "MERGE (p)-[:HAS]->(prob) "
         "MERGE (prob)-[:APPLIES]->(c)",
@@ -57,6 +69,7 @@ def seed_recall_data(neo4j_session) -> None:
             "tech": "P4_FastAPI",
             "prob": "P4_MemoryLeak in worker pool",
             "concept": "P4_Caching",
+            **_SCOPE_CYPHER_PARAMS,
         },
     )
     # Neo4j fulltext indexes populate asynchronously; without awaiting,
@@ -70,10 +83,10 @@ def seed_old_node(neo4j_session) -> None:
     """Seed a node with an old updated_at for TTL archive test."""
     neo4j_session.run(
         "MERGE (t:Technology {name: $name}) "
-        "SET t.test = true, "
+        "SET t.test = true, t.org_id = $org_id, t.user_id = $user_id, "
         "    t.created_at = datetime() - duration({days: 400}), "
         "    t.updated_at = datetime() - duration({days: 400})",
-        {"name": "P4_ObsoleteTech"},
+        {"name": "P4_ObsoleteTech", **_SCOPE_CYPHER_PARAMS},
     )
 
 
@@ -82,10 +95,10 @@ def seed_old_node_purge(neo4j_session) -> None:
     """Seed a node with an old updated_at for TTL purge test."""
     neo4j_session.run(
         "MERGE (t:Technology {name: $name}) "
-        "SET t.test = true, "
+        "SET t.test = true, t.org_id = $org_id, t.user_id = $user_id, "
         "    t.created_at = datetime() - duration({days: 400}), "
         "    t.updated_at = datetime() - duration({days: 400})",
-        {"name": "P4_ObsoleteTechPurge"},
+        {"name": "P4_ObsoleteTechPurge", **_SCOPE_CYPHER_PARAMS},
     )
 
 
@@ -255,10 +268,12 @@ class TestAssociateSkill:
         # Seed nodes
         neo4j_session.run(
             "MERGE (p:Project {name: $proj}) SET p.test = true, "
+            "p.org_id = $org_id, p.user_id = $user_id, "
             "p.created_at = datetime(), p.updated_at = datetime() "
             "MERGE (t:Technology {name: $tech}) SET t.test = true, "
+            "t.org_id = $org_id, t.user_id = $user_id, "
             "t.created_at = datetime(), t.updated_at = datetime()",
-            {"proj": "P4_AssocProject", "tech": "P4_AssocTech"},
+            {"proj": "P4_AssocProject", "tech": "P4_AssocTech", **_SCOPE_CYPHER_PARAMS},
         )
 
         skill = AssociateSkill()
@@ -325,10 +340,12 @@ class TestAssociateSkill:
         """Associate works correctly with title-keyed nodes (Decision)."""
         neo4j_session.run(
             "MERGE (p:Problem {title: $prob}) SET p.test = true, "
+            "p.org_id = $org_id, p.user_id = $user_id, "
             "p.created_at = datetime(), p.updated_at = datetime() "
             "MERGE (d:Decision {title: $dec}) SET d.test = true, "
+            "d.org_id = $org_id, d.user_id = $user_id, "
             "d.created_at = datetime(), d.updated_at = datetime()",
-            {"prob": "P4_AssocProblem", "dec": "P4_AssocDecision"},
+            {"prob": "P4_AssocProblem", "dec": "P4_AssocDecision", **_SCOPE_CYPHER_PARAMS},
         )
 
         skill = AssociateSkill()
@@ -356,8 +373,9 @@ class TestForgetSkill:
         # Seed
         neo4j_session.run(
             "MERGE (t:Technology {name: $name}) SET t.test = true, "
-            "t.status = 'active', t.created_at = datetime(), t.updated_at = datetime()",
-            {"name": "P4_ForgetMe"},
+            "t.status = 'active', t.org_id = $org_id, t.user_id = $user_id, "
+            "t.created_at = datetime(), t.updated_at = datetime()",
+            {"name": "P4_ForgetMe", **_SCOPE_CYPHER_PARAMS},
         )
 
         skill = ForgetSkill()
@@ -378,8 +396,9 @@ class TestForgetSkill:
         """Forget with purge=True permanently deletes the node."""
         neo4j_session.run(
             "MERGE (t:Technology {name: $name}) SET t.test = true, "
+            "t.org_id = $org_id, t.user_id = $user_id, "
             "t.created_at = datetime(), t.updated_at = datetime()",
-            {"name": "P4_PurgeMe"},
+            {"name": "P4_PurgeMe", **_SCOPE_CYPHER_PARAMS},
         )
 
         skill = ForgetSkill()
@@ -401,8 +420,9 @@ class TestForgetSkill:
         """Forget correctly archives title-keyed nodes (Problem)."""
         neo4j_session.run(
             "MERGE (p:Problem {title: $title}) SET p.test = true, "
-            "p.status = 'open', p.created_at = datetime(), p.updated_at = datetime()",
-            {"title": "P4_ForgetProblem"},
+            "p.status = 'open', p.org_id = $org_id, p.user_id = $user_id, "
+            "p.created_at = datetime(), p.updated_at = datetime()",
+            {"title": "P4_ForgetProblem", **_SCOPE_CYPHER_PARAMS},
         )
 
         skill = ForgetSkill()

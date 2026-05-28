@@ -1,10 +1,11 @@
 """End-to-end multi-scope memory tests (DDR-003 Phase F / Roadmap P14).
 
 Exercises the full SDK pipeline: two Engrama instances on the same
-SQLite database, scoped to different users. Alice's writes go through
-``engine.merge_node`` with her scope properties; Bob's instance queries
-through ``hybrid_search`` / ``recall`` and never sees Alice's nodes —
-unless they were written at a broader scope (org-level, global).
+SQLite database, scoped to different users. Under fail-closed tenancy
+(Spec 001) Bob never sees Alice's nodes, and there is no broader-scope
+inheritance — org-level sharing is explicit via the ``__entity__``
+sentinel user. An unscoped (``default_scope=None``) instance is the
+system/admin path (export, audit, reindex) and still sees everything.
 """
 
 from __future__ import annotations
@@ -76,11 +77,16 @@ def _hermetic_env(monkeypatch, tmp_path):
 
 
 class TestSDKAutoEnv:
-    def test_no_env_no_kwargs_means_unscoped(self, _hermetic_env):
+    def test_no_env_no_kwargs_means_standalone(self, _hermetic_env):
+        # Spec 001 FR-7: zero-config resolves to a standalone single-user
+        # identity, never an unscoped None.
+        _hermetic_env.delenv("ENGRAMA_LOCAL_SUB", raising=False)
         from engrama import Engrama
 
         with Engrama(backend="sqlite") as eng:
-            assert eng._engine.default_scope is None
+            scope = eng._engine.default_scope
+            assert scope is not None
+            assert scope.org_id and scope.org_id == scope.user_id
 
     def test_env_only_populates_default_scope(self, _hermetic_env):
         _hermetic_env.setenv("ENGRAMA_USER_ID", "alice")
@@ -107,6 +113,10 @@ class TestSDKAutoEnv:
     def test_any_explicit_kwarg_disables_env_fallback(self, _hermetic_env):
         # If the caller passes ANY scope kwarg, env is ignored entirely
         # — explicit takes over. (Mixing the two would be confusing.)
+        # Spec 001 FR-7: a provenance-only override (e.g. ``session_id``
+        # without ``org_id``/``user_id``) still demands a complete identity
+        # on the engine, so org/user fall back to ``sub_local``. The session
+        # kwarg passes through as provenance.
         _hermetic_env.setenv("ENGRAMA_USER_ID", "alice")
         _hermetic_env.setenv("ENGRAMA_ORG_ID", "acme")
         from engrama import Engrama
@@ -115,8 +125,11 @@ class TestSDKAutoEnv:
             scope = eng._engine.default_scope
             assert scope is not None
             assert scope.session_id == "conv-1"
-            assert scope.user_id is None
-            assert scope.org_id is None
+            # Env values were ignored — the explicit kwarg disabled them.
+            assert scope.user_id != "alice"
+            assert scope.org_id != "acme"
+            # Spec 001 FR-7: org_id == user_id == sub_local (standalone).
+            assert scope.user_id and scope.user_id == scope.org_id
 
 
 # ---------------------------------------------------------------------------
@@ -154,25 +167,32 @@ class TestSDKMultiUserIsolation:
         assert "bob_thing" in bob_names
         assert "alice_thing" not in bob_names
 
-    def test_alice_sees_org_shared_and_global(self, shared_db):
+    def test_alice_sees_entity_shared_not_inherited(self, shared_db):
         from engrama import Engrama
 
-        # Org-level write — no user, only org.
-        with Engrama(backend="sqlite", db_path=shared_db, org_id="acme") as eng:
+        # Org-shared via the explicit __entity__ sentinel user under acme.
+        with Engrama(
+            backend="sqlite", db_path=shared_db, org_id="acme", user_id="__entity__"
+        ) as eng:
             eng.remember("Concept", "org_handbook", "the acme handbook")
 
-        # Global write — no scope at all.
+        # A bare org-only write (no user) — under fail-closed this is NOT
+        # inherited by org members; only __entity__ is shared.
+        with Engrama(backend="sqlite", db_path=shared_db, org_id="acme") as eng:
+            eng.remember("Concept", "org_only_doc", "acme org only")
+
+        # Global write — no scope at all. Not visible to a scoped reader.
         with Engrama(backend="sqlite", db_path=shared_db) as eng:
             eng.remember("Concept", "global_doc", "the public docs")
 
-        # Alice writes her own + sees everything from her org and global.
         with Engrama(backend="sqlite", db_path=shared_db, user_id="alice", org_id="acme") as eng:
             eng.remember("Concept", "alice_note", "alice's private")
-            names = {h["name"] for h in eng.search("handbook OR docs OR private")}
+            names = {h["name"] for h in eng.search("handbook OR docs OR private OR only")}
 
-        assert "alice_note" in names
-        assert "org_handbook" in names
-        assert "global_doc" in names
+        assert "alice_note" in names  # her own
+        assert "org_handbook" in names  # __entity__ org-shared, same org
+        assert "org_only_doc" not in names  # no bare-org inheritance
+        assert "global_doc" not in names  # no global bleed
 
     def test_other_org_isolated(self, shared_db):
         from engrama import Engrama
@@ -185,7 +205,7 @@ class TestSDKMultiUserIsolation:
 
         assert "acme_secret" not in names
 
-    def test_unscoped_caller_sees_everything(self, shared_db):
+    def test_standalone_caller_sees_only_its_own(self, shared_db):
         from engrama import Engrama
 
         with Engrama(backend="sqlite", db_path=shared_db, user_id="alice") as eng:
@@ -193,8 +213,10 @@ class TestSDKMultiUserIsolation:
         with Engrama(backend="sqlite", db_path=shared_db, user_id="bob") as eng:
             eng.remember("Concept", "bob_only", "bob private")
 
-        # Admin / unscoped Engrama sees both — useful for export, audit
-        # and reindex paths that need to see the full graph.
+        # Hard fail-closed: a no-scope caller resolves its OWN standalone
+        # sub_local identity and sees neither alice's nor bob's nodes. There is
+        # no "unscoped = see all"; admin/export uses explicit unscoped tooling.
         with Engrama(backend="sqlite", db_path=shared_db) as eng:
             names = {h["name"] for h in eng.search("private")}
-        assert {"alice_only", "bob_only"}.issubset(names)
+        assert "alice_only" not in names
+        assert "bob_only" not in names

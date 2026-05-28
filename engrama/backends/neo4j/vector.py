@@ -185,6 +185,8 @@ class Neo4jVectorStore:
 
     def count(self) -> int:
         """Return the total number of nodes with embeddings."""
+        # scope-exempt: engrama_status runtime introspection only — deployment-
+        # wide vector total, never wired into tenant-visible responses.
         records = self._client.run("MATCH (n:Embedded) RETURN count(n) AS total")
         return records[0]["total"] if records else 0
 
@@ -199,6 +201,9 @@ class Neo4jVectorStore:
         ``:Embedded`` node, resolved to the primary label + merge key so
         the dump is portable across backends.
         """
+        # scope-exempt: migration/export path — needed by ``engrama export``
+        # to dump every embedding regardless of tenant. Never called from a
+        # tenant-visible read path.
         records = self._client.run(
             "MATCH (n:Embedded) "
             "WITH n, [l IN labels(n) WHERE l <> 'Embedded'][0] AS label "

@@ -423,10 +423,14 @@ class TestEngineDecay:
 
     def test_delegates_to_store(self):
         from engrama.core.engine import EngramaEngine
+        from engrama.core.scope import MemoryScope
 
         mock_store = MagicMock()
         mock_store.decay_scores.return_value = {"decayed": 42, "archived": 3}
-        engine = EngramaEngine(mock_store)
+        engine = EngramaEngine(
+            mock_store,
+            default_scope=MemoryScope(org_id="test-temporal", user_id="test-temporal"),
+        )
 
         result = engine.decay_scores(rate=0.02, min_confidence=0.05)
         assert result == {"decayed": 42, "archived": 3}
@@ -439,10 +443,14 @@ class TestEngineDecay:
 
     def test_graceful_when_backend_lacks_decay(self):
         from engrama.core.engine import EngramaEngine
+        from engrama.core.scope import MemoryScope
 
         # A store without decay_scores attribute
         mock_store = MagicMock(spec=[])
-        engine = EngramaEngine(mock_store)
+        engine = EngramaEngine(
+            mock_store,
+            default_scope=MemoryScope(org_id="test-temporal", user_id="test-temporal"),
+        )
 
         result = engine.decay_scores()
         assert result == {"decayed": 0, "archived": 0}

@@ -61,7 +61,7 @@ class ProactiveSkill:
         Returns:
             A list of :class:`SurfacedInsight` ready for agent presentation.
         """
-        records = engine._store.get_pending_insights(limit=limit)
+        records = engine._store.get_pending_insights(limit=limit, scope=engine.default_scope)
 
         results: list[SurfacedInsight] = []
         for r in records:
@@ -144,8 +144,9 @@ class ProactiveSkill:
             A dict with ``title``, ``target_note``, ``written`` (bool),
             and ``reason`` if not written.
         """
-        # Verify the Insight is approved
-        insight = engine._store.get_insight_by_title(title)
+        # Verify the Insight is approved (scoped: callers may only act on
+        # Insights belonging to their own scope — see Spec 001 FR-2).
+        insight = engine._store.get_insight_by_title(title, scope=engine.default_scope)
 
         if insight is None:
             return {

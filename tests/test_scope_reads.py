@@ -1,9 +1,12 @@
-"""Read-side scope filter tests (DDR-003 Phase F / Roadmap P14).
+"""Read-side scope filter tests (Spec 001 — fail-closed tenancy).
 
 Covers the helpers `scope_filter_sql` / `scope_filter_cypher`, plus
-SQLite-backed integration tests that exercise the visibility rule
-end-to-end: alice sees her own + shared-org + global, never sees
-bob's, scope=None returns everything.
+SQLite-backed integration tests that exercise the fail-closed visibility
+rule end-to-end: a resolved scope sees only its own ``(org_id, user_id)``
+nodes plus the org-shared ``__entity__`` sentinel — no inheritance, no
+foreign-org or global bleed. A ``None``/empty scope at the helper level is
+the system/admin path (no filter); request-boundary fail-closed is enforced
+by the MCP resolver.
 """
 
 from __future__ import annotations
@@ -19,40 +22,65 @@ from engrama.core.scope import MemoryScope, scope_filter_cypher, scope_filter_sq
 
 
 class TestScopeFilterHelpers:
-    def test_sql_none_scope_returns_empty(self):
-        assert scope_filter_sql(None, "n") == ("", {})
+    def test_sql_none_scope_matches_nothing(self):
+        # Hard fail-closed (Spec 001 FR-5): no scope is a bug, never "see all".
+        assert scope_filter_sql(None, "n") == ("(1 = 0)", {})
 
-    def test_sql_empty_scope_returns_empty(self):
-        assert scope_filter_sql(MemoryScope(), "n") == ("", {})
+    def test_sql_empty_scope_matches_nothing(self):
+        assert scope_filter_sql(MemoryScope(), "n") == ("(1 = 0)", {})
 
-    def test_sql_single_dimension(self):
-        clause, params = scope_filter_sql(MemoryScope(user_id="alice"), "n")
-        assert clause == "(n.user_id IS NULL OR n.user_id = :scope_user_id)"
-        assert params == {"scope_user_id": "alice"}
+    def test_sql_incomplete_scope_matches_nothing(self):
+        # Only one of the (org_id, user_id) pair → incomplete → match nothing.
+        assert scope_filter_sql(MemoryScope(user_id="alice"), "n") == ("(1 = 0)", {})
+        assert scope_filter_sql(MemoryScope(org_id="acme"), "n") == ("(1 = 0)", {})
 
-    def test_sql_multiple_dimensions(self):
+    def test_sql_complete_scope(self):
+        # The (org_id, user_id) pair; user_id predicate includes the
+        # __entity__ org-shared sentinel.
         clause, params = scope_filter_sql(MemoryScope(user_id="alice", org_id="acme"), "n")
-        # Dimension order is org → user → agent → session.
         assert clause == (
-            "(n.org_id IS NULL OR n.org_id = :scope_org_id)"
-            " AND (n.user_id IS NULL OR n.user_id = :scope_user_id)"
+            "(n.org_id = :scope_org_id AND n.user_id IN (:scope_user_id, :scope_entity))"
         )
-        assert params == {"scope_org_id": "acme", "scope_user_id": "alice"}
+        assert params == {
+            "scope_org_id": "acme",
+            "scope_user_id": "alice",
+            "scope_entity": "__entity__",
+        }
+
+    def test_sql_ignores_agent_and_session(self):
+        # agent_id/session_id are provenance, never part of the filter (R-1).
+        clause, params = scope_filter_sql(
+            MemoryScope(org_id="acme", user_id="alice", agent_id="bot", session_id="conv"), "n"
+        )
+        assert "agent_id" not in clause
+        assert "session_id" not in clause
+        assert set(params) == {"scope_org_id", "scope_user_id", "scope_entity"}
 
     def test_sql_with_json_column(self):
-        clause, _ = scope_filter_sql(MemoryScope(user_id="alice"), "n", json_column="props")
+        clause, _ = scope_filter_sql(
+            MemoryScope(org_id="acme", user_id="alice"), "n", json_column="props"
+        )
         assert clause == (
-            "(json_extract(n.props, '$.user_id') IS NULL"
-            " OR json_extract(n.props, '$.user_id') = :scope_user_id)"
+            "(json_extract(n.props, '$.org_id') = :scope_org_id"
+            " AND json_extract(n.props, '$.user_id') IN (:scope_user_id, :scope_entity))"
         )
 
-    def test_cypher_none_scope_returns_empty(self):
-        assert scope_filter_cypher(None, "node") == ("", {})
+    def test_cypher_none_scope_matches_nothing(self):
+        assert scope_filter_cypher(None, "node") == ("(false)", {})
 
-    def test_cypher_single_dimension(self):
-        clause, params = scope_filter_cypher(MemoryScope(user_id="alice"), "node")
-        assert clause == "(node.user_id IS NULL OR node.user_id = $scope_user_id)"
-        assert params == {"scope_user_id": "alice"}
+    def test_cypher_incomplete_scope_matches_nothing(self):
+        assert scope_filter_cypher(MemoryScope(user_id="alice"), "node") == ("(false)", {})
+
+    def test_cypher_complete_scope(self):
+        clause, params = scope_filter_cypher(MemoryScope(user_id="alice", org_id="acme"), "node")
+        assert clause == (
+            "(node.org_id = $scope_org_id AND node.user_id IN [$scope_user_id, $scope_entity])"
+        )
+        assert params == {
+            "scope_org_id": "acme",
+            "scope_user_id": "alice",
+            "scope_entity": "__entity__",
+        }
 
     @pytest.mark.parametrize(
         "bad",
@@ -124,34 +152,36 @@ def _seed(store: SqliteGraphStore) -> None:
 
 
 class TestSqliteFulltextScope:
-    def test_no_scope_sees_everything(self, store):
+    def test_no_scope_sees_nothing(self, store):
+        # Hard fail-closed: a read with no scope is a bug → zero rows, never all.
         _seed(store)
         names = {r["name"] for r in store.fulltext_search("memo OR handbook OR thing")}
-        assert names == {"alice_secret", "org_shared", "bob_secret", "public_memo"}
+        assert names == set()
 
-    def test_alice_sees_own_org_and_global(self, store):
+    def test_alice_sees_only_her_own(self, store):
         _seed(store)
         scope = MemoryScope(user_id="alice", org_id="acme")
         names = {r["name"] for r in store.fulltext_search("memo OR handbook OR thing", scope=scope)}
-        # Visible: alice_secret (matches user), org_shared (no user_id),
-        # public_memo (no scope at all). Not visible: bob_secret.
-        assert names == {"alice_secret", "org_shared", "public_memo"}
+        # Fail-closed: no inheritance. Visible only: alice_secret. NOT visible:
+        # org_shared (no user_id), public_memo (no scope), bob_secret (other user).
+        assert names == {"alice_secret"}
         assert "bob_secret" not in names
+        assert "org_shared" not in names
 
     def test_other_org_isolated(self, store):
         _seed(store)
         scope = MemoryScope(org_id="other_corp")
         names = {r["name"] for r in store.fulltext_search("memo OR handbook OR thing", scope=scope)}
-        # Only the unscoped "public_memo" is visible to a foreign org.
-        assert names == {"public_memo"}
+        # A foreign org sees nothing seeded (no fail-open inheritance to global).
+        assert names == set()
 
-    def test_empty_scope_acts_as_no_filter(self, store):
+    def test_empty_scope_matches_nothing(self, store):
         _seed(store)
         names = {
             r["name"]
             for r in store.fulltext_search("memo OR handbook OR thing", scope=MemoryScope())
         }
-        assert names == {"alice_secret", "org_shared", "bob_secret", "public_memo"}
+        assert names == set()
 
 
 # ---------------------------------------------------------------------------
@@ -179,11 +209,11 @@ class TestSqliteGetNeighboursScope:
         rows = store.get_neighbours("Concept", "name", "bob_secret", scope=scope)
         assert rows == []
 
-    def test_no_scope_traverses_freely(self, store):
+    def test_no_scope_traverses_nothing(self, store):
+        # Hard fail-closed: traversal with no scope returns no start node.
         _seed(store)
         store.merge_relation(
             "Concept", "name", "alice_secret", "RELATED_TO", "Concept", "name", "bob_secret"
         )
         rows = store.get_neighbours("Concept", "name", "alice_secret")
-        neighbour_names = {row["neighbour"]["name"] for row in rows}
-        assert "bob_secret" in neighbour_names
+        assert rows == []

@@ -536,11 +536,79 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         return cmd_migrate_keys(args)
     if args.migrate_command == "timestamps":
         return cmd_migrate_timestamps(args)
+    if args.migrate_command == "tenancy":
+        return cmd_migrate_tenancy(args)
     print(
-        "Usage: engrama migrate <keys|timestamps>",
+        "Usage: engrama migrate <keys|timestamps|tenancy>",
         file=sys.stderr,
     )
     return 1
+
+
+def cmd_migrate_tenancy(args: argparse.Namespace) -> int:
+    """Backfill ``(owner_sub, owner_sub)`` onto every identity-less row.
+
+    A pre-Spec-001 graph carries no ``org_id`` / ``user_id`` on its nodes
+    and edges; under fail-closed reads those rows are invisible to every
+    scope. This command stamps ownership so an upgrade restores
+    visibility. Mandatory dry-run first; pass ``--apply`` to write.
+    """
+    if not args.dry_run and not args.apply:
+        print(
+            "Pass --dry-run to preview or --apply to write. The migration "
+            "is destructive enough that the caller must choose.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.dry_run and args.apply:
+        print("--dry-run and --apply are mutually exclusive.", file=sys.stderr)
+        return 2
+
+    try:
+        from engrama.backends import create_stores
+        from engrama.migrate import migrate_tenancy
+
+        graph_store, _ = create_stores()
+        try:
+            summary = migrate_tenancy(
+                graph_store,
+                owner_sub=args.owner_sub,
+                dry_run=args.dry_run,
+                apply=args.apply,
+            )
+        finally:
+            close = getattr(graph_store, "close", None)
+            if callable(close):
+                close()
+
+        verb = "Would stamp" if summary["dry_run"] else "Stamped"
+        purge_verb = "would purge" if summary["dry_run"] else "purged"
+        nodes_key = "nodes_to_stamp" if summary["dry_run"] else "nodes_stamped"
+        rels_key = "relations_to_stamp" if summary["dry_run"] else "relations_stamped"
+        orphans_key = "orphans_to_purge" if summary["dry_run"] else "orphans_purged"
+        print(
+            f"{verb} owner_sub={summary['owner_sub']!r} onto "
+            f"{summary[nodes_key]} node(s) and {summary[rels_key]} relation(s); "
+            f"{purge_verb} {summary[orphans_key]} orphan node(s)."
+        )
+
+        sample_nodes = (summary.get("sample") or {}).get("nodes_to_stamp") or []
+        for entry in sample_nodes[:10]:
+            print(f"  - {entry['label']}/{entry['key_value']!r}")
+        if len(sample_nodes) > 10:
+            print(f"  … ({len(sample_nodes) - 10} more)")
+
+        if args.report:
+            Path(args.report).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.report).write_text(
+                json.dumps(summary, indent=2, default=str),
+                encoding="utf-8",
+            )
+            print(f"Report written to {args.report}")
+        return 0
+    except Exception as e:
+        print(f"migrate tenancy failed: {e}", file=sys.stderr)
+        return 1
 
 
 def cmd_migrate_keys(args: argparse.Namespace) -> int:
@@ -1014,6 +1082,44 @@ def main() -> None:
         "--apply",
         action="store_true",
         help="Actually rewrite the values. Without this flag the command counts and exits.",
+    )
+
+    p_migrate_tenancy = migrate_sub.add_parser(
+        "tenancy",
+        help=(
+            "Backfill (org_id, user_id) = (owner_sub, owner_sub) onto every "
+            "identity-less node and relation, and purge true orphans "
+            "(Spec 001 T040). Mandatory: --dry-run XOR --apply."
+        ),
+    )
+    p_migrate_tenancy.add_argument(
+        "--owner-sub",
+        dest="owner_sub",
+        required=True,
+        help=(
+            "Identity to stamp onto every identity-less row. In standalone "
+            "OSS this is the value of ENGRAMA_LOCAL_SUB / "
+            "~/.engrama/local_sub. In SaaS deployments choose the single "
+            "tenant being migrated (the spec assumes one — see OQ-7)."
+        ),
+    )
+    p_migrate_tenancy.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would change without writing.",
+    )
+    p_migrate_tenancy.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write the migration. Mutually exclusive with --dry-run.",
+    )
+    p_migrate_tenancy.add_argument(
+        "--report",
+        default=None,
+        help=(
+            "Write the full report JSON to this path. Recommended for prod "
+            "runs so the apply step has an auditable record."
+        ),
     )
 
     # --- bench (Roadmap P15) ---

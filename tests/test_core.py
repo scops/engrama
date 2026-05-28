@@ -16,6 +16,13 @@ import pytest
 
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
+
+# Spec 001 T011: writes need a complete (org_id, user_id) scope. Tests in
+# this file exercise engine writes; pinning a known test scope on the
+# fixture keeps them aligned with the fail-closed contract without
+# diluting the actual subject under test.
+_TEST_SCOPE = MemoryScope(org_id="test-core", user_id="test-core")
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -37,7 +44,7 @@ def client() -> EngramaClient:
 @pytest.fixture(scope="session")
 def engine(client: EngramaClient) -> EngramaEngine:
     """Session-scoped Engrama engine backed by the test client."""
-    return EngramaEngine(client)
+    return EngramaEngine(client, default_scope=_TEST_SCOPE)
 
 
 @pytest.fixture(autouse=True)

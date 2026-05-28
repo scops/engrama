@@ -19,7 +19,12 @@ import pytest
 
 from engrama.backends.sqlite import SqliteGraphStore
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
 from engrama.embeddings.health import is_degenerate_vector
+
+# Spec 001 T011: engine.merge_node now requires a complete (org_id, user_id).
+# Pin a test scope so the embed-on-write path actually runs.
+_TEST_SCOPE = MemoryScope(org_id="test-degen", user_id="test-degen")
 
 # ----------------------------------------------------------------------
 # Unit: is_degenerate_vector
@@ -110,7 +115,7 @@ def _make_engine(
 ) -> tuple[EngramaEngine, _MockEmbedder, _RecordingVectorStore]:
     embedder = _MockEmbedder(embedder_response)
     vector = _RecordingVectorStore()
-    engine = EngramaEngine(store, vector_store=vector, embedder=embedder)
+    engine = EngramaEngine(store, vector_store=vector, embedder=embedder, default_scope=_TEST_SCOPE)
     return engine, embedder, vector
 
 

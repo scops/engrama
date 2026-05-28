@@ -2,20 +2,131 @@
 
 Runs without any external service — exercises an in-memory SQLite
 database so CI doesn't need Neo4j, Docker, or filesystem state.
+
+Spec 001 fail-closed migration: the store fixture wraps a real
+``SqliteGraphStore`` in :class:`_ScopedStoreProxy` so writes auto-stamp the
+test scope and scoped reads auto-forward it. Tests exercise backend
+behaviour (FTS5, detect_*, traversal); the cross-tenant guarantees live in
+``tests/test_scope_failclosed.py`` and ``tests/test_tenancy_isolation.py``.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import pytest
 
 from engrama.backends.sqlite import SqliteGraphStore
 from engrama.backends.sqlite.store import _sanitize_fts5_query
+from engrama.core.scope import MemoryScope
+
+_TEST_SCOPE = MemoryScope(org_id="o-test", user_id="u-test")
+_SCOPE_PROPS = {"org_id": "o-test", "user_id": "u-test"}
+
+
+class _ScopedStoreProxy:
+    """Auto-stamp ``_TEST_SCOPE`` on writes and forward it to scoped reads.
+
+    Backend tests pre-date the Spec 001 fail-closed migration — they call
+    raw store methods without a scope. Threading the scope through every
+    test would dilute the actual subject (FTS5 / detect_* / traversal), so
+    this proxy applies the scope at the fixture boundary. Tenant isolation
+    itself is exercised by the dedicated ``test_scope_*`` / ``test_tenancy_*``
+    suites.
+    """
+
+    def __init__(self, inner: SqliteGraphStore, scope: MemoryScope) -> None:
+        self._inner = inner
+        self._scope = scope
+
+    def __getattr__(self, name: str) -> Any:
+        # Anything not overridden below (close, init_schema, get_node, ...)
+        # passes through to the underlying store.
+        return getattr(self._inner, name)
+
+    # ---- writes ------------------------------------------------------
+
+    def merge_node(self, label, key_field, key_value, properties, embedding=None):
+        properties = {**_SCOPE_PROPS, **properties}
+        return self._inner.merge_node(label, key_field, key_value, properties, embedding)
+
+    def seed_domain(self, name, description):
+        # Re-route through the proxy's merge_node so scope props land.
+        self.merge_node("Domain", "name", name, {"description": description})
+
+    def seed_concept_in_domain(self, concept_name, domain_name):
+        self.merge_node("Concept", "name", concept_name, {})
+        self._inner.merge_relation(
+            "Concept", "name", concept_name, "IN_DOMAIN", "Domain", "name", domain_name
+        )
+
+    # ---- scoped reads ------------------------------------------------
+
+    def count_labels(self, scope=None):
+        return self._inner.count_labels(scope=scope or self._scope)
+
+    def lookup_node_label(self, name, scope=None):
+        return self._inner.lookup_node_label(name, scope=scope or self._scope)
+
+    def fulltext_search(self, query, limit=10, scope=None):
+        return self._inner.fulltext_search(query, limit=limit, scope=scope or self._scope)
+
+    def get_neighbours(self, label, key_field, key_value, hops=1, limit=50, scope=None):
+        return self._inner.get_neighbours(
+            label, key_field, key_value, hops=hops, limit=limit, scope=scope or self._scope
+        )
+
+    def get_node_with_neighbours(self, label, key_field, key_value, hops=1, scope=None):
+        return self._inner.get_node_with_neighbours(
+            label, key_field, key_value, hops=hops, scope=scope or self._scope
+        )
+
+    def list_existing_nodes(self, limit=200, scope=None):
+        return self._inner.list_existing_nodes(limit=limit, scope=scope or self._scope)
+
+    def get_pending_insights(self, limit=10, scope=None):
+        return self._inner.get_pending_insights(limit=limit, scope=scope or self._scope)
+
+    def get_insight_by_title(self, title, scope=None):
+        return self._inner.get_insight_by_title(title, scope=scope or self._scope)
+
+    def get_dismissed_insight_titles(self, scope=None):
+        return self._inner.get_dismissed_insight_titles(scope=scope or self._scope)
+
+    def get_approved_insight_titles(self, scope=None):
+        return self._inner.get_approved_insight_titles(scope=scope or self._scope)
+
+    def find_insight_by_source_query(self, source_query, statuses=None, scope=None):
+        return self._inner.find_insight_by_source_query(
+            source_query, statuses=statuses, scope=scope or self._scope
+        )
+
+    def detect_cross_project_solutions(self, scope=None):
+        return self._inner.detect_cross_project_solutions(scope=scope or self._scope)
+
+    def detect_shared_technology(self, scope=None):
+        return self._inner.detect_shared_technology(scope=scope or self._scope)
+
+    def detect_training_opportunities(self, scope=None):
+        return self._inner.detect_training_opportunities(scope=scope or self._scope)
+
+    def detect_technique_transfer(self, scope=None):
+        return self._inner.detect_technique_transfer(scope=scope or self._scope)
+
+    def detect_concept_clusters(self, scope=None):
+        return self._inner.detect_concept_clusters(scope=scope or self._scope)
+
+    def detect_stale_knowledge(self, scope=None):
+        return self._inner.detect_stale_knowledge(scope=scope or self._scope)
+
+    def detect_under_connected_nodes(self, scope=None):
+        return self._inner.detect_under_connected_nodes(scope=scope or self._scope)
 
 
 @pytest.fixture()
 def store(tmp_path):
     s = SqliteGraphStore(tmp_path / "test.db")
-    yield s
+    yield _ScopedStoreProxy(s, _TEST_SCOPE)
     s.close()
 
 

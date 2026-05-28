@@ -635,6 +635,9 @@ def _neo4j_and_ollama_available() -> bool:
         return False
 
 
+_HYBRID_TEST_SCOPE_PROPS = {"org_id": "test-hybrid", "user_id": "test-hybrid"}
+
+
 @pytest.mark.skipif(
     not _neo4j_and_ollama_available(),
     reason="Neo4j and/or Ollama not available",
@@ -648,6 +651,7 @@ class TestHybridSearchIntegration:
         from engrama.backends.neo4j.backend import Neo4jGraphStore
         from engrama.backends.neo4j.vector import Neo4jVectorStore
         from engrama.core.client import EngramaClient
+        from engrama.core.scope import MemoryScope
         from engrama.embeddings.ollama import OllamaProvider
         from engrama.embeddings.text import node_to_text
 
@@ -656,6 +660,9 @@ class TestHybridSearchIntegration:
         self.embedder = OllamaProvider()
         self.vector = Neo4jVectorStore(self.client, dimensions=self.embedder.dimensions)
         self.vector.ensure_index()
+        # Spec 001: pin the test scope so seed nodes carry identity and the
+        # hybrid engine filters by it on read.
+        self.scope = MemoryScope(org_id="test-hybrid", user_id="test-hybrid")
 
         # Seed test nodes with embeddings
         test_nodes = [
@@ -663,13 +670,17 @@ class TestHybridSearchIntegration:
                 "Technology",
                 "name",
                 "TestHybridNeo4j",
-                {"description": "Graph database", "test": True},
+                {"description": "Graph database", "test": True, **_HYBRID_TEST_SCOPE_PROPS},
             ),
             (
                 "Technology",
                 "name",
                 "TestHybridPython",
-                {"description": "Programming language", "test": True},
+                {
+                    "description": "Programming language",
+                    "test": True,
+                    **_HYBRID_TEST_SCOPE_PROPS,
+                },
             ),
         ]
         for label, key, value, props in test_nodes:
@@ -689,7 +700,7 @@ class TestHybridSearchIntegration:
 
     def test_hybrid_search_returns_results(self):
         """Real hybrid search returns results with both score types."""
-        engine = HybridSearchEngine(self.graph, self.vector, self.embedder)
+        engine = HybridSearchEngine(self.graph, self.vector, self.embedder, scope=self.scope)
         results = engine.search("graph database", limit=5)
         names = [r.name for r in results]
         assert "TestHybridNeo4j" in names
@@ -702,6 +713,7 @@ class TestHybridSearchIntegration:
             self.graph,
             self.vector,
             NullProvider(),
+            scope=self.scope,
         )
         results = engine.search("TestHybridNeo4j", limit=5)
         assert any(r.name == "TestHybridNeo4j" for r in results)

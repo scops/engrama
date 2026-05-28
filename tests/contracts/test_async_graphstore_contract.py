@@ -17,12 +17,92 @@ from __future__ import annotations
 
 import os
 import uuid
+from typing import Any
 
 import pytest
+
+from engrama.core.scope import MemoryScope
+
+_TEST_SCOPE = MemoryScope(org_id="test-acontract", user_id="test-acontract")
+_SCOPE_PROPS = {"org_id": "test-acontract", "user_id": "test-acontract"}
 
 
 def _unique(prefix: str = "act") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+class _ScopedAsyncStoreProxy:
+    """Auto-stamp scope on writes; forward scope to scoped reads.
+
+    Mirrors the sync proxy in ``tests/contracts/test_graphstore_contract.py``.
+    """
+
+    def __init__(self, inner, scope: MemoryScope, *, add_test_flag: bool = False) -> None:
+        self._inner = inner
+        self._scope = scope
+        self._add_test_flag = add_test_flag
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+    async def merge_node(self, label, key_field, key_value, properties, embedding=None):
+        properties = {**_SCOPE_PROPS, **properties}
+        if self._add_test_flag:
+            properties.setdefault("test", True)
+        return await self._inner.merge_node(label, key_field, key_value, properties, embedding)
+
+    async def merge_relation(
+        self, from_label, from_key, from_value, rel_type, to_label, to_key, to_value, scope=None
+    ):
+        return await self._inner.merge_relation(
+            from_label,
+            from_key,
+            from_value,
+            rel_type,
+            to_label,
+            to_key,
+            to_value,
+            scope=scope or self._scope,
+        )
+
+    async def count_labels(self, scope=None):
+        return await self._inner.count_labels(scope=scope or self._scope)
+
+    async def lookup_node_label(self, name, scope=None):
+        return await self._inner.lookup_node_label(name, scope=scope or self._scope)
+
+    async def fulltext_search(self, query, limit=10, scope=None):
+        return await self._inner.fulltext_search(query, limit=limit, scope=scope or self._scope)
+
+    async def get_neighbours(self, label, key_field, key_value, hops=1, limit=50, scope=None):
+        return await self._inner.get_neighbours(
+            label, key_field, key_value, hops=hops, limit=limit, scope=scope or self._scope
+        )
+
+    async def get_node_with_neighbours(self, label, key_field, key_value, hops=1, scope=None):
+        return await self._inner.get_node_with_neighbours(
+            label, key_field, key_value, hops=hops, scope=scope or self._scope
+        )
+
+    async def get_dismissed_titles(self, scope=None):
+        return await self._inner.get_dismissed_titles(scope=scope or self._scope)
+
+    async def get_approved_titles(self, scope=None):
+        return await self._inner.get_approved_titles(scope=scope or self._scope)
+
+    async def get_pending_insights(self, limit=10, scope=None):
+        return await self._inner.get_pending_insights(limit=limit, scope=scope or self._scope)
+
+    async def get_insight_by_title(self, title, scope=None):
+        return await self._inner.get_insight_by_title(title, scope=scope or self._scope)
+
+    async def find_insight_by_source_query(self, source_query, statuses=None, scope=None):
+        return await self._inner.find_insight_by_source_query(
+            source_query, statuses=statuses, scope=scope or self._scope
+        )
 
 
 @pytest.fixture(params=["sqlite-async", "neo4j-async"])
@@ -31,7 +111,7 @@ async def store(request, tmp_path):
         from engrama.backends.sqlite import SqliteAsyncStore
 
         s = SqliteAsyncStore(tmp_path / "async-contract.db", vector_dimensions=0)
-        yield s
+        yield _ScopedAsyncStoreProxy(s, _TEST_SCOPE)
         await s.close()
         return
 
@@ -48,22 +128,7 @@ async def store(request, tmp_path):
         driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
         s = Neo4jAsyncStore(driver, database=os.getenv("NEO4J_DATABASE", "neo4j"))
 
-        # Tag every test node with test=True for cleanup.
-        original_merge = s.merge_node
-
-        async def _tagged_merge(label, key_field, key_value, properties, embedding=None):
-            tagged = dict(properties)
-            tagged.setdefault("test", True)
-            return await original_merge(
-                label,
-                key_field,
-                key_value,
-                tagged,
-                embedding=embedding,
-            )
-
-        s.merge_node = _tagged_merge  # type: ignore[method-assign]
-        yield s
+        yield _ScopedAsyncStoreProxy(s, _TEST_SCOPE, add_test_flag=True)
         try:
             await driver.execute_query(
                 "MATCH (n) WHERE n.test = true DETACH DELETE n",

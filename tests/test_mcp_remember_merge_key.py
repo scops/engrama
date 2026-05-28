@@ -238,7 +238,9 @@ async def test_inline_relation_resolves_title_keyed_target(tmp_path: Path) -> No
     from engrama import Engrama
 
     with Engrama(backend="sqlite", db_path=db) as eng:
-        nb = eng._store.get_neighbours("Concept", "name", "canonical-keys-policy")
+        nb = eng._store.get_neighbours(
+            "Concept", "name", "canonical-keys-policy", scope=eng._engine.default_scope
+        )
         targets = [
             (
                 n["neighbour"]["_labels"][0],
@@ -288,7 +290,9 @@ async def test_inline_relation_counter_does_not_lie_on_missed_match(
     from engrama import Engrama
 
     with Engrama(backend="sqlite", db_path=db) as eng:
-        nb = eng._store.get_neighbours("Concept", "name", "isolated-concept")
+        nb = eng._store.get_neighbours(
+            "Concept", "name", "isolated-concept", scope=eng._engine.default_scope
+        )
         assert counter == len(nb), (
             "relations_created must equal the number of edges actually "
             f"present in the graph: counter={counter}, edges={len(nb)}"

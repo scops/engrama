@@ -12,7 +12,14 @@ import pytest
 from engrama.adapters.obsidian import ObsidianAdapter
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
 from engrama.skills.proactive import ProactiveSkill
+
+# Spec 001 fail-closed: scoped reads only return nodes carrying the same
+# (org_id, user_id). Tests seed under this test scope and the engine fixture
+# pins the same scope so surface/approve/etc see the seeded Insights.
+_TEST_SCOPE = MemoryScope(org_id="test-proactive", user_id="test-proactive")
+_SCOPE_CYPHER_PARAMS = {"org_id": _TEST_SCOPE.org_id, "user_id": _TEST_SCOPE.user_id}
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -22,7 +29,7 @@ from engrama.skills.proactive import ProactiveSkill
 @pytest.fixture()
 def engine() -> EngramaEngine:
     client = EngramaClient()
-    eng = EngramaEngine(client)
+    eng = EngramaEngine(client, default_scope=_TEST_SCOPE)
     yield eng
     client.close()
 
@@ -34,16 +41,19 @@ def seed_pending_insights(neo4j_session) -> None:
         "MERGE (i:Insight {title: $t1}) "
         "SET i.test = true, i.body = $b1, i.confidence = 0.8, "
         "    i.status = 'pending', i.source_query = 'cross_project_solution', "
+        "    i.org_id = $org_id, i.user_id = $user_id, "
         "    i.created_at = datetime(), i.updated_at = datetime() "
         "MERGE (j:Insight {title: $t2}) "
         "SET j.test = true, j.body = $b2, j.confidence = 0.7, "
         "    j.status = 'pending', j.source_query = 'shared_technology', "
+        "    j.org_id = $org_id, j.user_id = $user_id, "
         "    j.created_at = datetime() - duration({hours: 1}), j.updated_at = datetime()",
         {
             "t1": "P6_TestInsight_CrossProject",
             "b1": "Solution from project A may apply to project B.",
             "t2": "P6_TestInsight_SharedTech",
             "b2": "Both projects use the same technology.",
+            **_SCOPE_CYPHER_PARAMS,
         },
     )
 
@@ -55,11 +65,13 @@ def seed_approved_insight(neo4j_session) -> None:
         "MERGE (i:Insight {title: $title}) "
         "SET i.test = true, i.body = $body, i.confidence = 0.85, "
         "    i.status = 'approved', i.source_query = 'training_opportunity', "
+        "    i.org_id = $org_id, i.user_id = $user_id, "
         "    i.approved_at = datetime(), "
         "    i.created_at = datetime(), i.updated_at = datetime()",
         {
             "title": "P6_ApprovedInsight_Training",
             "body": "The open problem relates to a concept taught in the course.",
+            **_SCOPE_CYPHER_PARAMS,
         },
     )
 

@@ -130,6 +130,21 @@ class SqliteGraphStore:
     def _init_schema_from_file(self) -> None:
         with open(_SCHEMA_PATH, encoding="utf-8") as f:
             self._conn.executescript(f.read())
+        # CREATE TABLE IF NOT EXISTS doesn't add columns to a pre-existing
+        # table, so pre-Spec-001 DBs need idempotent ALTERs to gain the
+        # new ``edges.org_id`` / ``edges.user_id`` columns. SQLite raises
+        # "duplicate column name" if the column already exists, which we
+        # swallow so the call is safe on every connection.
+        for stmt in (
+            "ALTER TABLE edges ADD COLUMN org_id TEXT",
+            "ALTER TABLE edges ADD COLUMN user_id TEXT",
+        ):
+            try:
+                self._conn.execute(stmt)
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_scope ON edges(org_id, user_id)")
         self._conn.commit()
 
     def init_schema(self, schema: Any = None) -> None:
@@ -330,11 +345,23 @@ class SqliteGraphStore:
         self._conn.commit()
         return {"matched": True, "deleted": 0}
 
-    def list_existing_nodes(self, limit: int = 200) -> list[dict[str, str]]:
-        cur = self._conn.execute(
-            "SELECT label, key_value AS name FROM nodes ORDER BY key_value LIMIT ?",
-            (limit,),
-        )
+    def list_existing_nodes(
+        self,
+        limit: int = 200,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, str]]:
+        """List existing nodes within ``scope`` for ingest deduplication.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty list.
+        """
+        scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+        sql = "SELECT label, key_value AS name FROM nodes"
+        params: dict[str, Any] = {"limit": limit}
+        if scope_clause:
+            sql += f" WHERE {scope_clause}"
+            params.update(scope_params)
+        sql += " ORDER BY key_value LIMIT :limit"
+        cur = self._conn.execute(sql, params)
         return [{"label": r["label"], "name": r["name"]} for r in cur.fetchall()]
 
     def iter_all_nodes(self) -> Iterator[dict[str, Any]]:
@@ -373,9 +400,19 @@ class SqliteGraphStore:
         to_label: str,
         to_key: str,
         to_value: str,
+        scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
         """Idempotent relationship insert. Silently no-op if an endpoint
         does not exist (mirrors Neo4j's MATCH-then-MERGE behaviour).
+
+        Spec 001 FR-1: when ``scope`` is supplied, the writer's
+        ``(org_id, user_id)`` is persisted on the edge so a future
+        relation-scoped read can filter without re-walking endpoints. On
+        an existing row, the scope is refreshed via ``ON CONFLICT … DO
+        UPDATE`` so a tenant re-asserting a relation reclaims it
+        idempotently. ``scope=None`` keeps the legacy unscoped path
+        intact for callers (export/import, migration) that don't have an
+        identity.
         """
         cur = self._conn.execute(
             "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
@@ -390,9 +427,15 @@ class SqliteGraphStore:
         if from_row is None or to_row is None:
             return []
         now = _now_iso()
+        org_id = scope.org_id if scope is not None else None
+        user_id = scope.user_id if scope is not None else None
         self._conn.execute(
-            "INSERT OR IGNORE INTO edges(from_id, rel_type, to_id, created_at) VALUES (?, ?, ?, ?)",
-            (from_row["id"], rel_type, to_row["id"], now),
+            "INSERT INTO edges(from_id, rel_type, to_id, created_at, org_id, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(from_id, rel_type, to_id) DO UPDATE SET "
+            "    org_id = COALESCE(excluded.org_id, edges.org_id), "
+            "    user_id = COALESCE(excluded.user_id, edges.user_id)",
+            (from_row["id"], rel_type, to_row["id"], now, org_id, user_id),
         )
         self._conn.commit()
         return [{"rel_type": rel_type}]
@@ -594,22 +637,42 @@ class SqliteGraphStore:
         root_node = {k: v for k, v in node.items() if k != "embedding"}
         return {"node": root_node, "neighbours": neighbours}
 
-    def lookup_node_label(self, name: str) -> str | None:
-        """Find a node by name OR title (case-insensitive). First match wins."""
-        cur = self._conn.execute(
-            "SELECT label FROM nodes WHERE LOWER(key_value) = LOWER(?) LIMIT 1",
-            (name,),
-        )
+    def lookup_node_label(
+        self,
+        name: str,
+        scope: MemoryScope | None = None,
+    ) -> str | None:
+        """Find a node by name (case-insensitive) within ``scope``. First match wins.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → ``None``.
+        """
+        scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+        sql = "SELECT label FROM nodes WHERE LOWER(key_value) = LOWER(:name)"
+        params: dict[str, Any] = {"name": name}
+        if scope_clause:
+            sql += f" AND {scope_clause}"
+            params.update(scope_params)
+        sql += " LIMIT 1"
+        cur = self._conn.execute(sql, params)
         row = cur.fetchone()
         return row["label"] if row else None
 
-    def count_labels(self) -> dict[str, int]:
-        """Per-label node count. Excludes Insight nodes (mirrors Neo4j)."""
-        cur = self._conn.execute(
-            "SELECT label, COUNT(*) AS n FROM nodes "
-            "WHERE label != 'Insight' "
-            "GROUP BY label ORDER BY n DESC",
-        )
+    def count_labels(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> dict[str, int]:
+        """Per-label node count within ``scope``. Excludes Insight nodes (mirrors Neo4j).
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty dict.
+        """
+        scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+        sql = "SELECT label, COUNT(*) AS n FROM nodes WHERE label != 'Insight'"
+        params: dict[str, Any] = {}
+        if scope_clause:
+            sql += f" AND {scope_clause}"
+            params.update(scope_params)
+        sql += " GROUP BY label ORDER BY n DESC"
+        cur = self._conn.execute(sql, params)
         return {r["label"]: r["n"] for r in cur.fetchall()}
 
     # ------------------------------------------------------------------
@@ -714,6 +777,9 @@ class SqliteGraphStore:
 
         Re-merging the node later clears ``valid_to`` (revival).
         """
+        # scope-exempt: temporal write helper invoked by the SDK
+        # `engine.expire_node` which the caller has already scoped; the
+        # lookup-by-key here just resolves the row to update.
         cur = self._conn.execute(
             "SELECT id, props FROM nodes WHERE label = ? AND key_value = ?",
             (label, key_value),
@@ -744,6 +810,9 @@ class SqliteGraphStore:
         native ``exp``. For typical graphs (<100k nodes) this is fast
         enough; if it ever bites we'll move to a SQLite extension.
         """
+        # scope-exempt: admin temporal-decay sweep — `engrama decay` runs
+        # cross-tenant maintenance; a SaaS gateway should restrict
+        # invocation. Matches Neo4j's `decay_confidence` exemption.
         import math
 
         label_filter = "AND label = ?" if label else ""
@@ -837,6 +906,9 @@ class SqliteGraphStore:
         label: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
+        # scope-exempt: admin temporal-view helper used by `engrama decay
+        # --dry-run` to preview affected rows; the matching Neo4j method
+        # carries the same exemption.
         """Return what was true at a given date (ISO string).
 
         Uses ISO lexicographic ordering — works because ISO timestamps
@@ -876,6 +948,10 @@ class SqliteGraphStore:
         """Soft-archive (or DELETE) nodes whose ``updated_at`` is older
         than *days*. Returns ``{"affected": int}``.
         """
+        # scope-exempt: admin TTL sweep — `engrama forget --ttl` runs
+        # cross-tenant maintenance. SaaS surface should gate this at a
+        # higher layer; OSS standalone is single-tenant so the unscoped
+        # sweep matches user intent.
         cutoff = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)).isoformat()
         cur = self._conn.execute(
             "SELECT id, props FROM nodes "
@@ -916,9 +992,18 @@ class SqliteGraphStore:
     # Insight operations (skills/proactive.py + skills/reflect.py)
     # ------------------------------------------------------------------
 
-    def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
-        cur = self._conn.execute(
-            """
+    def get_pending_insights(
+        self,
+        limit: int = 10,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Pending Insights within ``scope``, ordered by confidence DESC then
+        ``created_at`` DESC.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty list.
+        """
+        scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+        sql = """
             SELECT key_value AS title,
                    json_extract(props, '$.body')         AS body,
                    json_extract(props, '$.confidence')   AS confidence,
@@ -927,14 +1012,21 @@ class SqliteGraphStore:
             FROM nodes
             WHERE label = 'Insight'
               AND json_extract(props, '$.status') = 'pending'
-            ORDER BY confidence DESC, created_at DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
+        """
+        params: dict[str, Any] = {"limit": limit}
+        if scope_clause:
+            sql += f"      AND {scope_clause}\n"
+            params.update(scope_params)
+        sql += "            ORDER BY confidence DESC, created_at DESC LIMIT :limit"
+        cur = self._conn.execute(sql, params)
         return [dict(r) for r in cur.fetchall()]
 
     def update_insight_status(self, title: str, new_status: str) -> bool:
+        # scope-exempt: write path — the MCP `engrama_approve_insight` and SDK
+        # `ProactiveSkill.approve/dismiss` first call `get_insight_by_title`
+        # (scoped, fail-closed) to confirm ownership, then route here only
+        # when the read returned a row. Cross-tenant promotion is therefore
+        # blocked at the prior read.
         cur = self._conn.execute(
             "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
             (title,),
@@ -954,22 +1046,37 @@ class SqliteGraphStore:
         self._conn.commit()
         return True
 
-    def get_insight_by_title(self, title: str) -> dict[str, Any] | None:
-        cur = self._conn.execute(
-            """
+    def get_insight_by_title(
+        self,
+        title: str,
+        scope: MemoryScope | None = None,
+    ) -> dict[str, Any] | None:
+        """Fetch an Insight node by exact title, within ``scope``.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → ``None``.
+        """
+        scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+        sql = """
             SELECT json_extract(props, '$.status')       AS status,
                    json_extract(props, '$.body')         AS body,
                    json_extract(props, '$.confidence')   AS confidence,
                    json_extract(props, '$.source_query') AS source_query
             FROM nodes
-            WHERE label = 'Insight' AND key_value = ?
-            """,
-            (title,),
-        )
+            WHERE label = 'Insight' AND key_value = :title
+        """
+        params: dict[str, Any] = {"title": title}
+        if scope_clause:
+            sql += f"      AND {scope_clause}"
+            params.update(scope_params)
+        cur = self._conn.execute(sql, params)
         row = cur.fetchone()
         return dict(row) if row else None
 
     def mark_insight_synced(self, title: str, obsidian_path: str) -> bool:
+        # scope-exempt: write path — same shape as `update_insight_status`.
+        # `ProactiveSkill.write_to_vault` first reads the Insight via the
+        # scoped `get_insight_by_title`, so cross-tenant marking is blocked
+        # upstream.
         cur = self._conn.execute(
             "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
             (title,),
@@ -988,61 +1095,127 @@ class SqliteGraphStore:
         self._conn.commit()
         return True
 
-    def get_dismissed_insight_titles(self) -> set[str]:
-        cur = self._conn.execute(
+    def get_dismissed_insight_titles(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> set[str]:
+        """Titles of dismissed Insights within ``scope``.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty set.
+        """
+        scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+        sql = (
             "SELECT key_value FROM nodes WHERE label = 'Insight' "
-            "AND json_extract(props, '$.status') = 'dismissed'",
+            "AND json_extract(props, '$.status') = 'dismissed'"
         )
+        params: dict[str, Any] = {}
+        if scope_clause:
+            sql += f" AND {scope_clause}"
+            params.update(scope_params)
+        cur = self._conn.execute(sql, params)
         return {r["key_value"] for r in cur.fetchall()}
 
-    def get_approved_insight_titles(self) -> set[str]:
-        """Return titles of approved Insights.
+    def get_approved_insight_titles(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> set[str]:
+        """Titles of approved Insights within ``scope``.
 
         Used by reflect to skip patterns the user has already approved,
         so a re-run doesn't pin them back to ``status='pending'`` (the
         default applied by ``MERGE``).
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty set.
         """
-        cur = self._conn.execute(
+        scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+        sql = (
             "SELECT key_value FROM nodes WHERE label = 'Insight' "
-            "AND json_extract(props, '$.status') = 'approved'",
+            "AND json_extract(props, '$.status') = 'approved'"
         )
+        params: dict[str, Any] = {}
+        if scope_clause:
+            sql += f" AND {scope_clause}"
+            params.update(scope_params)
+        cur = self._conn.execute(sql, params)
         return {r["key_value"] for r in cur.fetchall()}
 
     def find_insight_by_source_query(
         self,
         source_query: str,
         statuses: list[str] | None = None,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
+        """Find an Insight by ``source_query`` and status, within ``scope``.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → ``None``.
+        """
         status_list = statuses or ["pending", "approved"]
-        placeholders = ", ".join(["?"] * len(status_list))
-        cur = self._conn.execute(
-            f"""
+        status_keys: list[str] = []
+        params: dict[str, Any] = {"sq": source_query}
+        for i, s in enumerate(status_list):
+            k = f"st{i}"
+            status_keys.append(f":{k}")
+            params[k] = s
+        scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+        sql = f"""
             SELECT key_value                            AS title,
                    json_extract(props, '$.status')      AS status
             FROM nodes
             WHERE label = 'Insight'
-              AND json_extract(props, '$.source_query') = ?
-              AND json_extract(props, '$.status') IN ({placeholders})
-            LIMIT 1
-            """,
-            (source_query, *status_list),
-        )
+              AND json_extract(props, '$.source_query') = :sq
+              AND json_extract(props, '$.status') IN ({", ".join(status_keys)})
+        """
+        if scope_clause:
+            sql += f"      AND {scope_clause}\n"
+            params.update(scope_params)
+        sql += "            LIMIT 1"
+        cur = self._conn.execute(sql, params)
         row = cur.fetchone()
         return dict(row) if row else None
 
     # ------------------------------------------------------------------
     # Reflect — pattern detection (skills/reflect.py)
     # ------------------------------------------------------------------
+    #
+    # Every detector restricts every joined ``nodes`` alias to the caller's
+    # scope (Spec 001 FR-12). A ``None``/incomplete scope yields ``(1=0)``
+    # from the helper for every alias, so the query short-circuits to zero
+    # rows — reflect cannot leak patterns across tenants.
 
-    def detect_cross_project_solutions(self) -> list[dict[str, Any]]:
+    @staticmethod
+    def _scope_and(
+        aliases: tuple[str, ...],
+        scope: MemoryScope | None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Build ``AND (scope_a) AND (scope_b)...`` SQL + params.
+
+        Returns ``("", {})`` when ``scope`` is empty so the caller can
+        unconditionally splice the fragment.
+        """
+        clauses: list[str] = []
+        params: dict[str, Any] = {}
+        for alias in aliases:
+            clause, p = scope_filter_sql(scope, alias, json_column="props")
+            if not clause:
+                continue
+            clauses.append(clause)
+            params.update(p)
+        if not clauses:
+            return "", {}
+        return " AND " + " AND ".join(clauses), params
+
+    def detect_cross_project_solutions(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
         """Open Problem in project B shares a Concept with a resolved
-        Problem in project A that has a Decision.
+        Problem in project A that has a Decision, within ``scope``.
 
         Returns rows ``{target_project, open_problem, decision,
         source_project, concept}``.
         """
-        cur = self._conn.execute(
-            """
+        scope_sql, scope_params = self._scope_and(("pB", "op", "c", "rp", "d", "pA"), scope)
+        sql = f"""
             SELECT DISTINCT
                 pB.key_value     AS target_project,
                 op.key_value     AS open_problem,
@@ -1066,17 +1239,20 @@ class SqliteGraphStore:
             JOIN nodes d  ON d.id = e4.to_id AND d.label = 'Decision'
             JOIN edges e5 ON e5.to_id = d.id AND e5.rel_type = 'INFORMED_BY'
             JOIN nodes pA ON pA.id = e5.from_id AND pA.label = 'Project'
-            WHERE pB.label = 'Project' AND pA.id != pB.id
-            """,
-        )
+            WHERE pB.label = 'Project' AND pA.id != pB.id{scope_sql}
+        """
+        cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
 
-    def detect_shared_technology(self) -> list[dict[str, Any]]:
+    def detect_shared_technology(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
         """Two distinct entities both connect to the same Technology via
-        USES / TEACHES / COMPOSED_OF.
+        USES / TEACHES / COMPOSED_OF, within ``scope``.
         """
-        cur = self._conn.execute(
-            """
+        scope_sql, scope_params = self._scope_and(("t", "a", "b"), scope)
+        sql = f"""
             SELECT DISTINCT
                 a.key_value AS entity_a, a.label AS type_a,
                 b.key_value AS entity_b, b.label AS type_b,
@@ -1090,15 +1266,18 @@ class SqliteGraphStore:
             JOIN nodes b  ON b.id = eb.from_id
             WHERE t.label = 'Technology'
               AND a.id < b.id
-              AND a.label != 'Insight' AND b.label != 'Insight'
-            """,
-        )
+              AND a.label != 'Insight' AND b.label != 'Insight'{scope_sql}
+        """
+        cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
 
-    def detect_training_opportunities(self) -> list[dict[str, Any]]:
-        """Vulnerability or open Problem shares a Concept with a Course."""
-        cur = self._conn.execute(
-            """
+    def detect_training_opportunities(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Vulnerability or open Problem shares a Concept with a Course, within ``scope``."""
+        scope_sql, scope_params = self._scope_and(("issue", "c", "course"), scope)
+        sql = f"""
             SELECT DISTINCT
                 issue.key_value AS issue,
                 issue.label     AS issue_type,
@@ -1110,26 +1289,43 @@ class SqliteGraphStore:
             JOIN nodes c  ON c.id = e1.to_id AND c.label = 'Concept'
             JOIN edges e2 ON e2.to_id = c.id AND e2.rel_type = 'COVERS'
             JOIN nodes course ON course.id = e2.from_id AND course.label = 'Course'
-            WHERE issue.label = 'Vulnerability'
+            WHERE (issue.label = 'Vulnerability'
                OR (issue.label = 'Problem'
-                   AND json_extract(issue.props, '$.status') = 'open')
-            """,
-        )
+                   AND json_extract(issue.props, '$.status') = 'open')){scope_sql}
+        """
+        cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
 
-    def detect_technique_transfer(self) -> list[dict[str, Any]]:
+    def detect_technique_transfer(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
         """Technique used in domain A could apply in domain B because
-        another entity in B shares a Concept with the technique.
+        another entity in B shares a Concept with the technique, within ``scope``.
+
+        Scope is applied inside both CTEs (so the technique and its domain
+        / concept all belong to the caller) and against the main-query
+        aliases ``d2`` and ``other`` so the target domain and the related
+        entity are also scoped.
         """
-        cur = self._conn.execute(
-            """
+        # CTEs need their own scope clauses so the same MemoryScope is
+        # threaded into ``t``, ``d``, ``c`` (CTE-internal) AND ``d2``,
+        # ``other`` (main query). All five share the same scope params.
+        cte_t, cte_t_params = self._scope_and(("t",), scope)
+        cte_d, _ = self._scope_and(("d",), scope)
+        cte_c, _ = self._scope_and(("c",), scope)
+        main_scope_sql, main_params = self._scope_and(("d2", "other"), scope)
+        # Param keys are identical across helpers (same scope), so merging
+        # is idempotent.
+        params: dict[str, Any] = {**cte_t_params, **main_params}
+        sql = f"""
             WITH technique_in_domain AS (
                 SELECT t.id AS t_id, t.key_value AS t_name,
                        d.id AS d_id, d.key_value AS d_name
                 FROM nodes t
                 JOIN edges e ON e.from_id = t.id AND e.rel_type = 'IN_DOMAIN'
                 JOIN nodes d ON d.id = e.to_id AND d.label = 'Domain'
-                WHERE t.label = 'Technique'
+                WHERE t.label = 'Technique'{cte_t}{cte_d}
             ),
             technique_concept AS (
                 SELECT t.id AS t_id, c.id AS c_id
@@ -1137,7 +1333,7 @@ class SqliteGraphStore:
                 JOIN edges e ON e.from_id = t.id
                             AND e.rel_type IN ('INSTANCE_OF', 'APPLIES')
                 JOIN nodes c ON c.id = e.to_id AND c.label = 'Concept'
-                WHERE t.label = 'Technique'
+                WHERE t.label = 'Technique'{cte_t}{cte_c}
             )
             SELECT
                 tid.t_name      AS technique,
@@ -1156,23 +1352,26 @@ class SqliteGraphStore:
                 WHERE from_id = tid.t_id
                   AND rel_type = 'IN_DOMAIN'
                   AND to_id = d2.id
-            )
+            ){main_scope_sql}
             GROUP BY tid.t_id, tid.d_id, d2.id
             ORDER BY related_entities DESC
             LIMIT 10
-            """,
-        )
+        """
+        cur = self._conn.execute(sql, params)
         return [dict(r) for r in cur.fetchall()]
 
-    def detect_concept_clusters(self) -> list[dict[str, Any]]:
-        """Concept connected to >= 3 entities via INSTANCE_OF/APPLIES.
+    def detect_concept_clusters(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Concept connected to >= 3 entities via INSTANCE_OF/APPLIES, within ``scope``.
 
         Returns ``{concept, entity_count, sample}`` with ``sample`` a
         list of up to 5 ``{name, label}`` dicts (mirrors Neo4j
         ``connected[..5]``).
         """
-        cur = self._conn.execute(
-            """
+        scope_sql, scope_params = self._scope_and(("c", "n"), scope)
+        sql = f"""
             SELECT
                 c.key_value AS concept,
                 COUNT(DISTINCT n.id) AS entity_count,
@@ -1183,13 +1382,13 @@ class SqliteGraphStore:
             JOIN edges e ON e.to_id = c.id
                         AND e.rel_type IN ('INSTANCE_OF', 'APPLIES')
             JOIN nodes n ON n.id = e.from_id
-            WHERE c.label = 'Concept'
+            WHERE c.label = 'Concept'{scope_sql}
             GROUP BY c.id
             HAVING COUNT(DISTINCT n.id) >= 3
             ORDER BY entity_count DESC
             LIMIT 10
-            """,
-        )
+        """
+        cur = self._conn.execute(sql, scope_params)
         results = []
         for r in cur.fetchall():
             sample = json.loads(r["sample_raw"])[:5]
@@ -1202,15 +1401,20 @@ class SqliteGraphStore:
             )
         return results
 
-    def detect_stale_knowledge(self) -> list[dict[str, Any]]:
+    def detect_stale_knowledge(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
         """Nodes >=90d stale or with confidence <0.3 connected to an
-        active Project or Course.
+        active Project or Course, within ``scope``.
         """
         cutoff = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=90)).isoformat()
-        # Edges in either direction connect n to active. We UNION ALL
-        # the two directions so SQLite can use the indexes on each side.
-        cur = self._conn.execute(
-            """
+        # The UNION runs the same shape twice (one per edge direction); both
+        # halves apply scope to ``n`` and ``active``. Same scope params are
+        # reused across halves via named placeholders.
+        scope_sql, scope_params = self._scope_and(("n", "active"), scope)
+        params: dict[str, Any] = {"cutoff": cutoff, **scope_params}
+        sql = f"""
             SELECT n_name, n_label, last_updated, confidence, project, rel
             FROM (
                 SELECT
@@ -1231,10 +1435,10 @@ class SqliteGraphStore:
                                       ) IN ('active', '')
                 WHERE n.label NOT IN ('Project', 'Course', 'Domain', 'Insight')
                   AND (
-                        n.updated_at < ?
+                        n.updated_at < :cutoff
                      OR (json_extract(n.props, '$.confidence') IS NOT NULL
                          AND CAST(json_extract(n.props, '$.confidence') AS REAL) < 0.3)
-                      )
+                      ){scope_sql}
                 UNION
                 SELECT
                     n.key_value, n.label, n.updated_at,
@@ -1250,16 +1454,15 @@ class SqliteGraphStore:
                                       ) IN ('active', '')
                 WHERE n.label NOT IN ('Project', 'Course', 'Domain', 'Insight')
                   AND (
-                        n.updated_at < ?
+                        n.updated_at < :cutoff
                      OR (json_extract(n.props, '$.confidence') IS NOT NULL
                          AND CAST(json_extract(n.props, '$.confidence') AS REAL) < 0.3)
-                      )
+                      ){scope_sql}
             )
             ORDER BY COALESCE(CAST(confidence AS REAL), 1.0) ASC, last_updated ASC
             LIMIT 15
-            """,
-            (cutoff, cutoff),
-        )
+        """
+        cur = self._conn.execute(sql, params)
         return [
             {
                 "name": r["n_name"],
@@ -1272,9 +1475,12 @@ class SqliteGraphStore:
             for r in cur.fetchall()
         ]
 
-    def detect_under_connected_nodes(self) -> list[dict[str, Any]]:
+    def detect_under_connected_nodes(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
         """Nodes with fewer than 2 *substantive* relationships (excluding
-        Domain/Insight and archived nodes).
+        Domain/Insight and archived nodes), within ``scope``.
 
         Edges to neighbours marked ``status = 'stub'`` are not counted —
         stubs are placeholder nodes created during ingest before their
@@ -1282,8 +1488,8 @@ class SqliteGraphStore:
         masks genuinely under-connected nodes whose only neighbours are
         placeholders.
         """
-        cur = self._conn.execute(
-            """
+        scope_sql, scope_params = self._scope_and(("n",), scope)
+        sql = f"""
             SELECT
                 n.key_value AS name,
                 n.label     AS label,
@@ -1300,13 +1506,13 @@ class SqliteGraphStore:
                 n.created_at AS created
             FROM nodes n
             WHERE n.label NOT IN ('Domain', 'Insight')
-              AND COALESCE(json_extract(n.props, '$.status'), '') != 'archived'
+              AND COALESCE(json_extract(n.props, '$.status'), '') != 'archived'{scope_sql}
             GROUP BY n.id
             HAVING rel_count < 2
             ORDER BY n.created_at DESC
             LIMIT 15
-            """,
-        )
+        """
+        cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
 
     # ------------------------------------------------------------------
@@ -1314,6 +1520,10 @@ class SqliteGraphStore:
     # ------------------------------------------------------------------
 
     def find_obsidian_path(self, label: str, name: str) -> str | None:
+        # scope-exempt: obsidian-sync internal — VAULT_PATH is per-deployment
+        # (Engrama-owned), not per-tenant; the caller (`ObsidianSync`) drives
+        # writes via the scoped engine. Surface this through a scoped wrapper
+        # only when a SaaS deployment carries per-tenant vaults.
         cur = self._conn.execute(
             "SELECT json_extract(props, '$.obsidian_path') AS path "
             "FROM nodes WHERE label = ? AND key_value = ?",
@@ -1323,6 +1533,8 @@ class SqliteGraphStore:
         return row["path"] if row and row["path"] else None
 
     def list_documented_nodes(self) -> list[dict[str, Any]]:
+        # scope-exempt: obsidian-sync internal listing for the
+        # archive-missing pass; runs against the single Engrama-owned vault.
         cur = self._conn.execute(
             "SELECT label, key_value AS name, "
             "       json_extract(props, '$.obsidian_path') AS path "
@@ -1334,6 +1546,8 @@ class SqliteGraphStore:
         """Like ``archive_node_by_name`` but used by the obsidian sync's
         archive-missing pass. Returns ``True`` if a node was matched.
         """
+        # scope-exempt: obsidian-sync archive-missing write. Same vault
+        # scope as `list_documented_nodes` above.
         cur = self._conn.execute(
             "SELECT id, props FROM nodes WHERE label = ? AND key_value = ?",
             (label, name),
@@ -1386,6 +1600,9 @@ class SqliteGraphStore:
         Returns ``1`` to mirror the unconditional counter in the Neo4j
         version (caller increments per call regardless of success).
         """
+        # scope-exempt: obsidian-sync wiki-link resolution; relies on the
+        # vault being single-tenant per deployment. A SaaS multi-tenant
+        # variant should add a scoped lookup wrapper alongside this one.
         cur = self._conn.execute(
             "SELECT label, key_value FROM nodes WHERE LOWER(key_value) = LOWER(?) LIMIT 1",
             (target_name,),
@@ -1455,6 +1672,9 @@ class SqliteGraphStore:
         vector (issue #18), so a follow-up ``engrama reindex`` heals
         them.
         """
+        # scope-exempt: admin reindex backfill — same rationale as
+        # `list_unembedded_nodes`. Embeddings stay on the source node so
+        # this never relocates data across tenants.
         if force:
             cur = self._conn.execute("SELECT id, label, props FROM nodes")
         else:
@@ -1481,6 +1701,10 @@ class SqliteGraphStore:
         opportunistic sweep and ``engrama_reindex``. Returns
         ``{engrama_id, label, key_field, key_value, props}``.
         """
+        # scope-exempt: admin reindex/sweep — backfills missing vectors across
+        # the whole graph; embedding lives on the same node it came from, so
+        # this never crosses tenant boundaries on the data side. The MCP
+        # reindex tool is gated separately (admin identity required).
         try:
             cur = self._conn.execute(
                 "SELECT n.label AS label, n.key_field AS key_field, "
@@ -1517,6 +1741,10 @@ class SqliteGraphStore:
 
     def _sync_fts(self, node_id: int, props: dict[str, Any]) -> None:
         """Mirror node text fields into the FTS5 index."""
+        # scope-exempt: internal write-side helper — called after a node's
+        # row has already been persisted (which the engine guard scoped).
+        # The FTS rowid is the nodes.id, so this writes only to the row
+        # the caller just touched.
         self._conn.execute("DELETE FROM nodes_fts WHERE rowid = ?", (node_id,))
         cols = ", ".join(_FTS_FIELDS)
         placeholders = ", ".join(["?"] * len(_FTS_FIELDS))

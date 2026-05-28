@@ -9,6 +9,82 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-28
+
+> **Breaking — pre-1.0 minor bump (semver `0.x`).** This release introduces
+> fail-closed multi-tenant scoping. Per Constitution P9 it is a
+> MAJOR-equivalent change; while the package is pre-1.0 that is expressed as a
+> minor bump with migration notes (OQ-10, resolved 2026-05-28). `0.12.0` was the
+> earlier non-breaking docs/latency release, so the breaking work takes `0.13.0`.
+> `1.0.0` is reserved for when the tenancy/sharing model is declared stable.
+
+### Breaking (Spec 001 — multi-tenant identity-scoped memory)
+
+> All reads and writes are now keyed by `(org_id, user_id)`. A node or relation
+> that doesn't carry both is invisible to every scope. Existing installations
+> MUST run the migration command below before serving traffic on the new
+> release — otherwise pre-existing data appears to have vanished. Detailed
+> design lives under `specs/001-tenant-scoped-memory/`.
+
+- **Fail-closed read filter.** Every read path (`engrama_search`,
+  `engrama_context`, `engrama_reflect`, `engrama_surface_insights`,
+  `engrama_approve_insight`, `engrama_write_insight_to_vault`, the seven
+  reflect detectors, both backends' `count_labels` / `lookup_node_label` /
+  Insight queries / `list_existing_nodes`) filters by the resolved scope.
+  Incomplete scope ⇒ zero results, never "see-all" (FR-5).
+- **Write-identity guard.** `EngramaEngine.merge_node` and
+  `EngramaEngine.merge_relation` raise `ScopeIncomplete` when the effective
+  scope is missing or partial; the MCP boundary translates the request-time
+  `ScopeUnresolved` into an explicit `status: "error"` for every write tool
+  (`engrama_remember`, `engrama_relate`, `engrama_ingest`, `engrama_sync_note`,
+  `engrama_sync_vault`, `engrama_reflect`, `engrama_approve_insight`,
+  `engrama_write_insight_to_vault`, `engrama_reindex`). Identity-less writes
+  no longer touch the graph or the vault.
+- **Per-request scope resolver.** `resolve_scope(ctx)` reads
+  `X-Engrama-Org-Id` / `X-Engrama-User-Id` request headers; both headers
+  present resolves to that scope, both absent falls back to a stable
+  per-install `sub_local` identity (zero-config standalone, FR-7), exactly
+  one present raises `ScopeUnresolved` (no silent broadening, FR-3).
+- **Relations carry identity.** Every edge persists `(org_id, user_id)` at
+  write time, so a future relation-scoped read can filter without re-walking
+  endpoints (FR-1). SQLite gains nullable `edges.org_id` / `edges.user_id`
+  columns plus `idx_edges_scope` — an idempotent `ALTER TABLE` runs on
+  connect for pre-Spec-001 databases.
+- **SDK scope completion.** `Engrama(...)` zero-config resolves to
+  `(sub_local, sub_local)`. A lone `user_id` (or lone `org_id`) is mirrored
+  into the other dimension. A provenance-only override
+  (`session_id="…"` / `agent_id="…"` without identity) still falls back to
+  `sub_local` for `(org_id, user_id)` while keeping the provenance through.
+- **Composite Neo4j indexes.** A per-label range index on
+  `(n.org_id, n.user_id)` for every queried label, in both
+  `engrama/backends/neo4j/schema.cypher` and `scripts/init-schema.cypher`
+  (R-6 / NFR-3).
+- **Scoped logging context.** A `contextvars.ContextVar` plus
+  `logging.Filter` injects hashed (`sha256[:8]`) `scope_org` / `scope_user`
+  fields onto every log record emitted inside a request, so an aggregator
+  can group lines by tenant without leaking raw IDs (T009a / NFR-2).
+- **CI scope guard.** `scripts/check_scoped_queries.py` walks the backend
+  modules and flags any `MATCH (` / `FROM nodes` / `FROM edges` literal
+  whose enclosing function neither routes through the scope helper, sits in
+  an auto-exempt write/admin family, nor carries an inline
+  `# scope-exempt: <reason>` comment. Wired into CI as a warn-only
+  `scope-guard` job — flipped to blocking once Phases 5–7 land.
+- **Migration CLI.** `engrama migrate tenancy --owner-sub <sub>
+  [--dry-run|--apply]` backfills `(owner_sub, owner_sub)` onto every
+  identity-less node and relation and purges true orphans. Mandatory
+  dry-run first; `--report path.json` writes an auditable record. Required
+  on any installation that pre-dates this release.
+
+#### How to upgrade
+
+1. Stop the MCP server.
+2. Optional: back up the SQLite DB (`~/.engrama/engrama.db`) or Neo4j volume.
+3. Pick the identity to stamp pre-existing data with — usually the value of
+   `ENGRAMA_LOCAL_SUB` (or the contents of `~/.engrama/local_sub`).
+4. `engrama migrate tenancy --owner-sub <sub> --dry-run` — review the
+   counts. Re-run with `--apply` once they look right.
+5. Restart. Reads return data again.
+
 ### Added
 - **Streamable HTTP transport for the MCP server.** Switchable via
   `ENGRAMA_TRANSPORT=http` (default stays `stdio`, so existing Claude

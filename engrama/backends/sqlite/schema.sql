@@ -3,7 +3,7 @@
 
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 -- Core node table. props is a JSON blob carrying every domain property
 -- (description, status, summary, tags, confidence, valid_from, ...) so
@@ -22,16 +22,26 @@ CREATE INDEX IF NOT EXISTS idx_nodes_label   ON nodes(label);
 CREATE INDEX IF NOT EXISTS idx_nodes_updated ON nodes(updated_at);
 
 -- Directed edges between nodes. Idempotent via UNIQUE constraint.
+-- org_id/user_id are stamped at write time (Spec 001, FR-1) so a relation
+-- carries the writer's identity independently of its endpoints. Both are
+-- nullable for back-compat with pre-Spec-001 rows; the migration CLI
+-- backfills them. The runtime guard at ``EngramaEngine.merge_relation``
+-- refuses to write a fresh edge without them.
 CREATE TABLE IF NOT EXISTS edges (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     from_id     INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
     rel_type    TEXT NOT NULL,
     to_id       INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
     created_at  TEXT NOT NULL,
+    org_id      TEXT,
+    user_id     TEXT,
     UNIQUE(from_id, rel_type, to_id)
 );
 CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_id, rel_type);
 CREATE INDEX IF NOT EXISTS idx_edges_to   ON edges(to_id, rel_type);
+-- idx_edges_scope is created at runtime in ``SqliteGraphStore._init_schema_from_file``
+-- because pre-Spec-001 DBs lack the org_id/user_id columns at the time
+-- ``executescript`` runs (the ALTER TABLE backfill happens just after).
 
 -- FTS5 index over the searchable text fields. We let FTS5 store its own
 -- content (no `content=''` flag) so DELETE/UPDATE work without the

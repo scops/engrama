@@ -76,3 +76,37 @@ CREATE INDEX photo_status IF NOT EXISTS FOR (n:Photo) ON (n.status);
 CREATE INDEX experiment_status IF NOT EXISTS FOR (n:Experiment) ON (n.status);
 CREATE INDEX pipeline_status IF NOT EXISTS FOR (n:Pipeline) ON (n.status);
 CREATE INDEX insight_status IF NOT EXISTS FOR (n:Insight) ON (n.status);
+
+// === SPEC 001 — composite (org_id, user_id) indexes per queried label ===
+// One range index per label so Neo4j can use the index on every scoped MATCH
+// (fulltext_search, count_labels, lookup_node_label, get_neighbours, all
+// reflect detect_* patterns, all Insight queries). Composite indexes are
+// inherently per-label in Neo4j, so each label that the application MATCHes
+// on gets its own. New labels added to NodeType MUST also gain a composite
+// index here; the T014 CI guard will surface gaps in coverage.
+
+CREATE INDEX project_scope IF NOT EXISTS FOR (n:Project) ON (n.org_id, n.user_id);
+CREATE INDEX concept_scope IF NOT EXISTS FOR (n:Concept) ON (n.org_id, n.user_id);
+CREATE INDEX decision_scope IF NOT EXISTS FOR (n:Decision) ON (n.org_id, n.user_id);
+CREATE INDEX problem_scope IF NOT EXISTS FOR (n:Problem) ON (n.org_id, n.user_id);
+CREATE INDEX technology_scope IF NOT EXISTS FOR (n:Technology) ON (n.org_id, n.user_id);
+CREATE INDEX person_scope IF NOT EXISTS FOR (n:Person) ON (n.org_id, n.user_id);
+CREATE INDEX domain_scope IF NOT EXISTS FOR (n:Domain) ON (n.org_id, n.user_id);
+CREATE INDEX client_scope IF NOT EXISTS FOR (n:Client) ON (n.org_id, n.user_id);
+CREATE INDEX target_scope IF NOT EXISTS FOR (n:Target) ON (n.org_id, n.user_id);
+CREATE INDEX vulnerability_scope IF NOT EXISTS FOR (n:Vulnerability) ON (n.org_id, n.user_id);
+CREATE INDEX technique_scope IF NOT EXISTS FOR (n:Technique) ON (n.org_id, n.user_id);
+CREATE INDEX tool_scope IF NOT EXISTS FOR (n:Tool) ON (n.org_id, n.user_id);
+CREATE INDEX ctf_scope IF NOT EXISTS FOR (n:CTF) ON (n.org_id, n.user_id);
+CREATE INDEX course_scope IF NOT EXISTS FOR (n:Course) ON (n.org_id, n.user_id);
+CREATE INDEX exercise_scope IF NOT EXISTS FOR (n:Exercise) ON (n.org_id, n.user_id);
+CREATE INDEX material_scope IF NOT EXISTS FOR (n:Material) ON (n.org_id, n.user_id);
+CREATE INDEX photo_scope IF NOT EXISTS FOR (n:Photo) ON (n.org_id, n.user_id);
+CREATE INDEX location_scope IF NOT EXISTS FOR (n:Location) ON (n.org_id, n.user_id);
+CREATE INDEX species_scope IF NOT EXISTS FOR (n:Species) ON (n.org_id, n.user_id);
+CREATE INDEX gear_scope IF NOT EXISTS FOR (n:Gear) ON (n.org_id, n.user_id);
+CREATE INDEX model_scope IF NOT EXISTS FOR (n:Model) ON (n.org_id, n.user_id);
+CREATE INDEX dataset_scope IF NOT EXISTS FOR (n:Dataset) ON (n.org_id, n.user_id);
+CREATE INDEX experiment_scope IF NOT EXISTS FOR (n:Experiment) ON (n.org_id, n.user_id);
+CREATE INDEX pipeline_scope IF NOT EXISTS FOR (n:Pipeline) ON (n.org_id, n.user_id);
+CREATE INDEX insight_scope IF NOT EXISTS FOR (n:Insight) ON (n.org_id, n.user_id);

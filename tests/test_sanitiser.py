@@ -14,6 +14,7 @@ import pytest
 
 from engrama.adapters.mcp.server import _with_mcp_provenance
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
 from engrama.core.security import (
     DEFAULT_TRUST_LEVELS,
     MAX_PROPERTY_VALUE_LEN,
@@ -21,6 +22,11 @@ from engrama.core.security import (
     Provenance,
     Sanitiser,
 )
+
+# Spec 001 T011: pin a test scope on the engine so happy-path writes here
+# never trip the fail-closed guard — the subject under test is the
+# sanitiser, not scoping.
+_TEST_SCOPE = MemoryScope(org_id="test-sanitiser", user_id="test-sanitiser")
 
 # ---------------------------------------------------------------------------
 # 1. Sanitiser.sanitise_properties
@@ -142,7 +148,9 @@ class TestEngineSanitisation:
 
     def test_merge_node_strips_caller_reserved_keys(self):
         store = _stub_store()
-        engine = EngramaEngine(store, default_provenance=Provenance(source="sdk"))
+        engine = EngramaEngine(
+            store, default_provenance=Provenance(source="sdk"), default_scope=_TEST_SCOPE
+        )
         engine.merge_node(
             "Concept",
             {"name": "Async", "source": "fake", "trust_level": 1.0},
@@ -155,7 +163,9 @@ class TestEngineSanitisation:
 
     def test_explicit_provenance_still_overrides(self):
         store = _stub_store()
-        engine = EngramaEngine(store, default_provenance=Provenance(source="sdk"))
+        engine = EngramaEngine(
+            store, default_provenance=Provenance(source="sdk"), default_scope=_TEST_SCOPE
+        )
         engine.merge_node(
             "Concept",
             {"name": "Async"},
@@ -166,7 +176,7 @@ class TestEngineSanitisation:
 
     def test_merge_node_cleans_control_chars_from_values(self):
         store = _stub_store()
-        engine = EngramaEngine(store)
+        engine = EngramaEngine(store, default_scope=_TEST_SCOPE)
         engine.merge_node("Concept", {"name": "Clean", "notes": "dirty\x00value"})
         _, _, _, extra, *_ = store.merge_node.call_args[0]
         assert extra["notes"] == "dirtyvalue"
@@ -193,16 +203,20 @@ class TestEngineSanitisation:
 
 
 class TestMCPSanitisedHelper:
+    # Spec 001 T009: _with_mcp_provenance now takes the resolved scope as a
+    # required second arg.
     def test_strips_caller_reserved_keys(self):
-        out = _with_mcp_provenance({"body": "ok", "source": "fake", "trust_level": 1.0})
+        out = _with_mcp_provenance(
+            {"body": "ok", "source": "fake", "trust_level": 1.0}, _TEST_SCOPE
+        )
         assert out["source"] == "mcp"
         assert out["trust_level"] == DEFAULT_TRUST_LEVELS["mcp"]
         assert out["body"] == "ok"
 
     def test_strips_control_chars_in_extras(self):
-        out = _with_mcp_provenance({"body": "hello\x00world"})
+        out = _with_mcp_provenance({"body": "hello\x00world"}, _TEST_SCOPE)
         assert out["body"] == "helloworld"
 
     def test_strips_underscore_keys_in_extras(self):
-        out = _with_mcp_provenance({"body": "ok", "_secret": "leak"})
+        out = _with_mcp_provenance({"body": "ok", "_secret": "leak"}, _TEST_SCOPE)
         assert "_secret" not in out
