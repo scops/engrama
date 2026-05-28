@@ -157,6 +157,9 @@ class SqliteVecStore:
         embedding, resolved against the nodes table so the dump is
         portable across backends.
         """
+        # scope-exempt: migration/export path — needed by ``engrama export``
+        # to dump every embedding regardless of tenant. Never called from a
+        # tenant-visible read path.
         if self._dimensions == 0 or not self._index_ready:
             return
         cur = self._conn.execute(
@@ -257,6 +260,8 @@ class SqliteVecStore:
         return self.search_vectors(query_embedding, limit=limit, scope=scope)
 
     def count(self) -> int:
+        # scope-exempt: engrama_status runtime introspection only — deployment-
+        # wide vector total, never wired into tenant-visible responses.
         if self._dimensions == 0 or not self._index_ready:
             return 0
         cur = self._conn.execute(f"SELECT COUNT(*) AS n FROM {self._index_name}")

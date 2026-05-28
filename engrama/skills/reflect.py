@@ -97,13 +97,17 @@ class ReflectSkill:
 
     @staticmethod
     def _profile_graph(engine: EngramaEngine) -> dict[str, int]:
-        """Return a dict of {label: count} for all node types in the graph."""
-        return engine._store.count_labels()
+        """Return a dict of {label: count} for the caller's slice of the graph.
+
+        Spec 001 FR-12: the profile is scoped so reflect doesn't react to
+        other tenants' label counts.
+        """
+        return engine._store.count_labels(scope=engine.default_scope)
 
     @staticmethod
     def _get_dismissed_titles(engine: EngramaEngine) -> set[str]:
-        """Return titles of all dismissed Insights to avoid re-surfacing."""
-        return engine._store.get_dismissed_insight_titles()
+        """Return titles of dismissed Insights within the caller's scope."""
+        return engine._store.get_dismissed_insight_titles(scope=engine.default_scope)
 
     # ------------------------------------------------------------------
     # Detection methods — original three (improved)
@@ -114,7 +118,7 @@ class ReflectSkill:
         engine: EngramaEngine,
         dismissed: set[str],
     ) -> list[Insight]:
-        records = engine._store.detect_cross_project_solutions()
+        records = engine._store.detect_cross_project_solutions(scope=engine.default_scope)
         results: list[Insight] = []
         for r in records:
             title = (
@@ -145,7 +149,7 @@ class ReflectSkill:
         engine: EngramaEngine,
         dismissed: set[str],
     ) -> list[Insight]:
-        records = engine._store.detect_shared_technology()
+        records = engine._store.detect_shared_technology(scope=engine.default_scope)
         results: list[Insight] = []
         for r in records:
             a_desc = f"{r['type_a']}:{r['entity_a']}"
@@ -174,7 +178,7 @@ class ReflectSkill:
         engine: EngramaEngine,
         dismissed: set[str],
     ) -> list[Insight]:
-        records = engine._store.detect_training_opportunities()
+        records = engine._store.detect_training_opportunities(scope=engine.default_scope)
         results: list[Insight] = []
         for r in records:
             issue_desc = f"{r['issue_type']}:{r['issue']}"
@@ -209,7 +213,7 @@ class ReflectSkill:
         dismissed: set[str],
     ) -> list[Insight]:
         """A Technique used in domain A could apply in domain B."""
-        records = engine._store.detect_technique_transfer()
+        records = engine._store.detect_technique_transfer(scope=engine.default_scope)
         results: list[Insight] = []
         for r in records:
             title = (
@@ -243,7 +247,7 @@ class ReflectSkill:
         dismissed: set[str],
     ) -> list[Insight]:
         """Multiple unrelated entities share the same Concept."""
-        records = engine._store.detect_concept_clusters()
+        records = engine._store.detect_concept_clusters(scope=engine.default_scope)
         results: list[Insight] = []
         for r in records:
             concept = r["concept"]
@@ -280,7 +284,7 @@ class ReflectSkill:
         - Not updated in 90+ days, OR
         - Confidence below 0.3 (regardless of age).
         """
-        records = engine._store.detect_stale_knowledge()
+        records = engine._store.detect_stale_knowledge(scope=engine.default_scope)
         results: list[Insight] = []
         for r in records:
             name = r["name"]
@@ -330,10 +334,11 @@ class ReflectSkill:
         if engine._store.find_insight_by_source_query(
             "under_connected",
             statuses=["dismissed"],
+            scope=engine.default_scope,
         ):
             return []
 
-        records = engine._store.detect_under_connected_nodes()
+        records = engine._store.detect_under_connected_nodes(scope=engine.default_scope)
         if not records:
             return []
 

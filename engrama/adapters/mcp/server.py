@@ -1191,7 +1191,7 @@ def create_engrama_mcp(
                     # already COALESCEs ``name`` and ``title``, so an
                     # existing title-keyed target (Decision, Problem,
                     # Experiment, ...) resolves to the right label here.
-                    target_label = await store.lookup_node_label(target_name)
+                    target_label = await store.lookup_node_label(target_name, scope=scope)
 
                     if target_label is None:
                         # Target doesn't exist yet — create a stub. Prefer the
@@ -2052,24 +2052,28 @@ def create_engrama_mcp(
         queries_skipped: list[str] = []
 
         # --- Step 1: Profile the graph ---
+        # Spec 001 FR-12: the profile must reflect only the caller's slice of
+        # the graph so reflect doesn't react to other tenants' label counts.
         profile: dict[str, int] = {}
         try:
-            profile = await store.count_labels()
+            profile = await store.count_labels(scope=scope)
         except Exception as e:
             logger.warning("Could not profile graph: %s", e)
 
         # --- Step 2: Get already-judged titles ---
         # ``judged`` covers both dismissed AND approved insights so a
         # re-run of reflect doesn't re-MERGE them back to status="pending"
-        # (which would silently undo the user's review).
+        # (which would silently undo the user's review). Scoped: a tenant's
+        # judgement of their own Insights doesn't suppress patterns for
+        # another tenant.
         dismissed: set[str] = set()
         approved: set[str] = set()
         try:
-            dismissed = await store.get_dismissed_titles()
+            dismissed = await store.get_dismissed_titles(scope=scope)
         except Exception:
             pass
         try:
-            approved = await store.get_approved_titles()
+            approved = await store.get_approved_titles(scope=scope)
         except Exception:
             pass
         judged = dismissed | approved
@@ -2317,6 +2321,7 @@ def create_engrama_mcp(
                 dismissed_sq = await store.find_insight_by_source_query(
                     "under_connected",
                     statuses=["dismissed"],
+                    scope=scope,
                 )
                 if dismissed_sq:
                     return
@@ -2347,40 +2352,42 @@ def create_engrama_mcp(
             insights.append({"query": "under_connected", "title": title, "confidence": 0.4})
 
         # --- Step 3: Run applicable patterns ---
+        # Each detector is closed over the resolved scope so the pattern
+        # match only sees the caller's nodes (Spec 001 FR-12).
         await _run_pattern(
             "cross_project_solution",
-            store.detect_cross_project_solutions,
+            lambda: store.detect_cross_project_solutions(scope=scope),
             required_labels=["Problem", "Project"],
             builder_fn=_build_cross_project,
         )
         await _run_pattern(
             "shared_technology",
-            store.detect_shared_technology,
+            lambda: store.detect_shared_technology(scope=scope),
             required_labels=["Technology"],
             builder_fn=_build_shared_tech,
         )
         await _run_pattern(
             "training_opportunity",
-            store.detect_training_opportunities,
+            lambda: store.detect_training_opportunities(scope=scope),
             any_labels=[["Problem", "Vulnerability"], ["Course"]],
             builder_fn=_build_training,
         )
         await _run_pattern(
             "technique_transfer",
-            store.detect_technique_transfer,
+            lambda: store.detect_technique_transfer(scope=scope),
             required_labels=["Technique"],
             min_label_count={"Domain": 2},
             builder_fn=_build_technique_transfer,
         )
         await _run_pattern(
             "concept_clustering",
-            store.detect_concept_clusters,
+            lambda: store.detect_concept_clusters(scope=scope),
             required_labels=["Concept"],
             builder_fn=_build_concept_clustering,
         )
         await _run_pattern(
             "stale_knowledge",
-            store.detect_stale_knowledge,
+            lambda: store.detect_stale_knowledge(scope=scope),
             any_labels=[["Project", "Course"]],
             builder_fn=_build_stale,
         )
@@ -2390,7 +2397,7 @@ def create_engrama_mcp(
         if total_nodes >= 5:
             queries_run.append("under_connected")
             try:
-                uc_records = await store.detect_under_connected_nodes()
+                uc_records = await store.detect_under_connected_nodes(scope=scope)
                 await _build_under_connected(uc_records)
             except Exception as e:
                 logger.warning("Under-connected query failed: %s", e)
@@ -2435,8 +2442,16 @@ def create_engrama_mcp(
         approval.
         """
         store = _store(ctx)
+
+        # Spec 001 FR-2: Insights are tenant-scoped; surface only the
+        # caller's pending ones.
         try:
-            results = await store.get_pending_insights(limit=params.limit)
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "error": str(e)})
+
+        try:
+            results = await store.get_pending_insights(limit=params.limit, scope=scope)
             insights = [
                 {
                     "title": r["title"],
@@ -2492,6 +2507,14 @@ def create_engrama_mcp(
         """
         store = _store(ctx)
 
+        # Spec 001 FR-2/FR-4: a caller can only act on their own Insights —
+        # resolve scope before touching the graph, error fail-closed when
+        # unresolved.
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "error": str(e)})
+
         if params.action not in ("approve", "dismiss"):
             return json.dumps(
                 {
@@ -2501,6 +2524,27 @@ def create_engrama_mcp(
             )
 
         new_status = "approved" if params.action == "approve" else "dismissed"
+
+        # Guard against cross-tenant approval: the read fails closed when the
+        # title is owned by a different scope, so the update never runs.
+        try:
+            owned = await store.get_insight_by_title(params.title, scope=scope)
+            if not owned:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"Insight not found: {params.title}",
+                    }
+                )
+        except Exception as e:
+            logger.warning("Could not load Insight before approve: %s", e)
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Could not load Insight: {str(e)}",
+                },
+                indent=2,
+            )
 
         try:
             updated = await store.update_insight_status(params.title, new_status)
@@ -2567,9 +2611,16 @@ def create_engrama_mcp(
 
         store = _store(ctx)
 
+        # Spec 001 FR-2: vault-write of an Insight is scoped to the caller —
+        # the read fails closed when the Insight belongs to a different scope.
+        try:
+            scope = resolve_scope(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "error": str(e)})
+
         # Fetch the Insight
         try:
-            insight = await store.get_insight_by_title(params.title)
+            insight = await store.get_insight_by_title(params.title, scope=scope)
             if not insight:
                 return json.dumps(
                     {

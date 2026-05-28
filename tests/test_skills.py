@@ -10,14 +10,23 @@ import pytest
 
 from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
+from engrama.core.scope import MemoryScope
 from engrama.skills.reflect import ReflectSkill
+
+# Spec 001 fail-closed: every read goes through the (org_id, user_id) filter,
+# so tests must seed nodes under a known scope and run reflect with the
+# matching default_scope on the engine.
+_TEST_SCOPE = MemoryScope(org_id="test-skills", user_id="test-skills")
+_SCOPE_CYPHER_PARAMS = {"org_id": _TEST_SCOPE.org_id, "user_id": _TEST_SCOPE.user_id}
 
 
 @pytest.fixture()
 def engine() -> EngramaEngine:
-    """Create an EngramaEngine connected to the test Neo4j instance."""
+    """Create an EngramaEngine connected to the test Neo4j instance,
+    pre-bound to the test scope so reflect's scoped reads return data.
+    """
     client = EngramaClient()
-    eng = EngramaEngine(client)
+    eng = EngramaEngine(client, default_scope=_TEST_SCOPE)
     yield eng
     client.close()
 
@@ -34,16 +43,22 @@ def seed_cross_project(neo4j_session) -> None:
     """
     neo4j_session.run(
         "MERGE (pA:Project {name: $pA}) SET pA.test = true, pA.status = 'active', "
+        "pA.org_id = $org_id, pA.user_id = $user_id, "
         "pA.created_at = datetime(), pA.updated_at = datetime() "
         "MERGE (pB:Project {name: $pB}) SET pB.test = true, pB.status = 'active', "
+        "pB.org_id = $org_id, pB.user_id = $user_id, "
         "pB.created_at = datetime(), pB.updated_at = datetime() "
         "MERGE (d:Decision {title: $d}) SET d.test = true, "
+        "d.org_id = $org_id, d.user_id = $user_id, "
         "d.created_at = datetime(), d.updated_at = datetime() "
         "MERGE (rp:Problem {title: $rp}) SET rp.test = true, rp.status = 'resolved', "
+        "rp.org_id = $org_id, rp.user_id = $user_id, "
         "rp.created_at = datetime(), rp.updated_at = datetime() "
         "MERGE (op:Problem {title: $op}) SET op.test = true, op.status = 'open', "
+        "op.org_id = $org_id, op.user_id = $user_id, "
         "op.created_at = datetime(), op.updated_at = datetime() "
         "MERGE (c:Concept {name: $c}) SET c.test = true, "
+        "c.org_id = $org_id, c.user_id = $user_id, "
         "c.created_at = datetime(), c.updated_at = datetime() "
         "MERGE (pA)-[:INFORMED_BY]->(d) "
         "MERGE (pA)-[:HAS]->(rp) "
@@ -58,6 +73,7 @@ def seed_cross_project(neo4j_session) -> None:
             "rp": "Data inconsistency in sync",
             "op": "Data loss during import",
             "c": "Event Sourcing",
+            **_SCOPE_CYPHER_PARAMS,
         },
     )
 
@@ -71,10 +87,13 @@ def seed_shared_tech(neo4j_session) -> None:
     """
     neo4j_session.run(
         "MERGE (pC:Project {name: $pC}) SET pC.test = true, pC.status = 'active', "
+        "pC.org_id = $org_id, pC.user_id = $user_id, "
         "pC.created_at = datetime(), pC.updated_at = datetime() "
         "MERGE (pD:Project {name: $pD}) SET pD.test = true, pD.status = 'active', "
+        "pD.org_id = $org_id, pD.user_id = $user_id, "
         "pD.created_at = datetime(), pD.updated_at = datetime() "
         "MERGE (t:Technology {name: $t}) SET t.test = true, "
+        "t.org_id = $org_id, t.user_id = $user_id, "
         "t.created_at = datetime(), t.updated_at = datetime() "
         "MERGE (pC)-[:USES]->(t) "
         "MERGE (pD)-[:USES]->(t)",
@@ -82,6 +101,7 @@ def seed_shared_tech(neo4j_session) -> None:
             "pC": "Reflect_ProjectC",
             "pD": "Reflect_ProjectD",
             "t": "FastAPI_ReflectTest",
+            **_SCOPE_CYPHER_PARAMS,
         },
     )
 
@@ -95,10 +115,13 @@ def seed_training(neo4j_session) -> None:
     """
     neo4j_session.run(
         "MERGE (op:Problem {title: $op}) SET op.test = true, op.status = 'open', "
+        "op.org_id = $org_id, op.user_id = $user_id, "
         "op.created_at = datetime(), op.updated_at = datetime() "
         "MERGE (c:Concept {name: $c}) SET c.test = true, "
+        "c.org_id = $org_id, c.user_id = $user_id, "
         "c.created_at = datetime(), c.updated_at = datetime() "
         "MERGE (course:Course {name: $course}) SET course.test = true, "
+        "course.org_id = $org_id, course.user_id = $user_id, "
         "course.created_at = datetime(), course.updated_at = datetime() "
         "MERGE (op)-[:APPLIES]->(c) "
         "MERGE (course)-[:COVERS]->(c)",
@@ -106,6 +129,7 @@ def seed_training(neo4j_session) -> None:
             "op": "Privilege escalation via SUID",
             "c": "Linux Privilege Escalation",
             "course": "Ethical Hacking Advanced",
+            **_SCOPE_CYPHER_PARAMS,
         },
     )
 

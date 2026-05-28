@@ -517,12 +517,24 @@ class Neo4jAsyncStore:
         )
         return [dict(r) for r in records]
 
-    async def count_labels(self) -> dict[str, int]:
-        """Count nodes per label.  Used by reflect to profile the graph."""
+    async def count_labels(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> dict[str, int]:
+        """Count nodes per label within ``scope``. Used by reflect to profile
+        the graph for the current tenant.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → zero counts
+        (the helper emits ``(false)``).
+        """
+        scope_clause, scope_params = scope_filter_cypher(scope, "n")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
             "MATCH (n) WHERE NOT n:Insight "
+            f"{where_sql}"
             "RETURN labels(n)[0] AS label, count(n) AS cnt "
             "ORDER BY cnt DESC",
+            parameters_=scope_params,
             database_=self._database,
         )
         return {r["label"]: r["cnt"] for r in records}
@@ -543,16 +555,26 @@ class Neo4jAsyncStore:
         )
         return [dict(r) for r in records]
 
-    async def lookup_node_label(self, name: str) -> str | None:
-        """Look up a node's label by name (case-insensitive).
+    async def lookup_node_label(
+        self,
+        name: str,
+        scope: MemoryScope | None = None,
+    ) -> str | None:
+        """Look up a node's label by name (case-insensitive), restricted to
+        ``scope``.
 
         Searches both ``name`` and ``title`` properties (BUG-006 fix).
         Returns the primary label or ``None``.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → no match.
         """
+        scope_clause, scope_params = scope_filter_cypher(scope, "n")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
             "MATCH (n) WHERE toLower(COALESCE(n.name, n.title)) = toLower($name) "
+            f"{where_sql}"
             "RETURN labels(n)[0] AS label LIMIT 1",
-            parameters_={"name": name},
+            parameters_={"name": name, **scope_params},
             database_=self._database,
         )
         if records:
@@ -563,52 +585,92 @@ class Neo4jAsyncStore:
     # Insight operations (used by reflect / surface / approve tools)
     # ------------------------------------------------------------------
 
-    async def get_dismissed_titles(self) -> set[str]:
-        """Return titles of all dismissed Insights."""
+    async def get_dismissed_titles(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> set[str]:
+        """Return titles of dismissed Insights within ``scope``.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty set.
+        """
+        scope_clause, scope_params = scope_filter_cypher(scope, "i")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
-            "MATCH (i:Insight {status: 'dismissed'}) RETURN i.title AS title",
+            "MATCH (i:Insight {status: 'dismissed'}) "
+            f"WHERE 1=1 {where_sql}"
+            "RETURN i.title AS title",
+            parameters_=scope_params,
             database_=self._database,
         )
         return {r["title"] for r in records}
 
-    async def get_approved_titles(self) -> set[str]:
-        """Return titles of all approved Insights.
+    async def get_approved_titles(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> set[str]:
+        """Return titles of approved Insights within ``scope``.
 
         Used by reflect to skip patterns the user has already approved,
         so a re-run doesn't pin them back to ``status='pending'`` (the
         default applied by ``MERGE``).
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty set.
         """
+        scope_clause, scope_params = scope_filter_cypher(scope, "i")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
-            "MATCH (i:Insight {status: 'approved'}) RETURN i.title AS title",
+            "MATCH (i:Insight {status: 'approved'}) "
+            f"WHERE 1=1 {where_sql}"
+            "RETURN i.title AS title",
+            parameters_=scope_params,
             database_=self._database,
         )
         return {r["title"] for r in records}
 
-    async def get_pending_insights(self, limit: int = 10) -> list[dict[str, Any]]:
+    async def get_pending_insights(
+        self,
+        limit: int = 10,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
         """Retrieve pending Insights ordered by confidence (highest first),
-        breaking ties by ``created_at`` (newest first).
+        breaking ties by ``created_at`` (newest first), within ``scope``.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty list.
         """
+        scope_clause, scope_params = scope_filter_cypher(scope, "i")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
             "MATCH (i:Insight {status: $status}) "
+            f"WHERE 1=1 {where_sql}"
             "RETURN i.title AS title, i.body AS body, "
             "       i.confidence AS confidence, "
             "       i.source_query AS source_query, "
             "       i.created_at AS created_at "
             "ORDER BY i.confidence DESC, i.created_at DESC "
             "LIMIT $limit",
-            parameters_={"status": "pending", "limit": limit},
+            parameters_={"status": "pending", "limit": limit, **scope_params},
             database_=self._database,
         )
         return [dict(r) for r in records]
 
-    async def get_insight_by_title(self, title: str) -> dict[str, Any] | None:
-        """Fetch an Insight node by exact title."""
+    async def get_insight_by_title(
+        self,
+        title: str,
+        scope: MemoryScope | None = None,
+    ) -> dict[str, Any] | None:
+        """Fetch an Insight node by exact title, restricted to ``scope``.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → ``None``.
+        """
+        scope_clause, scope_params = scope_filter_cypher(scope, "i")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
             "MATCH (i:Insight {title: $title}) "
+            f"WHERE 1=1 {where_sql}"
             "RETURN i.status AS status, i.body AS body, "
             "       i.confidence AS confidence, "
             "       i.source_query AS source_query",
-            parameters_={"title": title},
+            parameters_={"title": title, **scope_params},
             database_=self._database,
         )
         if records:
@@ -654,18 +716,24 @@ class Neo4jAsyncStore:
         self,
         source_query: str,
         statuses: list[str] | None = None,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        """Find an Insight by source_query and optional status filter.
+        """Find an Insight by source_query and optional status filter,
+        restricted to ``scope``.
 
         BUG-007: used to check for existing under_connected insights
         before creating duplicates.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → ``None``.
         """
         status_list = statuses or ["pending", "approved"]
+        scope_clause, scope_params = scope_filter_cypher(scope, "i")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
             "MATCH (i:Insight {source_query: $sq}) "
-            "WHERE i.status IN $statuses "
+            f"WHERE i.status IN $statuses {where_sql}"
             "RETURN i.title AS title, i.status AS status LIMIT 1",
-            parameters_={"sq": source_query, "statuses": status_list},
+            parameters_={"sq": source_query, "statuses": status_list, **scope_params},
             database_=self._database,
         )
         if records:
@@ -680,80 +748,144 @@ class Neo4jAsyncStore:
     # future async reflect path has a complete backend surface to call
     # against, mirroring :class:`Neo4jGraphStore`.
 
-    async def detect_cross_project_solutions(self) -> list[dict[str, Any]]:
-        """Open Problem shares a Concept with a resolved Problem in a
-        different Project that has a Decision.
+    # Reflect detector helpers — every node matched in these patterns must
+    # carry the tenant's identity (Spec 001, FR-12). A ``None``/incomplete
+    # scope yields ``(false)`` from the helper and the query returns nothing,
+    # so a missing-identity caller cannot leak cross-tenant patterns through
+    # reflect.
+
+    @staticmethod
+    def _scope_and(
+        node_vars: tuple[str, ...],
+        scope: MemoryScope | None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Build ``AND (scope_n1) AND (scope_n2) ...`` Cypher + params.
+
+        Returns ``("", {})`` for an empty scope so the caller can splice
+        the fragment unconditionally; with a complete scope, the helper's
+        equality predicate is applied to every node variable.
         """
+        clauses: list[str] = []
+        params: dict[str, Any] = {}
+        for nv in node_vars:
+            clause, p = scope_filter_cypher(scope, nv)
+            if not clause:
+                continue
+            clauses.append(clause)
+            # All node vars share the same scope params (same keys); merging
+            # is idempotent.
+            params.update(p)
+        if not clauses:
+            return "", {}
+        return "AND " + " AND ".join(clauses), params
+
+    async def detect_cross_project_solutions(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Open Problem shares a Concept with a resolved Problem in a
+        different Project that has a Decision, within ``scope``.
+        """
+        scope_sql, scope_params = self._scope_and(
+            ("pB", "open", "c", "resolved", "d", "pA"), scope
+        )
         cypher = (
             "MATCH (pB:Project)-[:HAS]->(open:Problem {status: $open_status}) "
             "MATCH (open)-[:INSTANCE_OF|APPLIES]->(c:Concept)"
             "<-[:INSTANCE_OF|APPLIES]-(resolved:Problem {status: $resolved_status}) "
             "MATCH (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project) "
-            "WHERE pA <> pB "
+            f"WHERE pA <> pB {scope_sql} "
             "RETURN pB.name AS target_project, open.title AS open_problem, "
             "d.title AS decision, pA.name AS source_project, c.name AS concept"
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
-            parameters_={"open_status": "open", "resolved_status": "resolved"},
+            parameters_={
+                "open_status": "open",
+                "resolved_status": "resolved",
+                **scope_params,
+            },
             database_=self._database,
         )
         return [dict(r) for r in records]
 
-    async def detect_shared_technology(self) -> list[dict[str, Any]]:
-        """Two distinct entities use the same Technology."""
+    async def detect_shared_technology(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Two distinct entities use the same Technology, within ``scope``."""
+        scope_sql, scope_params = self._scope_and(("a", "b", "t"), scope)
         cypher = (
             "MATCH (a)-[:USES|TEACHES|COMPOSED_OF]->(t:Technology)"
             "<-[:USES|TEACHES|COMPOSED_OF]-(b) "
             "WHERE id(a) < id(b) "
-            "AND NOT a:Insight AND NOT b:Insight "
+            f"AND NOT a:Insight AND NOT b:Insight {scope_sql} "
             "RETURN coalesce(a.name, a.title) AS entity_a, labels(a)[0] AS type_a, "
             "coalesce(b.name, b.title) AS entity_b, labels(b)[0] AS type_b, "
             "t.name AS technology"
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
+            parameters_=scope_params,
             database_=self._database,
         )
         return [dict(r) for r in records]
 
-    async def detect_training_opportunities(self) -> list[dict[str, Any]]:
-        """A Vulnerability or open Problem shares a Concept with a Course."""
+    async def detect_training_opportunities(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """A Vulnerability or open Problem shares a Concept with a Course,
+        within ``scope``.
+        """
+        scope_sql, scope_params = self._scope_and(("issue", "c", "course"), scope)
         cypher = (
             "MATCH (issue)-[:INSTANCE_OF|APPLIES]->(c:Concept)<-[:COVERS]-(course:Course) "
-            "WHERE (issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status) "
+            "WHERE ((issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status)) "
+            f"{scope_sql} "
             "RETURN coalesce(issue.title, issue.name) AS issue, "
             "labels(issue)[0] AS issue_type, c.name AS concept, course.name AS course"
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
-            parameters_={"open_status": "open"},
+            parameters_={"open_status": "open", **scope_params},
             database_=self._database,
         )
         return [dict(r) for r in records]
 
-    async def detect_technique_transfer(self) -> list[dict[str, Any]]:
-        """Technique used in domain A could apply in domain B."""
+    async def detect_technique_transfer(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Technique used in domain A could apply in domain B, within ``scope``."""
+        scope_sql, scope_params = self._scope_and(("t", "d1", "d2", "other"), scope)
         cypher = (
             "MATCH (t:Technique)-[:IN_DOMAIN]->(d1:Domain) "
             "MATCH (d2:Domain) WHERE d1 <> d2 "
             "AND NOT EXISTS { MATCH (t)-[:IN_DOMAIN]->(d2) } "
             "MATCH (other)-[:IN_DOMAIN]->(d2) "
             "WHERE (other)-[:INSTANCE_OF|APPLIES]->(:Concept)<-[:INSTANCE_OF|APPLIES]-(t) "
+            f"{scope_sql} "
             "RETURN t.name AS technique, d1.name AS source_domain, "
             "d2.name AS target_domain, count(other) AS related_entities "
             "ORDER BY related_entities DESC LIMIT 10"
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
+            parameters_=scope_params,
             database_=self._database,
         )
         return [dict(r) for r in records]
 
-    async def detect_concept_clusters(self) -> list[dict[str, Any]]:
-        """Concept connected to >= 3 entities."""
+    async def detect_concept_clusters(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Concept connected to >= 3 entities, within ``scope``."""
+        scope_sql, scope_params = self._scope_and(("c", "n"), scope)
         cypher = (
             "MATCH (c:Concept)<-[:INSTANCE_OF|APPLIES]-(n) "
+            f"WHERE 1=1 {scope_sql} "
             "WITH c, collect(DISTINCT {name: coalesce(n.name, n.title), "
             "label: labels(n)[0]}) AS connected, count(n) AS cnt "
             "WHERE cnt >= 3 "
@@ -762,14 +894,19 @@ class Neo4jAsyncStore:
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
+            parameters_=scope_params,
             database_=self._database,
         )
         return [dict(r) for r in records]
 
-    async def detect_stale_knowledge(self) -> list[dict[str, Any]]:
+    async def detect_stale_knowledge(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
         """Nodes 90d+ stale or low-confidence connected to active
-        Project/Course.
+        Project/Course, within ``scope``.
         """
+        scope_sql, scope_params = self._scope_and(("n", "active"), scope)
         cypher = (
             "MATCH (n)-[r]-(active) "
             "WHERE (active:Project OR active:Course) "
@@ -778,7 +915,7 @@ class Neo4jAsyncStore:
             "  n.updated_at < datetime() - duration({days: 90}) "
             "  OR (n.confidence IS NOT NULL AND n.confidence < 0.3)"
             ") "
-            "AND NOT n:Project AND NOT n:Course AND NOT n:Domain "
+            f"AND NOT n:Project AND NOT n:Course AND NOT n:Domain {scope_sql} "
             "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
             "n.updated_at AS last_updated, n.confidence AS confidence, "
             "active.name AS project, type(r) AS rel "
@@ -786,22 +923,26 @@ class Neo4jAsyncStore:
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
-            parameters_={"active_status": "active"},
+            parameters_={"active_status": "active", **scope_params},
             database_=self._database,
         )
         return [dict(r) for r in records]
 
-    async def detect_under_connected_nodes(self) -> list[dict[str, Any]]:
-        """Nodes with fewer than 2 *substantive* relationships.
+    async def detect_under_connected_nodes(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Nodes with fewer than 2 *substantive* relationships, within ``scope``.
 
         Edges to neighbours with ``status = 'stub'`` are not counted —
         stubs are placeholder nodes and treating them as real
         connections hides genuinely under-connected nodes.
         """
+        scope_sql, scope_params = self._scope_and(("n",), scope)
         cypher = (
             "MATCH (n) WHERE NOT n:Domain AND NOT n:Insight "
             "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
-            "AND n.status <> 'archived' "
+            f"AND n.status <> 'archived' {scope_sql} "
             "WITH n, size([(n)-[]-(m) "
             "WHERE coalesce(m.status, 'active') <> 'stub' | 1]) AS rel_count "
             "WHERE rel_count < 2 "
@@ -811,18 +952,29 @@ class Neo4jAsyncStore:
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
+            parameters_=scope_params,
             database_=self._database,
         )
         return [dict(r) for r in records]
 
-    async def list_existing_nodes(self, limit: int = 200) -> list[dict[str, str]]:
-        """List existing nodes for deduplication during ingest."""
+    async def list_existing_nodes(
+        self,
+        limit: int = 200,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, str]]:
+        """List existing nodes within ``scope`` for deduplication during ingest.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty list.
+        """
+        scope_clause, scope_params = scope_filter_cypher(scope, "n")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
-            "MATCH (n) WHERE n.name IS NOT NULL OR n.title IS NOT NULL "
+            "MATCH (n) WHERE (n.name IS NOT NULL OR n.title IS NOT NULL) "
+            f"{where_sql}"
             "RETURN labels(n)[0] AS label, "
             "COALESCE(n.name, n.title) AS name "
             "ORDER BY name LIMIT $limit",
-            parameters_={"limit": limit},
+            parameters_={"limit": limit, **scope_params},
             database_=self._database,
         )
         return [{"label": r["label"], "name": r["name"]} for r in records]
@@ -857,6 +1009,10 @@ class Neo4jAsyncStore:
         both the opportunistic sweep and ``engrama_reindex``. Returns up to
         ``limit`` rows as ``{engrama_id, label, key_field, key_value, props}``.
         """
+        # scope-exempt: admin reindex/sweep — backfills missing vectors across
+        # the whole graph; embedding lives on the same node it came from, so
+        # this never crosses tenant boundaries on the data side. The MCP
+        # reindex tool is gated separately (admin identity required).
         records, _, _ = await self._driver.execute_query(
             "MATCH (n) WHERE NOT n:Embedded "
             "WITH n, [l IN labels(n) WHERE l <> 'Embedded'][0] AS label "
@@ -947,7 +1103,10 @@ class Neo4jAsyncStore:
         return len(records) > 0
 
     async def count_embeddings(self) -> int:
-        """Total nodes with embeddings."""
+        """Total nodes with embeddings (cross-tenant)."""
+        # scope-exempt: engrama_status runtime introspection only — reports
+        # deployment-wide totals so an operator can verify the embedding
+        # backend is healthy. Never wired into tenant-visible responses.
         records, _, _ = await self._driver.execute_query(
             "MATCH (n:Embedded) RETURN count(n) AS total",
             database_=self._database,

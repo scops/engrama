@@ -365,12 +365,16 @@ class ObsidianSync:
         return merged
 
     def _find_node_label(self, name: str) -> str | None:
-        """Look up a node's label in the graph by name (case-insensitive).
+        """Look up a node's label in the graph by name (case-insensitive),
+        restricted to the engine's default scope.
 
-        Returns the first label found, or None if the node does not exist.
+        Returns the first label found, or None if the node does not exist
+        within the caller's scope.
         """
         try:
-            return self.engine._store.lookup_node_label(name)
+            return self.engine._store.lookup_node_label(
+                name, scope=self.engine.default_scope
+            )
         except Exception:
             return None
 
