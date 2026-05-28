@@ -85,10 +85,13 @@ jobs:
           fi
 
       - name: Verify CHANGELOG topmost entry
+        # The changelog lives at docs/changelog.md. Skip an optional
+        # "[Unreleased]" section (Keep a Changelog convention) and compare
+        # the first real version heading against the tag.
         run: |
-          TOP=$(grep -E '^## \[[^]]+\]' CHANGELOG.md | head -1 | sed -E 's/^## \[([^]]+)\].*/\1/')
+          TOP=$(grep -E '^## \[[^]]+\]' docs/changelog.md | grep -viE '\[unreleased\]' | head -1 | sed -E 's/^## \[([^]]+)\].*/\1/')
           if [[ "$TOP" != "${{ steps.parse.outputs.version }}" ]]; then
-            echo "::error::CHANGELOG.md topmost version ($TOP) does not match tag (${{ steps.parse.outputs.version }})"
+            echo "::error::docs/changelog.md topmost version ($TOP) does not match tag (${{ steps.parse.outputs.version }})"
             exit 1
           fi
 
@@ -271,20 +274,23 @@ jobs:
           path: sbom/
 
       - name: Extract topmost CHANGELOG entry
-        # Pulls just the section for this version out of CHANGELOG.md:
-        # everything from the first `## [` heading up to (but not
-        # including) the next `## [` heading. Fed to `gh release create`
-        # as the body so the Release page shows the same notes the repo
-        # ships.
+        # Pulls just the section for this version out of docs/changelog.md:
+        # everything from the first real version heading (skipping an
+        # optional "[Unreleased]" section) up to (but not including) the
+        # next `## [` heading. Fed to `gh release create` as the body so
+        # the Release page shows the same notes the repo ships.
         run: |
           python - <<'PY' > release-notes.md
           import pathlib
           import re
 
-          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
-          headings = list(re.finditer(r"(?m)^## \[", text))
+          text = pathlib.Path("docs/changelog.md").read_text(encoding="utf-8")
+          headings = [
+              m for m in re.finditer(r"(?m)^## \[([^\]]+)\]", text)
+              if m.group(1).strip().lower() != "unreleased"
+          ]
           if not headings:
-              raise SystemExit("CHANGELOG.md has no version headings")
+              raise SystemExit("docs/changelog.md has no version headings")
           start = headings[0].start()
           end = headings[1].start() if len(headings) > 1 else len(text)
           print(text[start:end].rstrip())

@@ -9,6 +9,15 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-28
+
+> **Breaking — pre-1.0 minor bump (semver `0.x`).** This release introduces
+> fail-closed multi-tenant scoping. Per Constitution P9 it is a
+> MAJOR-equivalent change; while the package is pre-1.0 that is expressed as a
+> minor bump with migration notes (OQ-10, resolved 2026-05-28). `0.12.0` was the
+> earlier non-breaking docs/latency release, so the breaking work takes `0.13.0`.
+> `1.0.0` is reserved for when the tenancy/sharing model is declared stable.
+
 ### Breaking (Spec 001 — multi-tenant identity-scoped memory)
 
 > All reads and writes are now keyed by `(org_id, user_id)`. A node or relation
