@@ -95,14 +95,10 @@ class TestEngineMergeNodeRefusesIncompleteScope:
             engine.merge_node("Concept", {"name": "leak-me"})
         assert store.get_node("Concept", "name", "leak-me") is None
 
-    def test_explicit_scope_kwarg_with_missing_user_rejects(
-        self, store: SqliteGraphStore
-    ) -> None:
+    def test_explicit_scope_kwarg_with_missing_user_rejects(self, store: SqliteGraphStore) -> None:
         # default_scope is fine, but an explicit kwarg override that is
         # incomplete must still fail — the explicit arg wins.
-        engine = EngramaEngine(
-            store, default_scope=MemoryScope(org_id="acme", user_id="alice")
-        )
+        engine = EngramaEngine(store, default_scope=MemoryScope(org_id="acme", user_id="alice"))
         with pytest.raises(ScopeIncomplete):
             engine.merge_node(
                 "Concept",
@@ -112,9 +108,7 @@ class TestEngineMergeNodeRefusesIncompleteScope:
         assert store.get_node("Concept", "name", "leak-me") is None
 
     def test_complete_scope_succeeds(self, store: SqliteGraphStore) -> None:
-        engine = EngramaEngine(
-            store, default_scope=MemoryScope(org_id="acme", user_id="alice")
-        )
+        engine = EngramaEngine(store, default_scope=MemoryScope(org_id="acme", user_id="alice"))
         engine.merge_node("Concept", {"name": "kept"})
         node = store.get_node("Concept", "name", "kept")
         assert node is not None
@@ -161,9 +155,7 @@ class TestRelationCarriesScope:
     """
 
     def test_sqlite_relation_stamped_with_scope(self, store: SqliteGraphStore) -> None:
-        engine = EngramaEngine(
-            store, default_scope=MemoryScope(org_id="acme", user_id="alice")
-        )
+        engine = EngramaEngine(store, default_scope=MemoryScope(org_id="acme", user_id="alice"))
         engine.merge_node("Project", {"name": "p"})
         engine.merge_node("Technology", {"name": "t"})
         engine.merge_relation("p", "Project", "USES", "t", "Technology")
@@ -172,9 +164,7 @@ class TestRelationCarriesScope:
         assert props.get("org_id") == "acme"
         assert props.get("user_id") == "alice"
 
-    def test_sqlite_relation_rejected_when_scope_incomplete(
-        self, store: SqliteGraphStore
-    ) -> None:
+    def test_sqlite_relation_rejected_when_scope_incomplete(self, store: SqliteGraphStore) -> None:
         # An incomplete scope on the writer must not let a relation slip
         # through — defence-in-depth at the engine layer also covers
         # ``merge_relation``.

@@ -140,9 +140,7 @@ def test_apply_stamps_identity_and_purges_orphans(legacy_store: SqliteGraphStore
 
     # The relation now carries identity, so a relation-scoped read filter
     # (FR-1) would let it through.
-    row = legacy_store._conn.execute(
-        "SELECT org_id, user_id FROM edges LIMIT 1"
-    ).fetchone()
+    row = legacy_store._conn.execute("SELECT org_id, user_id FROM edges LIMIT 1").fetchone()
     assert row["org_id"] == _OWNER
     assert row["user_id"] == _OWNER
 
@@ -213,9 +211,9 @@ def test_preserves_already_stamped_rows(tmp_path: Path) -> None:
         migrate_tenancy(s, owner_sub=_OWNER, apply=True)
 
         bob_props = json.loads(
-            s._conn.execute(
-                "SELECT props FROM nodes WHERE key_value = 'owned-by-bob'"
-            ).fetchone()["props"]
+            s._conn.execute("SELECT props FROM nodes WHERE key_value = 'owned-by-bob'").fetchone()[
+                "props"
+            ]
         )
         new_props = json.loads(
             s._conn.execute(

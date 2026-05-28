@@ -147,11 +147,7 @@ class EngramaEngine:
             properties = {**properties, **prov_props}
 
         effective_scope = scope if scope is not None else self.default_scope
-        if (
-            effective_scope is None
-            or not effective_scope.org_id
-            or not effective_scope.user_id
-        ):
+        if effective_scope is None or not effective_scope.org_id or not effective_scope.user_id:
             # Spec 001 T011 / FR-4: writes without a complete (org_id,
             # user_id) are an illegal state — fail closed rather than
             # persist an identity-less node that future reads will treat
@@ -249,11 +245,7 @@ class EngramaEngine:
         self.sanitiser.validate_relation(rel_type)
 
         effective_scope = scope if scope is not None else self.default_scope
-        if (
-            effective_scope is None
-            or not effective_scope.org_id
-            or not effective_scope.user_id
-        ):
+        if effective_scope is None or not effective_scope.org_id or not effective_scope.user_id:
             raise ScopeIncomplete(
                 "EngramaEngine.merge_relation requires a complete (org_id, "
                 f"user_id) scope; got {effective_scope!r}",

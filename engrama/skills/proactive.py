@@ -61,9 +61,7 @@ class ProactiveSkill:
         Returns:
             A list of :class:`SurfacedInsight` ready for agent presentation.
         """
-        records = engine._store.get_pending_insights(
-            limit=limit, scope=engine.default_scope
-        )
+        records = engine._store.get_pending_insights(limit=limit, scope=engine.default_scope)
 
         results: list[SurfacedInsight] = []
         for r in records:

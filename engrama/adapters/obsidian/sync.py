@@ -372,9 +372,7 @@ class ObsidianSync:
         within the caller's scope.
         """
         try:
-            return self.engine._store.lookup_node_label(
-                name, scope=self.engine.default_scope
-            )
+            return self.engine._store.lookup_node_label(name, scope=self.engine.default_scope)
         except Exception:
             return None
 

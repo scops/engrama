@@ -806,9 +806,7 @@ class Neo4jAsyncStore:
         """Open Problem shares a Concept with a resolved Problem in a
         different Project that has a Decision, within ``scope``.
         """
-        scope_sql, scope_params = self._scope_and(
-            ("pB", "open", "c", "resolved", "d", "pA"), scope
-        )
+        scope_sql, scope_params = self._scope_and(("pB", "open", "c", "resolved", "d", "pA"), scope)
         cypher = (
             "MATCH (pB:Project)-[:HAS]->(open:Problem {status: $open_status}) "
             "MATCH (open)-[:INSTANCE_OF|APPLIES]->(c:Concept)"

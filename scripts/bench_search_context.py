@@ -162,9 +162,7 @@ def main() -> int:
             )
             context_stats = _measure(
                 "context",
-                lambda: eng._engine.get_context(
-                    next(it_ctx)[1], next(it_ctx)[0], hops=1
-                ),
+                lambda: eng._engine.get_context(next(it_ctx)[1], next(it_ctx)[0], hops=1),
                 args.queries // 2,  # context is heavier; half the load
             )
 

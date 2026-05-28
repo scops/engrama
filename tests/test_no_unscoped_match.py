@@ -94,8 +94,7 @@ def test_scanner_flags_an_unprotected_function(_scanner, tmp_path: Path) -> None
     """A function with NO opt-in must be reported."""
     src = tmp_path / "fake_backend.py"
     src.write_text(
-        "def leaky_read():\n"
-        "    return 'SELECT id FROM nodes WHERE label = ?'\n",
+        "def leaky_read():\n    return 'SELECT id FROM nodes WHERE label = ?'\n",
         encoding="utf-8",
     )
     violations = _scanner._scan_file(src)
@@ -110,8 +109,7 @@ def test_scanner_recognises_auto_exempt_family(_scanner, tmp_path: Path) -> None
     """
     src = tmp_path / "fake_backend.py"
     src.write_text(
-        "def merge_thing():\n"
-        "    return 'SELECT id FROM nodes WHERE label = ?'\n",
+        "def merge_thing():\n    return 'SELECT id FROM nodes WHERE label = ?'\n",
         encoding="utf-8",
     )
     assert _scanner._scan_file(src) == []

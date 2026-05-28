@@ -145,9 +145,7 @@ class TestEngineScopeTagging:
 
     def test_caller_cannot_smuggle_scope_via_properties(self):
         store = _stub_store()
-        engine = EngramaEngine(
-            store, default_scope=MemoryScope(user_id="alice", org_id="acme")
-        )
+        engine = EngramaEngine(store, default_scope=MemoryScope(user_id="alice", org_id="acme"))
         engine.merge_node(
             "Concept",
             {"name": "Async", "user_id": "bob", "org_id": "evil_corp"},

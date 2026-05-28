@@ -565,13 +565,9 @@ def migrate_tenancy(
     owner_sub = owner_sub.strip()
 
     if hasattr(graph_store, "_conn"):
-        return _migrate_tenancy_sqlite(
-            graph_store, owner_sub, dry_run=dry_run, apply=apply
-        )
+        return _migrate_tenancy_sqlite(graph_store, owner_sub, dry_run=dry_run, apply=apply)
     if hasattr(graph_store, "_client"):
-        return _migrate_tenancy_neo4j(
-            graph_store, owner_sub, dry_run=dry_run, apply=apply
-        )
+        return _migrate_tenancy_neo4j(graph_store, owner_sub, dry_run=dry_run, apply=apply)
     raise TypeError(
         "migrate_tenancy requires a SqliteGraphStore or Neo4jGraphStore; "
         f"got {type(graph_store).__name__}"
@@ -579,8 +575,7 @@ def migrate_tenancy(
 
 
 _SQL_NODES_NEED_STAMP = (
-    "(json_extract(props, '$.org_id') IS NULL "
-    " OR json_extract(props, '$.user_id') IS NULL)"
+    "(json_extract(props, '$.org_id') IS NULL  OR json_extract(props, '$.user_id') IS NULL)"
 )
 _SQL_NODES_ARE_ORPHAN = _SQL_NODES_NEED_STAMP + " AND (key_value IS NULL OR TRIM(key_value) = '')"
 
@@ -601,14 +596,12 @@ def _migrate_tenancy_sqlite(
         f"SELECT COUNT(*) AS n FROM nodes WHERE {_SQL_NODES_ARE_ORPHAN}"
     ).fetchone()["n"]
     rel_total = conn.execute(
-        "SELECT COUNT(*) AS n FROM edges "
-        "WHERE org_id IS NULL OR user_id IS NULL"
+        "SELECT COUNT(*) AS n FROM edges WHERE org_id IS NULL OR user_id IS NULL"
     ).fetchone()["n"]
     node_sample = [
         {"label": r["label"], "key_value": r["key_value"]}
         for r in conn.execute(
-            f"SELECT label, key_value FROM nodes WHERE {_SQL_NODES_NEED_STAMP} "
-            "LIMIT 10"
+            f"SELECT label, key_value FROM nodes WHERE {_SQL_NODES_NEED_STAMP} LIMIT 10"
         ).fetchall()
     ]
 
@@ -638,15 +631,12 @@ def _migrate_tenancy_sqlite(
     #    every edge whose org_id/user_id was NULL belongs to the same
     #    owner_sub.
     relations_stamped = conn.execute(
-        "UPDATE edges SET org_id = ?, user_id = ? "
-        "WHERE org_id IS NULL OR user_id IS NULL",
+        "UPDATE edges SET org_id = ?, user_id = ? WHERE org_id IS NULL OR user_id IS NULL",
         (owner_sub, owner_sub),
     ).rowcount
     # 3) Purge true orphans (no identity AND no merge key). Any edges that
     #    referenced them go away via ON DELETE CASCADE.
-    orphans_purged = conn.execute(
-        f"DELETE FROM nodes WHERE {_SQL_NODES_ARE_ORPHAN}"
-    ).rowcount
+    orphans_purged = conn.execute(f"DELETE FROM nodes WHERE {_SQL_NODES_ARE_ORPHAN}").rowcount
     conn.commit()
 
     report.update(
@@ -659,9 +649,7 @@ def _migrate_tenancy_sqlite(
     return report
 
 
-_CYPHER_NODES_NEED_STAMP = (
-    "MATCH (n) WHERE n.org_id IS NULL OR n.user_id IS NULL"
-)
+_CYPHER_NODES_NEED_STAMP = "MATCH (n) WHERE n.org_id IS NULL OR n.user_id IS NULL"
 
 
 def _migrate_tenancy_neo4j(
@@ -672,12 +660,9 @@ def _migrate_tenancy_neo4j(
     apply: bool,
 ) -> dict[str, Any]:
     client = store._client
-    node_total = client.run(
-        f"{_CYPHER_NODES_NEED_STAMP} RETURN count(n) AS n"
-    )[0]["n"]
+    node_total = client.run(f"{_CYPHER_NODES_NEED_STAMP} RETURN count(n) AS n")[0]["n"]
     rel_total = client.run(
-        "MATCH ()-[r]->() WHERE r.org_id IS NULL OR r.user_id IS NULL "
-        "RETURN count(r) AS n"
+        "MATCH ()-[r]->() WHERE r.org_id IS NULL OR r.user_id IS NULL RETURN count(r) AS n"
     )[0]["n"]
     # Orphan: identity-less AND missing both possible merge keys.
     orphan_total = client.run(

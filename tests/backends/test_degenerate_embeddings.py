@@ -115,9 +115,7 @@ def _make_engine(
 ) -> tuple[EngramaEngine, _MockEmbedder, _RecordingVectorStore]:
     embedder = _MockEmbedder(embedder_response)
     vector = _RecordingVectorStore()
-    engine = EngramaEngine(
-        store, vector_store=vector, embedder=embedder, default_scope=_TEST_SCOPE
-    )
+    engine = EngramaEngine(store, vector_store=vector, embedder=embedder, default_scope=_TEST_SCOPE)
     return engine, embedder, vector
 
 

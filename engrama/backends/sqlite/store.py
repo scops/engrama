@@ -144,9 +144,7 @@ class SqliteGraphStore:
             except sqlite3.OperationalError as e:
                 if "duplicate column" not in str(e).lower():
                     raise
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_edges_scope ON edges(org_id, user_id)"
-        )
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_scope ON edges(org_id, user_id)")
         self._conn.commit()
 
     def init_schema(self, schema: Any = None) -> None:
@@ -668,10 +666,7 @@ class SqliteGraphStore:
         Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty dict.
         """
         scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
-        sql = (
-            "SELECT label, COUNT(*) AS n FROM nodes "
-            "WHERE label != 'Insight'"
-        )
+        sql = "SELECT label, COUNT(*) AS n FROM nodes WHERE label != 'Insight'"
         params: dict[str, Any] = {}
         if scope_clause:
             sql += f" AND {scope_clause}"
@@ -1219,9 +1214,7 @@ class SqliteGraphStore:
         Returns rows ``{target_project, open_problem, decision,
         source_project, concept}``.
         """
-        scope_sql, scope_params = self._scope_and(
-            ("pB", "op", "c", "rp", "d", "pA"), scope
-        )
+        scope_sql, scope_params = self._scope_and(("pB", "op", "c", "rp", "d", "pA"), scope)
         sql = f"""
             SELECT DISTINCT
                 pB.key_value     AS target_project,

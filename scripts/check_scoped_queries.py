@@ -99,6 +99,7 @@ def _is_auto_exempt(function_name: str) -> bool:
         return True
     return any(function_name.startswith(p) for p in _AUTO_EXEMPT_PREFIXES)
 
+
 # Markers that classify a string literal as "query-shaped" for our
 # purposes. Plain ``MATCH (`` is the Cypher fence; ``FROM nodes`` /
 # ``FROM edges`` capture SQLite reads (we don't try to detect plain

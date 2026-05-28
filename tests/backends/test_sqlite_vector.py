@@ -54,14 +54,10 @@ class _ScopedVec:
         return getattr(self._inner, name)
 
     def search_vectors(self, query_embedding, limit=10, scope=None):
-        return self._inner.search_vectors(
-            query_embedding, limit=limit, scope=scope or self._scope
-        )
+        return self._inner.search_vectors(query_embedding, limit=limit, scope=scope or self._scope)
 
     def search_similar(self, query_embedding, limit=10, scope=None):
-        return self._inner.search_similar(
-            query_embedding, limit=limit, scope=scope or self._scope
-        )
+        return self._inner.search_similar(query_embedding, limit=limit, scope=scope or self._scope)
 
 
 @pytest.fixture()

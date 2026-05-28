@@ -116,12 +116,8 @@ def populated_db(tmp_path: Path) -> Path:
         # beta has an open Problem on the same Concept.
         eng.remember("Project", "alpha", "rich tenant alpha")
         eng.remember("Project", "beta", "rich tenant beta")
-        eng._store.merge_node(
-            "Problem", "title", "leak", {"status": "resolved", **_DATA_SCOPE_KW}
-        )
-        eng._store.merge_node(
-            "Problem", "title", "exposed", {"status": "open", **_DATA_SCOPE_KW}
-        )
+        eng._store.merge_node("Problem", "title", "leak", {"status": "resolved", **_DATA_SCOPE_KW})
+        eng._store.merge_node("Problem", "title", "exposed", {"status": "open", **_DATA_SCOPE_KW})
         eng._store.merge_node("Decision", "title", "use-tls", _DATA_SCOPE_KW)
         eng.remember("Concept", "encryption", "shared concept")
         eng._store.merge_relation("Project", "name", "alpha", "HAS", "Problem", "title", "leak")
@@ -219,9 +215,7 @@ def test_empty_scope_get_neighbours_returns_empty(populated_db: Path) -> None:
     # row whose ``start`` is empty — the neighbour list is empty. Both are
     # acceptable, but a populated neighbour from the other tenant would be
     # the leak we forbid.
-    leaked = [
-        r for r in rows if r.get("neighbour") and r["neighbour"].get("name")
-    ]
+    leaked = [r for r in rows if r.get("neighbour") and r["neighbour"].get("name")]
     assert leaked == []
 
 
@@ -262,9 +256,7 @@ def test_empty_scope_find_insight_by_source_query_returns_none(populated_db: Pat
             )
             is None
         )
-        assert (
-            eng._store.find_insight_by_source_query("manual", scope=scope) is None
-        )
+        assert eng._store.find_insight_by_source_query("manual", scope=scope) is None
 
 
 def test_empty_scope_reflect_detectors_return_empty(populated_db: Path) -> None:

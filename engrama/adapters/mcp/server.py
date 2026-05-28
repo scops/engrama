@@ -136,6 +136,7 @@ def _resolve_and_bind(ctx: Context) -> MemoryScope:
     _bind_scope_to_logging(scope)
     return scope
 
+
 # ---------------------------------------------------------------------------
 # Valid labels / relations (used for validation)
 # ---------------------------------------------------------------------------
