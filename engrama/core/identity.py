@@ -1,9 +1,10 @@
 """Standalone single-user identity (Spec 001, FR-7 / research R-5).
 
 Bare OSS is single-user by design: it carries ``(org_id, user_id)`` only as
-the namespacing primitive for SaaS-gateway compatibility. When no gateway is
-in front (no inbound identity headers), Engrama resolves a single stable local
-identity — ``sub_local`` — and uses it as ``user_id == org_id == sub_local``.
+the namespacing primitive that lets a tenancy-aware gateway sit in front. When
+no gateway is in front (no inbound identity headers), Engrama resolves a single
+stable local identity — ``sub_local`` — and uses it as
+``user_id == org_id == sub_local``.
 
 Derivation order (R-5):
 
@@ -12,8 +13,8 @@ Derivation order (R-5):
 2. Otherwise a UUID generated once on first run and persisted to
    ``<state_dir>/local_sub`` (zero-config, stable per install).
 
-Multi-user behaviour is out of scope for bare OSS; it exists only behind the
-engrama-saas gateway, which injects ``X-Engrama-*`` headers instead.
+Multi-user behaviour is out of scope for bare OSS; it exists only when a
+gateway in front injects ``X-Engrama-*`` identity headers per request.
 """
 
 from __future__ import annotations
