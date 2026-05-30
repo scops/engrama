@@ -1313,6 +1313,14 @@ def create_engrama_mcp(
         # caller saw status:ok with no idea a relation was dropped. Surface them
         # in the response (non-fatal — the node and valid relations still land).
         relations_rejected: list[str] = []
+        # Relations whose target the caller named but which did NOT connect to a
+        # pre-existing node. ``relations_failed`` = no edge at all (match failed
+        # or the stub couldn't be created); ``relations_stubbed`` = an edge was
+        # created, but to a brand-new stub, so the caller may have meant an
+        # existing node under a different name/key. Both used to be server-log
+        # only — the caller saw status:ok with no idea (#93).
+        relations_failed: list[dict[str, str]] = []
+        relations_stubbed: list[dict[str, str]] = []
         if all_relations:
             from engrama.adapters.obsidian.sync import ObsidianSync
 
@@ -1330,6 +1338,7 @@ def create_engrama_mcp(
                     # existing title-keyed target (Decision, Problem,
                     # Experiment, ...) resolves to the right label here.
                     target_label = await store.lookup_node_label(target_name, scope=scope)
+                    created_as_stub = False
 
                     if target_label is None:
                         # Target doesn't exist yet — create a stub. Prefer the
@@ -1351,6 +1360,7 @@ def create_engrama_mcp(
                                 )
                             target_label = ObsidianSync._infer_stub_label(rel_type_upper)
                         target_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
+                        created_as_stub = True
                         try:
                             await store.merge_node(
                                 target_label,
@@ -1360,6 +1370,13 @@ def create_engrama_mcp(
                             )
                         except Exception as e:
                             logger.warning("Could not create stub %s: %s", target_name, e)
+                            relations_failed.append(
+                                {
+                                    "rel_type": rel_type_upper,
+                                    "target": target_name,
+                                    "reason": "stub_creation_failed",
+                                }
+                            )
                             continue
                     else:
                         # Canonicalise the target merge key the same way
@@ -1384,6 +1401,19 @@ def create_engrama_mcp(
                         )
                         if rel_result:
                             relations_created += 1
+                            if created_as_stub:
+                                # Edge landed, but on a node we just invented.
+                                # The caller may have meant an existing node
+                                # under a different name/key — surface it so a
+                                # silent orphan stub isn't mistaken for a link
+                                # to the intended target.
+                                relations_stubbed.append(
+                                    {
+                                        "rel_type": rel_type_upper,
+                                        "target": target_name,
+                                        "stub_label": target_label,
+                                    }
+                                )
                         else:
                             logger.warning(
                                 "Inline relation not created (target not found): %s -[%s]-> %s:%s",
@@ -1392,6 +1422,13 @@ def create_engrama_mcp(
                                 target_label,
                                 target_name,
                             )
+                            relations_failed.append(
+                                {
+                                    "rel_type": rel_type_upper,
+                                    "target": target_name,
+                                    "reason": "match_failed",
+                                }
+                            )
                     except Exception as e:
                         logger.warning(
                             "Could not create relation %s -[%s]-> %s: %s",
@@ -1399,6 +1436,13 @@ def create_engrama_mcp(
                             rel_type_upper,
                             target_name,
                             e,
+                        )
+                        relations_failed.append(
+                            {
+                                "rel_type": rel_type_upper,
+                                "target": target_name,
+                                "reason": "error",
+                            }
                         )
 
                     # Write relation to vault frontmatter (DDR-002)
@@ -1436,6 +1480,22 @@ def create_engrama_mcp(
             result_data["relations_rejected_note"] = (
                 f"these relation types are not in the schema and were skipped: "
                 f"{', '.join(relations_rejected)}. Valid types: {valid}."
+            )
+        if relations_failed:
+            result_data["relations_failed"] = relations_failed
+            targets = ", ".join(sorted({f["target"] for f in relations_failed}))
+            result_data["relations_failed_note"] = (
+                f"these relations were NOT created — the target did not resolve to a "
+                f"reachable node: {targets}. Check the target name, label, and that it "
+                f"exists within your scope."
+            )
+        if relations_stubbed:
+            result_data["relations_stubbed"] = relations_stubbed
+            targets = ", ".join(sorted({s["target"] for s in relations_stubbed}))
+            result_data["relations_stubbed_note"] = (
+                f"these relations linked to a NEWLY-created stub, not a pre-existing "
+                f"node: {targets}. If you meant an existing node, it may be stored under "
+                f"a different name/key — verify and re-relate to avoid an orphan stub."
             )
         # DDR-003 Phase D: propagate valid_to conflict warning
         if result.get("warning"):
@@ -1516,10 +1576,42 @@ def create_engrama_mcp(
             params.to_name,
         )
         if not r:
-            return (
-                f"No relationship created — could not find "
-                f"(:{params.from_label} {{name: '{params.from_name}'}}) "
-                f"or (:{params.to_label} {{name: '{params.to_name}'}})."
+            # Pinpoint which endpoint failed instead of a vague "could not find
+            # either" (#93). ``lookup_node_label`` is scope-filtered, so a node
+            # owned by another tenant reads as missing here too. We probe by
+            # name within scope: a hit under a different label points at a
+            # label mismatch; a miss points at a wrong name or wrong scope.
+            missing: list[str] = []
+            for side, side_label, side_name in (
+                ("from", params.from_label, params.from_name),
+                ("to", params.to_label, params.to_name),
+            ):
+                found_label = await store.lookup_node_label(side_name, scope=scope)
+                if found_label is None:
+                    missing.append(
+                        f"{side} (:{side_label} {{name: '{side_name}'}}) — not found "
+                        f"in your scope (check the name, or that it exists for this tenant)"
+                    )
+                elif found_label != side_label:
+                    missing.append(
+                        f"{side} '{side_name}' exists but as :{found_label}, "
+                        f"not :{side_label} — fix the label"
+                    )
+            detail = (
+                "; ".join(missing)
+                if missing
+                else (
+                    "both endpoints resolve by name but the relationship still "
+                    "could not be created (possible key mismatch)"
+                )
+            )
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"No relationship created — {detail}.",
+                },
+                default=str,
+                indent=2,
             )
 
         # DDR-002: dual-write — also record the relation in vault frontmatter

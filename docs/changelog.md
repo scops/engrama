@@ -9,6 +9,24 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+
+- **Silent inline-relation failures are now surfaced (#93).** When
+  `engrama_remember` is given inline `relations` and a target doesn't connect,
+  the response no longer hides it behind `status: ok` / `relations_created: 0`
+  with only a server-log warning. Two new response fields mirror the existing
+  `relations_rejected`: `relations_failed` lists targets where **no edge was
+  created** (the merge matched nothing, or a stub couldn't be created), and
+  `relations_stubbed` lists targets where the edge landed on a **newly-created
+  stub** rather than a pre-existing node — so an orphan stub (e.g. relating to
+  `Engrama` when the real node is `engrama-saas`) isn't mistaken for the
+  intended link. Each carries an explanatory `_note`.
+- **`engrama_relate` pinpoints the failing endpoint (#93).** A failed relate
+  now returns a structured `status: "error"` naming *which* endpoint was
+  missing, and distinguishes a wrong/out-of-scope name from a label mismatch
+  (endpoint exists under a different label) instead of a vague "could not find
+  either".
+
 ## [0.13.0] — 2026-05-28
 
 > **Breaking — pre-1.0 minor bump (semver `0.x`).** This release introduces
