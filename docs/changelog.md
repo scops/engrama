@@ -9,6 +9,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- **`engrama_status.admin_tools`.** New field listing the not-tenant-isolated
+  tools (`engrama_status`, `engrama_reindex`) with a reason each, so a
+  multi-tenant gateway can discover what to gate at runtime instead of
+  hardcoding names.
+
 ### Changed
 
 - **Inline relations resolve by confidence, not silent stubbing (#93).** When
@@ -38,6 +45,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
   admin/import/migration), and the MCP relate paths pass scope so the edge is
   stamped with identity. An endpoint owned by another tenant resolves to "not
   found".
+- **`engrama_reindex` scan is now tenant-scoped.** `list_unembedded_nodes`
+  takes an optional scope; the reindex tool passes the request's resolved
+  scope, so `detect`/`classify` only sample the caller's own vector-less nodes
+  and `apply` only re-embeds them. Previously the scan was cross-tenant and
+  exposed other tenants' node names/ids in its samples. The internal
+  opportunistic sweep and the admin CLI keep the deployment-wide backfill via
+  `scope=None`.
 
 ### Fixed
 
@@ -57,6 +71,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
   missing, and distinguishes a wrong/out-of-scope name from a label mismatch
   (endpoint exists under a different label) instead of a vague "could not find
   either".
+
+### Docs
+
+- Documented fail-closed multi-tenant isolation across `security`,
+  `architecture`, and `graph-schema` (EN + ES); refreshed the README for the
+  PyPI release (`pip install engrama`).
 
 ## [0.13.0] — 2026-05-28
 

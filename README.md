@@ -2,10 +2,11 @@
 
 > Graph-based long-term memory framework for AI agents.
 
+[![PyPI](https://img.shields.io/pypi/v/engrama.svg)](https://pypi.org/project/engrama/)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Backend](https://img.shields.io/badge/backend-SQLite_%7C_Neo4j-green.svg)](docs/backends.md)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha%20%C2%B7%20install%20from%20source-orange.svg)](#quick-start-sqlite-zero-dep)
+[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](#quick-start-sqlite-zero-dep)
 
 Engrama gives any AI agent persistent, structured memory backed by a
 **knowledge graph**. Instead of flat key-value stores or opaque vector
@@ -16,14 +17,21 @@ their accumulated knowledge.
 Two backends are first-class:
 
 - **SQLite + `sqlite-vec`** (default since 0.9) — single file, zero
-  external services, `git clone` + `uv sync` and you're running
-  (Engrama is not yet on PyPI; install from source).
+  external services, `pip install engrama` and you're running.
 - **Neo4j 5.26 LTS** (opt-in) — for multi-process production setups,
   large-scale vector search, or teams that already use Cypher.
 
 The data model is identical on both. See **[docs/backends.md](docs/backends.md)**
 for a full decision guide; the rest of this README assumes the SQLite
 default.
+
+Since **0.13.0**, every node and relation is owned by an
+`(org_id, user_id)` identity and reads are **fail-closed**: a missing or
+partial scope matches nothing rather than falling back to "see all". A
+single-process install runs as one stable standalone identity and needs
+no configuration; a multi-tenant deployment supplies the identity per
+request from an authenticating gateway. See
+**[docs/security.md](docs/security.md#tenant-isolation-multi-tenant)**.
 
 Inspired by Karpathy's second-brain concept, but built for agents
 instead of humans — and with graphs instead of wikis.
@@ -68,7 +76,15 @@ not required** unless you opt into Neo4j.
 
 ## Quick start (SQLite, zero-dep)
 
-### Step 1: Clone and install
+### Step 1: Install
+
+From PyPI (recommended):
+
+```bash
+pip install engrama          # or: uv add engrama
+```
+
+Or from source, for development:
 
 ```bash
 git clone https://github.com/scops/engrama
@@ -76,16 +92,19 @@ cd engrama
 uv sync
 ```
 
+> The commands below assume a PyPI install (`engrama ...`). From a source
+> checkout, prefix each one with `uv run` (`uv run engrama ...`).
+
 ### Step 2: Initialise the schema
 
 ```bash
-uv run engrama init --profile developer
+engrama init --profile developer
 ```
 
 ### Step 3: Verify
 
 ```bash
-uv run engrama verify
+engrama verify
 ```
 
 ### Step 4: Use it
@@ -102,8 +121,8 @@ with Engrama() as eng:
 
 **B) From the command line:**
 ```bash
-uv run engrama search "FastAPI"
-uv run engrama reflect
+engrama search "FastAPI"
+engrama reflect
 ```
 
 ---
@@ -113,16 +132,14 @@ uv run engrama reflect
 If you need multi-process writes, very large vector indexes, or an existing Cypher toolchain, install with the Neo4j extra:
 
 ```bash
-git clone https://github.com/scops/engrama
-cd engrama
-uv sync --extra neo4j
+pip install "engrama[neo4j]"     # or, from source: uv sync --extra neo4j
 ```
 
 Configure your credentials by copying `.env.example` to `.env` and setting `GRAPH_BACKEND=neo4j`. Start Neo4j with `docker compose up -d`, and then initialize the schema:
 
 ```bash
-uv run engrama init --profile developer
-uv run engrama verify
+engrama init --profile developer
+engrama verify
 ```
 
 ---

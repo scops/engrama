@@ -8,8 +8,8 @@ backports unless explicitly stated in the release notes.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.9.x   | :white_check_mark: |
-| < 0.9   | :x:                |
+| 0.13.x  | :white_check_mark: |
+| < 0.13  | :x:                |
 
 ## Reporting a vulnerability
 
@@ -49,6 +49,56 @@ Out of scope (please report upstream):
   to `~/.engrama/`, or compromised API credentials.
 - Findings against forks or downstream redistributions; please contact
   those maintainers directly.
+
+## Tenant isolation (multi-tenant)
+
+Since **0.13.0** every node and relation is owned by an `(org_id, user_id)`
+identity, and reads are **fail-closed** (Spec 001). This is the isolation
+model to understand before exposing Engrama to more than one user.
+
+- **Identity is mandatory on writes.** `engrama_remember` / `engrama_relate`
+  stamp `(org_id, user_id)` on the node or edge. A write that cannot resolve
+  a complete identity is rejected, never stored unscoped.
+- **Reads match nothing without a complete scope.** The scope helpers
+  (`scope_filter_cypher` / `scope_filter_sql`) emit `(false)` / `(1 = 0)`
+  for a `None`, empty, or half-resolved scope. A read that reaches them
+  without a full `(org_id, user_id)` returns **zero rows** — it never widens
+  to "see all". There is no see-all admin path through the helpers.
+- **Engrama does not authenticate.** It consumes an identity that has
+  already been asserted upstream. In a single-process install there is no
+  gateway and no headers, so it runs as one stable **standalone identity**
+  (derived once at startup) and every read/write shares it — isolation is a
+  no-op but the same code path is exercised. In a multi-tenant deployment a
+  gateway in front sets `X-Engrama-Org-Id` / `X-Engrama-User-Id` per request;
+  exactly one header present resolves to zero results, never an error you can
+  pivot on.
+- **Defense in depth, three layers:** the per-request resolver at the MCP
+  boundary (rejects partial headers), the engine write-guard (raises on a
+  direct SDK call without a complete scope), and a CI guard
+  (`scripts/check_scoped_queries.py`) that fails the build on any new backend
+  query that bypasses the scope helper without an explicit
+  `# scope-exempt: <reason>`.
+- **Migrating an existing graph.** A pre-0.13 graph has no identity on its
+  rows, so under fail-closed reads those rows are invisible. Run
+  `engrama migrate tenancy --dry-run` to preview, then
+  `engrama migrate tenancy --owner-sub <sub> --apply` to stamp ownership and
+  restore visibility.
+
+### Admin / cross-tenant tools
+
+Two tools are **not** isolated per tenant by design and a multi-tenant
+gateway should gate them so a normal tenant cannot reach them:
+
+- `engrama_status` — runtime introspection; its counts are **deployment-wide**
+  and it requires no identity.
+- `engrama_reindex` — its candidate scan is scoped to the calling tenant
+  (it leaks no cross-tenant data), but it is an admin-flavoured bulk
+  re-embed; a gateway may still gate it for cost/abuse.
+
+`engrama_status` lists both in an `admin_tools` field of its own response, so
+a gateway can discover what to gate at runtime instead of hardcoding names.
+Engrama OSS only **declares** this boundary; enforcing it (and all
+authentication) is the gateway's job.
 
 ## Hardening notes for operators
 
