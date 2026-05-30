@@ -14,6 +14,9 @@ from engrama.core.scope import MemoryScope
 
 # Spec 001 T011: engine writes need a complete (org_id, user_id) scope.
 _TEST_SCOPE = MemoryScope(org_id="test-adapters", user_id="test-adapters")
+# Raw-Cypher node fixtures must carry the same scope, or the now scope-filtered
+# merge_relation endpoint match (fail-closed) won't see them (#93).
+_SCOPE_CYPHER_PARAMS = {"org_id": "test-adapters", "user_id": "test-adapters"}
 
 
 @pytest.fixture()
@@ -36,14 +39,16 @@ class TestRelateWithTitleKeyedNodes:
         neo4j_session.run(
             "MERGE (d:Decision {title: $title}) "
             "SET d.test = true, d.rationale = 'test rationale', "
+            "d.org_id = $org_id, d.user_id = $user_id, "
             "d.created_at = datetime(), d.updated_at = datetime()",
-            {"title": "Use Neo4j for memory graph"},
+            {"title": "Use Neo4j for memory graph", **_SCOPE_CYPHER_PARAMS},
         )
         neo4j_session.run(
             "MERGE (p:Project {name: $name}) "
             "SET p.test = true, p.status = 'active', "
+            "p.org_id = $org_id, p.user_id = $user_id, "
             "p.created_at = datetime(), p.updated_at = datetime()",
-            {"name": "TestProject_Relate"},
+            {"name": "TestProject_Relate", **_SCOPE_CYPHER_PARAMS},
         )
 
         # Act — relate Decision → Project via engine (uses title key for Decision)
@@ -72,14 +77,16 @@ class TestRelateWithTitleKeyedNodes:
         neo4j_session.run(
             "MERGE (p:Problem {title: $title}) "
             "SET p.test = true, p.status = 'open', "
+            "p.org_id = $org_id, p.user_id = $user_id, "
             "p.created_at = datetime(), p.updated_at = datetime()",
-            {"title": "Token expiry in auth flow"},
+            {"title": "Token expiry in auth flow", **_SCOPE_CYPHER_PARAMS},
         )
         neo4j_session.run(
             "MERGE (c:Concept {name: $name}) "
             "SET c.test = true, "
+            "c.org_id = $org_id, c.user_id = $user_id, "
             "c.created_at = datetime(), c.updated_at = datetime()",
-            {"name": "JWT Authentication"},
+            {"name": "JWT Authentication", **_SCOPE_CYPHER_PARAMS},
         )
 
         records = engine.merge_relation(
@@ -97,13 +104,15 @@ class TestRelateWithTitleKeyedNodes:
         """Standard name-keyed relate still works (regression test)."""
         neo4j_session.run(
             "MERGE (p:Project {name: $name}) "
-            "SET p.test = true, p.created_at = datetime(), p.updated_at = datetime()",
-            {"name": "TestProject_NameKey"},
+            "SET p.test = true, p.org_id = $org_id, p.user_id = $user_id, "
+            "p.created_at = datetime(), p.updated_at = datetime()",
+            {"name": "TestProject_NameKey", **_SCOPE_CYPHER_PARAMS},
         )
         neo4j_session.run(
             "MERGE (t:Technology {name: $name}) "
-            "SET t.test = true, t.created_at = datetime(), t.updated_at = datetime()",
-            {"name": "Python_TestRelate"},
+            "SET t.test = true, t.org_id = $org_id, t.user_id = $user_id, "
+            "t.created_at = datetime(), t.updated_at = datetime()",
+            {"name": "Python_TestRelate", **_SCOPE_CYPHER_PARAMS},
         )
 
         records = engine.merge_relation(

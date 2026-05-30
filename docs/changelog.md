@@ -9,8 +9,42 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- **`engrama_status.admin_tools`.** New field listing the not-tenant-isolated
+  tools (`engrama_status`, `engrama_reindex`) with a reason each, so a
+  multi-tenant gateway can discover what to gate at runtime instead of
+  hardcoding names.
+
+### Changed
+
+- **Inline relations resolve by confidence, not silent stubbing (#93).** When
+  `engrama_remember` gets an inline relation whose target doesn't match an
+  existing node exactly, measured name similarity (scope-filtered, so it never
+  sees another tenant's nodes) now drives a three-way decision instead of always
+  minting a stub:
+  - **near-certain in-scope match** → connects to that node and reports
+    `relations_resolved` (`resolved_by: fuzzy_match`) — auto-connection is
+    always visible, never silent;
+  - **ambiguous candidates** → creates **nothing** and returns
+    `relations_ambiguous` with a `did_you_mean` list of in-scope names, so a
+    wrong edge (harder to detect than a missing one) is never guessed;
+  - **no similar candidate** → creates a stub as before, reported in
+    `relations_stubbed`.
+
+  Thresholds are conservative named constants, tunable as the graph grows.
+
 ### Security
 
+- **`merge_relation` now scope-filters both endpoints (#93).** Endpoint
+  matching was unscoped while `lookup_node_label` was tenant-filtered. That
+  asymmetry let a relation write reach a node owned by another tenant — forming
+  a cross-tenant edge, and letting `engrama_relate`'s success/failure act as an
+  existence oracle for another tenant's node names. Both endpoints are now
+  matched within the caller's scope (`scope=None` still allowed for
+  admin/import/migration), and the MCP relate paths pass scope so the edge is
+  stamped with identity. An endpoint owned by another tenant resolves to "not
+  found".
 - **`engrama_reindex` scan is now tenant-scoped.** `list_unembedded_nodes`
   takes an optional scope; the reindex tool passes the request's resolved
   scope, so `detect`/`classify` only sample the caller's own vector-less nodes
@@ -19,12 +53,24 @@ Versioning: [Semantic Versioning](https://semver.org/)
   opportunistic sweep and the admin CLI keep the deployment-wide backfill via
   `scope=None`.
 
-### Added
+### Fixed
 
-- **`engrama_status.admin_tools`.** New field listing the not-tenant-isolated
-  tools (`engrama_status`, `engrama_reindex`) with a reason each, so a
-  multi-tenant gateway can discover what to gate at runtime instead of
-  hardcoding names.
+- **Relation merge no longer drops edges to nodes that exist (#93).** Endpoints
+  are now matched the same permissive, case-insensitive `COALESCE(name, title)`
+  way `lookup_node_label` resolves them, instead of a single statically
+  re-derived key. Lookup and merge can no longer disagree: a node keyed by
+  `title` while `TITLE_KEYED_LABELS` predicts `name` (or differing only in case)
+  now connects instead of silently failing. The `relations_failed`
+  (`match_failed`) report path remains as a backstop.
+- **Silent inline-relation failures are surfaced (#93).** Relations that don't
+  connect are no longer hidden behind `status: ok` / `relations_created: 0` with
+  only a server-log warning — `relations_failed` lists targets where no edge was
+  created, with an explanatory `_note` mirroring `relations_rejected`.
+- **`engrama_relate` pinpoints the failing endpoint (#93).** A failed relate
+  now returns a structured `status: "error"` naming *which* endpoint was
+  missing, and distinguishes a wrong/out-of-scope name from a label mismatch
+  (endpoint exists under a different label) instead of a vague "could not find
+  either".
 
 ### Docs
 

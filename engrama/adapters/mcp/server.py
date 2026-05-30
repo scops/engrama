@@ -144,6 +144,48 @@ def _resolve_and_bind(ctx: Context) -> MemoryScope:
 _VALID_LABELS: set[str] = {member.value for member in NodeType}
 _VALID_RELATIONS: set[str] = {member.value for member in RelationType}
 
+# Inline-relation fuzzy resolution (#93). When a relation target doesn't match
+# an existing node exactly, measured similarity drives a three-way decision
+# (connect / ask / create) instead of silently minting a stub. Thresholds are
+# deliberately conservative: a wrong auto-connection is harder to spot than an
+# orphan stub, so anything short of near-certainty falls to "ask" (did_you_mean),
+# never "connect". ``CONNECT`` must clearly beat the runner-up by ``MARGIN`` or
+# the match is treated as ambiguous. Tunable as the graph grows.
+_FUZZY_CONNECT_RATIO = 0.9
+_FUZZY_SUGGEST_RATIO = 0.6
+_FUZZY_CONNECT_MARGIN = 0.08
+_FUZZY_SUGGEST_LIMIT = 5
+_FUZZY_CANDIDATE_SCAN_LIMIT = 1000
+
+
+def _rank_fuzzy_candidates(
+    target: str, candidates: list[dict[str, str]]
+) -> list[tuple[float, str, str]]:
+    """Rank in-scope nodes by name similarity to ``target``.
+
+    Pure and deterministic (``difflib`` ratio, no embeddings) so the same graph
+    state always yields the same suggestion order — ties broken by name. Returns
+    ``[(score, label, name), ...]`` sorted best-first, keeping only candidates at
+    or above :data:`_FUZZY_SUGGEST_RATIO`. The caller (not this helper) owns the
+    connect/ask/create decision so the policy lives in one place.
+    """
+    from difflib import SequenceMatcher
+
+    target_cf = target.casefold()
+    scored: list[tuple[float, str, str]] = []
+    for cand in candidates:
+        name = cand.get("name")
+        label = cand.get("label")
+        if not name or not label:
+            continue
+        ratio = SequenceMatcher(None, target_cf, name.casefold()).ratio()
+        if ratio >= _FUZZY_SUGGEST_RATIO:
+            scored.append((ratio, label, name))
+    # Best score first; stable tiebreak on name so output is reproducible.
+    scored.sort(key=lambda t: (-t[0], t[2]))
+    return scored
+
+
 # MCP talks to the store directly (it doesn't go through EngramaEngine
 # because the server is async-first while the engine is sync), so the
 # layer-1 sanitiser has to be applied at this boundary explicitly.
@@ -1313,6 +1355,21 @@ def create_engrama_mcp(
         # caller saw status:ok with no idea a relation was dropped. Surface them
         # in the response (non-fatal — the node and valid relations still land).
         relations_rejected: list[str] = []
+        # Per-target outcomes for inline relations whose target didn't match an
+        # existing node exactly (#93). Similarity drives a three-way decision:
+        #   - ``relations_resolved`` — a near-certain in-scope match; connected
+        #     to it (``resolved_by: fuzzy_match``), reported, never silent.
+        #   - ``relations_ambiguous`` — grey-zone candidates, none clearly wins;
+        #     NOTHING created, ``did_you_mean`` lists in-scope names so the
+        #     caller (or user) disambiguates. When in doubt, ask, don't connect.
+        #   - ``relations_stubbed`` — no similar candidate, so a stub is a
+        #     plausible intent; created and reported (``created_stub``).
+        #   - ``relations_failed`` — no edge at all (exact match found but the
+        #     MERGE matched nothing, or the stub couldn't be created, or error).
+        relations_failed: list[dict[str, str]] = []
+        relations_stubbed: list[dict[str, str]] = []
+        relations_resolved: list[dict[str, Any]] = []
+        relations_ambiguous: list[dict[str, Any]] = []
         if all_relations:
             from engrama.adapters.obsidian.sync import ObsidianSync
 
@@ -1330,38 +1387,99 @@ def create_engrama_mcp(
                     # existing title-keyed target (Decision, Problem,
                     # Experiment, ...) resolves to the right label here.
                     target_label = await store.lookup_node_label(target_name, scope=scope)
+                    created_as_stub = False
+                    # ``resolved_name`` is what we actually connect to: the
+                    # caller's spelling by default, or an existing node's real
+                    # name when a fuzzy match wins.
+                    resolved_name = target_name
 
                     if target_label is None:
-                        # Target doesn't exist yet — create a stub. Prefer the
-                        # caller's explicit label (validated against the
-                        # schema); otherwise fall back to inferring from the
-                        # relation type. Key the stub canonically (title for
-                        # title-keyed labels) so a later remember of the same
-                        # node by its real key doesn't create a duplicate.
-                        if explicit_label and explicit_label in _VALID_LABELS:
-                            target_label = explicit_label
-                        else:
-                            if explicit_label:
-                                logger.warning(
-                                    "Ignoring invalid stub label %r for %s; "
-                                    "inferring from relation %s",
-                                    explicit_label,
-                                    target_name,
-                                    rel_type_upper,
-                                )
-                            target_label = ObsidianSync._infer_stub_label(rel_type_upper)
-                        target_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
-                        try:
-                            await store.merge_node(
-                                target_label,
-                                target_key,
-                                target_name,
-                                _with_mcp_provenance({"status": "stub"}, scope),
+                        # No exact match. Don't blindly mint a stub — measure
+                        # similarity against in-scope nodes and let confidence
+                        # pick connect / ask / create (#93). ``list_existing_nodes``
+                        # is scope-filtered fail-closed, so candidates (and any
+                        # ``did_you_mean``) can never leak another tenant's names.
+                        candidates = await store.list_existing_nodes(
+                            limit=_FUZZY_CANDIDATE_SCAN_LIMIT, scope=scope
+                        )
+                        ranked = _rank_fuzzy_candidates(target_name, candidates)
+                        top = ranked[0] if ranked else None
+                        runner_up = ranked[1][0] if len(ranked) > 1 else 0.0
+                        unambiguous = (
+                            top is not None
+                            and top[0] >= _FUZZY_CONNECT_RATIO
+                            and (top[0] - runner_up) >= _FUZZY_CONNECT_MARGIN
+                        )
+
+                        if unambiguous:
+                            # Path 1 — near-certain match: connect to the
+                            # existing node, never silently. Use its real name
+                            # and label so the edge lands on the right node.
+                            _, target_label, resolved_name = top
+                            relations_resolved.append(
+                                {
+                                    "rel_type": rel_type_upper,
+                                    "target": target_name,
+                                    "resolved_to": resolved_name,
+                                    "resolved_by": "fuzzy_match",
+                                    "score": round(top[0], 3),
+                                }
                             )
-                        except Exception as e:
-                            logger.warning("Could not create stub %s: %s", target_name, e)
+                        elif top is not None:
+                            # Path 2 — grey zone: candidates exist but none
+                            # clearly wins. Refuse to guess; a wrong edge is
+                            # harder to detect than a missing one. Suggest and
+                            # move on without touching the graph.
+                            relations_ambiguous.append(
+                                {
+                                    "rel_type": rel_type_upper,
+                                    "target": target_name,
+                                    "did_you_mean": [
+                                        {"name": n, "label": lbl, "score": round(r, 3)}
+                                        for (r, lbl, n) in ranked[:_FUZZY_SUGGEST_LIMIT]
+                                    ],
+                                }
+                            )
                             continue
-                    else:
+                        else:
+                            # Path 3 — nothing similar in scope: a stub is a
+                            # plausible intent. Prefer the caller's explicit
+                            # label (validated); otherwise infer from the
+                            # relation type. Key the stub canonically so a later
+                            # remember by the real key doesn't duplicate it.
+                            if explicit_label and explicit_label in _VALID_LABELS:
+                                target_label = explicit_label
+                            else:
+                                if explicit_label:
+                                    logger.warning(
+                                        "Ignoring invalid stub label %r for %s; "
+                                        "inferring from relation %s",
+                                        explicit_label,
+                                        target_name,
+                                        rel_type_upper,
+                                    )
+                                target_label = ObsidianSync._infer_stub_label(rel_type_upper)
+                            target_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
+                            created_as_stub = True
+                            try:
+                                await store.merge_node(
+                                    target_label,
+                                    target_key,
+                                    target_name,
+                                    _with_mcp_provenance({"status": "stub"}, scope),
+                                )
+                            except Exception as e:
+                                logger.warning("Could not create stub %s: %s", target_name, e)
+                                relations_failed.append(
+                                    {
+                                        "rel_type": rel_type_upper,
+                                        "target": target_name,
+                                        "reason": "stub_creation_failed",
+                                    }
+                                )
+                                continue
+
+                    if not created_as_stub:
                         # Canonicalise the target merge key the same way
                         # the engine does for the source (#51 / #53).
                         # Hardcoding ``"name"`` here silently fails for
@@ -1380,10 +1498,24 @@ def create_engrama_mcp(
                             rel_type_upper,
                             target_label,
                             target_key,
-                            target_name,
+                            resolved_name,
+                            scope=scope,
                         )
                         if rel_result:
                             relations_created += 1
+                            if created_as_stub:
+                                # Edge landed, but on a node we just invented.
+                                # The caller may have meant an existing node
+                                # under a different name/key — surface it so a
+                                # silent orphan stub isn't mistaken for a link
+                                # to the intended target.
+                                relations_stubbed.append(
+                                    {
+                                        "rel_type": rel_type_upper,
+                                        "target": target_name,
+                                        "stub_label": target_label,
+                                    }
+                                )
                         else:
                             logger.warning(
                                 "Inline relation not created (target not found): %s -[%s]-> %s:%s",
@@ -1391,6 +1523,13 @@ def create_engrama_mcp(
                                 rel_type_upper,
                                 target_label,
                                 target_name,
+                            )
+                            relations_failed.append(
+                                {
+                                    "rel_type": rel_type_upper,
+                                    "target": target_name,
+                                    "reason": "match_failed",
+                                }
                             )
                     except Exception as e:
                         logger.warning(
@@ -1400,6 +1539,13 @@ def create_engrama_mcp(
                             target_name,
                             e,
                         )
+                        relations_failed.append(
+                            {
+                                "rel_type": rel_type_upper,
+                                "target": target_name,
+                                "reason": "error",
+                            }
+                        )
 
                     # Write relation to vault frontmatter (DDR-002)
                     if obsidian is not None and vault_path:
@@ -1408,7 +1554,7 @@ def create_engrama_mcp(
                                 obsidian.add_relation,
                                 vault_path,
                                 rel_type_upper,
-                                target_name,
+                                resolved_name,
                             )
                         except Exception:
                             pass
@@ -1436,6 +1582,39 @@ def create_engrama_mcp(
             result_data["relations_rejected_note"] = (
                 f"these relation types are not in the schema and were skipped: "
                 f"{', '.join(relations_rejected)}. Valid types: {valid}."
+            )
+        if relations_failed:
+            result_data["relations_failed"] = relations_failed
+            targets = ", ".join(sorted({f["target"] for f in relations_failed}))
+            result_data["relations_failed_note"] = (
+                f"these relations were NOT created — the target did not resolve to a "
+                f"reachable node: {targets}. Check the target name, label, and that it "
+                f"exists within your scope."
+            )
+        if relations_resolved:
+            result_data["relations_resolved"] = relations_resolved
+            pairs = ", ".join(f"{r['target']!r}->{r['resolved_to']!r}" for r in relations_resolved)
+            result_data["relations_resolved_note"] = (
+                f"these targets didn't match exactly but a near-certain in-scope node "
+                f"was found, so the edge was connected to it: {pairs}. If any is wrong, "
+                f"re-relate with the exact name."
+            )
+        if relations_ambiguous:
+            result_data["relations_ambiguous"] = relations_ambiguous
+            targets = ", ".join(sorted({a["target"] for a in relations_ambiguous}))
+            result_data["relations_ambiguous_note"] = (
+                f"these targets were too uncertain to auto-connect, so NOTHING was "
+                f"created for them: {targets}. Pick the intended node from "
+                f"'did_you_mean' and re-relate with its exact name, or remember it "
+                f"first if it's genuinely new."
+            )
+        if relations_stubbed:
+            result_data["relations_stubbed"] = relations_stubbed
+            targets = ", ".join(sorted({s["target"] for s in relations_stubbed}))
+            result_data["relations_stubbed_note"] = (
+                f"these relations linked to a NEWLY-created stub, not a pre-existing "
+                f"node: {targets}. If you meant an existing node, it may be stored under "
+                f"a different name/key — verify and re-relate to avoid an orphan stub."
             )
         # DDR-003 Phase D: propagate valid_to conflict warning
         if result.get("warning"):
@@ -1505,7 +1684,10 @@ def create_engrama_mcp(
         from_key = "title" if params.from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if params.to_label in TITLE_KEYED_LABELS else "name"
 
-        # Use the async store to create the relationship
+        # Use the async store to create the relationship. ``scope`` is passed
+        # so the endpoints are matched within the caller's tenant — an
+        # endpoint owned by another tenant resolves to "not found" rather than
+        # silently forming a cross-tenant edge or leaking its existence (#93).
         r = await store.merge_relation(
             params.from_label,
             from_key,
@@ -1514,12 +1696,45 @@ def create_engrama_mcp(
             params.to_label,
             to_key,
             params.to_name,
+            scope=scope,
         )
         if not r:
-            return (
-                f"No relationship created — could not find "
-                f"(:{params.from_label} {{name: '{params.from_name}'}}) "
-                f"or (:{params.to_label} {{name: '{params.to_name}'}})."
+            # Pinpoint which endpoint failed instead of a vague "could not find
+            # either" (#93). ``lookup_node_label`` is scope-filtered, so a node
+            # owned by another tenant reads as missing here too. We probe by
+            # name within scope: a hit under a different label points at a
+            # label mismatch; a miss points at a wrong name or wrong scope.
+            missing: list[str] = []
+            for side, side_label, side_name in (
+                ("from", params.from_label, params.from_name),
+                ("to", params.to_label, params.to_name),
+            ):
+                found_label = await store.lookup_node_label(side_name, scope=scope)
+                if found_label is None:
+                    missing.append(
+                        f"{side} (:{side_label} {{name: '{side_name}'}}) — not found "
+                        f"in your scope (check the name, or that it exists for this tenant)"
+                    )
+                elif found_label != side_label:
+                    missing.append(
+                        f"{side} '{side_name}' exists but as :{found_label}, "
+                        f"not :{side_label} — fix the label"
+                    )
+            detail = (
+                "; ".join(missing)
+                if missing
+                else (
+                    "both endpoints resolve by name but the relationship still "
+                    "could not be created (possible key mismatch)"
+                )
+            )
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"No relationship created — {detail}.",
+                },
+                default=str,
+                indent=2,
             )
 
         # DDR-002: dual-write — also record the relation in vault frontmatter

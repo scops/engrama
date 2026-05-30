@@ -392,23 +392,33 @@ class Neo4jGraphStore:
         If either endpoint does not exist, the relationship simply won't
         be created (no error).
 
-        Spec 001 FR-1: when ``scope`` is supplied, ``(org_id, user_id)``
-        is stamped on the edge so a future relation-scoped read can
-        filter without re-walking endpoints. ``coalesce`` preserves any
-        pre-existing scope on the relation when this caller is unscoped.
+        Endpoints are matched the SAME permissive way ``lookup_node_label``
+        resolves them — ``toLower(COALESCE(name, title))`` — so lookup and
+        merge can't disagree on a node's key (#93, mode 2).
+
+        Spec 001 FR-1: when ``scope`` is supplied, BOTH endpoints are
+        scope-filtered (not just the edge stamped), closing the scope
+        asymmetry that let a tenant reach another tenant's nodes here.
+        ``scope=None`` keeps the legacy unscoped admin / import path.
         """
         set_clause = ""
         params: dict[str, Any] = {"from_value": from_value, "to_value": to_value}
+        where_a = "toLower(COALESCE(a.name, a.title)) = toLower($from_value)"
+        where_b = "toLower(COALESCE(b.name, b.title)) = toLower($to_value)"
         if scope is not None and scope.org_id and scope.user_id:
+            a_clause, scope_params = scope_filter_cypher(scope, "a")
+            b_clause, _ = scope_filter_cypher(scope, "b")
+            where_a = f"{where_a} AND {a_clause}"
+            where_b = f"{where_b} AND {b_clause}"
+            params.update(scope_params)
             set_clause = (
                 "SET r.org_id = coalesce(r.org_id, $scope_org_id), "
                 "    r.user_id = coalesce(r.user_id, $scope_user_id) "
             )
-            params["scope_org_id"] = scope.org_id
-            params["scope_user_id"] = scope.user_id
         query = (
-            f"MATCH (a:{from_label} {{{from_key}: $from_value}}) "
-            f"MATCH (b:{to_label} {{{to_key}: $to_value}}) "
+            f"MATCH (a:{from_label}) WHERE {where_a} "
+            f"MATCH (b:{to_label}) WHERE {where_b} "
+            f"WITH a, b LIMIT 1 "
             f"MERGE (a)-[r:{rel_type}]->(b) "
             f"{set_clause}"
             "RETURN type(r) AS rel_type"

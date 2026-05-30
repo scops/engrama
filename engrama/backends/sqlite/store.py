@@ -405,6 +405,13 @@ class SqliteGraphStore:
         """Idempotent relationship insert. Silently no-op if an endpoint
         does not exist (mirrors Neo4j's MATCH-then-MERGE behaviour).
 
+        Endpoints are matched case-insensitively on ``key_value`` — the
+        same way ``lookup_node_label`` resolves them — so lookup and merge
+        can't disagree and silently drop an edge to a node that does exist
+        (#93, mode 2). When ``scope`` is supplied, BOTH endpoints are also
+        scope-filtered, closing the asymmetry that let an unscoped merge
+        reach another tenant's nodes.
+
         Spec 001 FR-1: when ``scope`` is supplied, the writer's
         ``(org_id, user_id)`` is persisted on the edge so a future
         relation-scoped read can filter without re-walking endpoints. On
@@ -414,16 +421,21 @@ class SqliteGraphStore:
         intact for callers (export/import, migration) that don't have an
         identity.
         """
-        cur = self._conn.execute(
-            "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
-            (from_label, from_value),
-        )
-        from_row = cur.fetchone()
-        cur = self._conn.execute(
-            "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
-            (to_label, to_value),
-        )
-        to_row = cur.fetchone()
+        node_clause, node_params = "", {}
+        if scope is not None and scope.org_id and scope.user_id:
+            node_clause, node_params = scope_filter_sql(scope, "nodes", json_column="props")
+        # Match endpoints case-insensitively (mirrors lookup_node_label) and,
+        # when scoped, within the caller's tenant. Same SQL for both ends.
+        node_sql = "SELECT id FROM nodes WHERE label = :label AND LOWER(key_value) = LOWER(:val)"
+        if node_clause:
+            node_sql += f" AND {node_clause}"
+        node_sql += " LIMIT 1"
+        from_row = self._conn.execute(
+            node_sql, {"label": from_label, "val": from_value, **node_params}
+        ).fetchone()
+        to_row = self._conn.execute(
+            node_sql, {"label": to_label, "val": to_value, **node_params}
+        ).fetchone()
         if from_row is None or to_row is None:
             return []
         now = _now_iso()
