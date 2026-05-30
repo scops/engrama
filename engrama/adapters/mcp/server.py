@@ -158,6 +158,26 @@ _MCP_PROVENANCE_PROPS = Provenance(source="mcp").to_properties()
 _HDR_ORG = "x-engrama-org-id"
 _HDR_USER = "x-engrama-user-id"
 
+# Tools that are NOT isolated per tenant and that a multi-tenant gateway
+# should consider gating so a normal tenant cannot reach them (Spec 001
+# tenant-isolation audit, 2026-05-30). Surfaced verbatim in
+# ``engrama_status.admin_tools`` so a gateway can discover them at runtime
+# instead of hardcoding names. ``engrama`` OSS does not authenticate — it only
+# declares this boundary; the gateway (engrama-saas) enforces it.
+_ADMIN_TOOLS: tuple[dict[str, str], ...] = (
+    {
+        "name": "engrama_status",
+        "reason": "runtime introspection (FR-11); counts are deployment-wide, "
+        "no tenant isolation. No identity required.",
+    },
+    {
+        "name": "engrama_reindex",
+        "reason": "candidate scan is now scoped to the caller's tenant, so it "
+        "leaks no cross-tenant data; still admin-flavoured (bulk re-embed cost) "
+        "— a gateway may gate it for cost/abuse.",
+    },
+)
+
 
 class ScopeUnresolved(Exception):
     """A request carried partial/malformed identity (exactly one of the two
@@ -781,6 +801,10 @@ def create_engrama_mcp(
             "degraded": bool,
             "reason": ""   // non-empty when degraded or fulltext-only
           },
+          "admin_tools": [                               // gateway-gating hint
+            {"name": "engrama_status",  "reason": "..."},
+            {"name": "engrama_reindex", "reason": "..."}
+          ],
           "startup_error": "..."   // present only when something failed at boot
         }
         ```
@@ -789,6 +813,11 @@ def create_engrama_mcp(
         runtime introspection (FR-11), explicitly admin and CI-allowlisted
         as ``# scope-exempt``. Counts are deployment-wide so an operator
         can verify boot state without a tenant identity bound.
+
+        ``admin_tools`` lists the tools that are not isolated per tenant
+        (deployment-wide or admin-flavoured). A multi-tenant gateway can read
+        this to decide which tools to gate for a normal tenant, instead of
+        hardcoding names — engrama declares the boundary, the gateway enforces.
         """
         state = ctx.request_context.lifespan_context
         store = state.get("async_store")
@@ -876,6 +905,7 @@ def create_engrama_mcp(
             "vault": vault_info,
             "embedder": embedder_info,
             "search": search_info,
+            "admin_tools": [dict(t) for t in _ADMIN_TOOLS],
         }
         if startup_error:
             response["startup_error"] = startup_error
@@ -3014,21 +3044,26 @@ def create_engrama_mcp(
         **Identity (Spec 001 FR-4).** Required: both
         ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
         neither for standalone — every mode, even read-only ``detect``,
-        enforces this so the operator/audit trail is uniform. The
-        underlying candidate scan is admin-flavoured (cross-tenant,
-        explicitly ``# scope-exempt``); a SaaS deployment that wants
-        per-tenant reindex should gate this tool at a higher layer.
+        enforces this. The candidate scan is **scoped to the calling
+        tenant**: ``detect``/``classify`` only ever sample the caller's own
+        vector-less nodes, and ``apply`` only re-embeds them, so a tenant
+        never sees or touches another tenant's data. (The internal
+        opportunistic sweep and the admin CLI keep the unscoped cross-tenant
+        backfill via ``scope=None``.) ``engrama_status`` and this tool are
+        still listed in ``engrama_status.admin_tools`` so a gateway may
+        additionally gate them for cost/abuse reasons.
         """
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
         embedder = state.get("embedder")
 
-        # Spec 001 T012/FR-4: reindex apply writes embeddings to existing
-        # nodes; even though the operation is admin-flavoured, the caller
-        # must declare identity for audit and to gate the write path. We
-        # require it for every mode so the contract is uniform.
+        # Spec 001 T012/FR-4: reindex writes embeddings to existing nodes; the
+        # caller must declare identity for audit and to gate the write path. We
+        # require it for every mode so the contract is uniform, and we pass the
+        # resolved scope to the scan so detect/classify never reveal another
+        # tenant's node names (tenant-isolation audit, 2026-05-30).
         try:
-            _resolve_and_bind(ctx)
+            scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
             return json.dumps({"status": "error", "error": str(e)})
 
@@ -3037,7 +3072,7 @@ def create_engrama_mcp(
 
         from engrama.embeddings.text import node_to_text
 
-        candidates = await store.list_unembedded_nodes(limit=params.limit)
+        candidates = await store.list_unembedded_nodes(limit=params.limit, scope=scope)
 
         def _sample(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return [

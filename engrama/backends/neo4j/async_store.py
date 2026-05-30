@@ -1018,7 +1018,9 @@ class Neo4jAsyncStore:
         )
         return len(records) > 0
 
-    async def list_unembedded_nodes(self, limit: int = 100) -> list[dict[str, Any]]:
+    async def list_unembedded_nodes(
+        self, limit: int = 100, scope: MemoryScope | None = None
+    ) -> list[dict[str, Any]]:
         """Return nodes that carry no vector (no ``:Embedded`` label).
 
         Source of truth is the ``:Embedded`` label, set only by
@@ -1026,18 +1028,32 @@ class Neo4jAsyncStore:
         predates embeddings) lacks it and shows up here — this is what backs
         both the opportunistic sweep and ``engrama_reindex``. Returns up to
         ``limit`` rows as ``{engrama_id, label, key_field, key_value, props}``.
+
+        When ``scope`` is provided the scan is restricted to that tenant, so
+        ``engrama_reindex`` (which passes a resolved scope) never reveals
+        another tenant's node names in its detect/classify samples. The
+        internal opportunistic sweep and the admin CLI pass ``scope=None`` to
+        keep the cross-tenant backfill behaviour.
         """
-        # scope-exempt: admin reindex/sweep — backfills missing vectors across
-        # the whole graph; embedding lives on the same node it came from, so
-        # this never crosses tenant boundaries on the data side. The MCP
-        # reindex tool is gated separately (admin identity required).
+        # scope-exempt: ``scope=None`` is the admin reindex/sweep path —
+        # backfills missing vectors across the whole graph; the embedding lives
+        # on the same node it came from, so this never crosses tenant
+        # boundaries on the data side. When a scope IS passed (the per-tenant
+        # MCP reindex path) the scan is filtered below via scope_filter_cypher.
+        params: dict[str, Any] = {"limit": limit}
+        scope_clause = ""
+        if scope is not None:
+            clause, scope_params = scope_filter_cypher(scope, "n")
+            scope_clause = f"AND {clause} "
+            params.update(scope_params)
         records, _, _ = await self._driver.execute_query(
             "MATCH (n) WHERE NOT n:Embedded "
+            f"{scope_clause}"
             "WITH n, [l IN labels(n) WHERE l <> 'Embedded'][0] AS label "
             "WHERE label IS NOT NULL "
             "RETURN label AS label, properties(n) AS props "
             "LIMIT $limit",
-            parameters_={"limit": limit},
+            parameters_=params,
             database_=self._database,
         )
         out: list[dict[str, Any]] = []
