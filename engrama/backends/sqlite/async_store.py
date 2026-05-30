@@ -455,8 +455,10 @@ class SqliteAsyncStore:
             embedding,
         )
 
-    async def list_unembedded_nodes(self, limit: int = 100) -> list[dict[str, Any]]:
-        return await self._run(self._sync.list_unembedded_nodes, limit)
+    async def list_unembedded_nodes(
+        self, limit: int = 100, scope: MemoryScope | None = None
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.list_unembedded_nodes, limit, scope)
 
     async def search_similar(
         self,
