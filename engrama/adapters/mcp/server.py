@@ -1499,6 +1499,7 @@ def create_engrama_mcp(
                             target_label,
                             target_key,
                             resolved_name,
+                            scope=scope,
                         )
                         if rel_result:
                             relations_created += 1
@@ -1683,7 +1684,10 @@ def create_engrama_mcp(
         from_key = "title" if params.from_label in TITLE_KEYED_LABELS else "name"
         to_key = "title" if params.to_label in TITLE_KEYED_LABELS else "name"
 
-        # Use the async store to create the relationship
+        # Use the async store to create the relationship. ``scope`` is passed
+        # so the endpoints are matched within the caller's tenant — an
+        # endpoint owned by another tenant resolves to "not found" rather than
+        # silently forming a cross-tenant edge or leaking its existence (#93).
         r = await store.merge_relation(
             params.from_label,
             from_key,
@@ -1692,6 +1696,7 @@ def create_engrama_mcp(
             params.to_label,
             to_key,
             params.to_name,
+            scope=scope,
         )
         if not r:
             # Pinpoint which endpoint failed instead of a vague "could not find

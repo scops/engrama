@@ -122,14 +122,13 @@ async def test_inline_relation_to_missing_target_reports_stub(tmp_path: Path) ->
     assert "relations_stubbed_note" in resp
 
 
-async def test_inline_relation_match_failure_is_surfaced(tmp_path: Path) -> None:
-    """Mode 2: the target resolves by name (case-insensitive lookup) but the
-    edge MERGE matches on the exact key and finds nothing, so no edge is
-    created. This used to return relations_created:0 with status:ok and only a
-    server-side log; now the dropped relation is reported.
+async def test_inline_relation_key_mismatch_now_connects(tmp_path: Path) -> None:
+    """Mode 2 is PREVENTED, not just reported (#93, comment 3). lookup resolves
+    the target case-insensitively; merge now matches the SAME way, so an edge to
+    a node that does exist can no longer be silently dropped. Here the target is
+    named with a different case than stored — the edge must connect, not fail.
     """
     server = _server(tmp_path / "engrama.db")
-    # An existing, correctly-keyed target.
     pre = await _call(
         server,
         "engrama_remember",
@@ -137,9 +136,6 @@ async def test_inline_relation_match_failure_is_surfaced(tmp_path: Path) -> None
     )
     assert pre.get("status") == "ok"
 
-    # Relate to it by a name that only differs in case: lookup_node_label
-    # finds it (LOWER match) so no stub is created, but merge_relation's exact
-    # key match misses, dropping the edge.
     resp = await _call(
         server,
         "engrama_remember",
@@ -147,18 +143,16 @@ async def test_inline_relation_match_failure_is_surfaced(tmp_path: Path) -> None
             "label": "Problem",
             "properties": {
                 "title": "src-problem",
-                "relations": {"RELATED_TO": ["existingtarget"]},
+                "relations": {"RELATED_TO": ["existingtarget"]},  # case differs
             },
         },
     )
     assert resp.get("status") == "ok"
-    assert resp.get("relations_created") == 0
+    # Edge connects to the existing node — count accurate, no drop, no stub.
+    assert resp.get("relations_created") == 1
+    assert "relations_failed" not in resp
     assert "relations_stubbed" not in resp
-    failed = resp.get("relations_failed")
-    assert failed is not None
-    assert {f["target"] for f in failed} == {"existingtarget"}
-    assert all(f["reason"] == "match_failed" for f in failed)
-    assert "relations_failed_note" in resp
+    assert "relations_resolved" not in resp  # exact (case-insensitive) hit, not fuzzy
 
 
 async def test_relate_reports_which_endpoint_is_missing(tmp_path: Path) -> None:
@@ -306,6 +300,48 @@ async def test_inline_relation_other_tenant_target_never_leaks(tmp_path: Path) -
     try:
         nbrs = store.get_neighbours(
             "Project", "name", "engrama-saas", scope=MemoryScope(org_id="globex", user_id="bob")
+        )
+    finally:
+        store.close()
+    assert nbrs == []
+
+
+async def test_relate_cannot_reach_another_tenants_node(tmp_path: Path) -> None:
+    """Scope-asymmetry fix (#93, comment 3): merge_relation now filters its
+    endpoints by scope, so engrama_relate can neither form a cross-tenant edge
+    nor act as an existence oracle for another tenant's nodes. Relating to a
+    node owned by tenant B resolves to 'not found', not a silent success."""
+    from engrama import Engrama
+    from engrama.backends.sqlite.store import SqliteGraphStore
+    from engrama.core.scope import MemoryScope
+
+    db = tmp_path / "shared.db"
+    with Engrama(backend="sqlite", db_path=db, org_id="globex", user_id="bob") as eng:
+        eng.remember("Project", "secret-proj", "tenant B confidential")
+
+    server = _server(db)
+    # The standalone caller owns its own source node...
+    await _call(server, "engrama_remember", {"label": "Concept", "properties": {"name": "mine"}})
+    # ...but must not be able to attach an edge to tenant B's node by name.
+    resp = await _call(
+        server,
+        "engrama_relate",
+        {
+            "from_name": "mine",
+            "from_label": "Concept",
+            "rel_type": "RELATED_TO",
+            "to_name": "secret-proj",
+            "to_label": "Project",
+        },
+    )
+    assert resp.get("status") == "error"
+    assert "not found" in resp.get("error", "")
+
+    # B's node has no incoming edge — no cross-tenant relationship was minted.
+    store = SqliteGraphStore(db)
+    try:
+        nbrs = store.get_neighbours(
+            "Project", "name", "secret-proj", scope=MemoryScope(org_id="globex", user_id="bob")
         )
     finally:
         store.close()

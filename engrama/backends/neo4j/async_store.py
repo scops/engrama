@@ -295,31 +295,49 @@ class Neo4jAsyncStore:
 
         Returns relation info or empty dict if either endpoint not found.
 
-        Spec 001 FR-1: when ``scope`` is supplied, the writer's
-        ``(org_id, user_id)`` is stamped onto the edge with ``SET`` so a
-        future relation-scoped read can filter without re-walking
-        endpoints. ``coalesce`` keeps the original values when the
-        relation already exists and the caller passes no scope (admin /
-        import paths).
+        Endpoints are matched the SAME permissive way ``lookup_node_label``
+        resolves them — ``toLower(COALESCE(name, title))`` — instead of a
+        single statically re-derived key. lookup and merge can therefore no
+        longer disagree: if lookup found the node, this MERGE reaches it,
+        even when the node is keyed by ``title`` while ``TITLE_KEYED_LABELS``
+        predicts ``name`` (or vice versa) — closing the silent
+        "found-but-unkeyable" drop (#93, mode 2).
+
+        Spec 001 FR-1: when ``scope`` is supplied, BOTH endpoints are
+        scope-filtered (not just the edge stamped). This closes the scope
+        asymmetry on this path — ``lookup_node_label`` was already
+        tenant-filtered, but merge matched endpoints unscoped, so a tenant
+        could mint a cross-tenant edge or use relate as an existence oracle
+        for another tenant's nodes. ``scope=None`` keeps the legacy unscoped
+        path for admin / import / migration callers.
         """
         set_clause = ""
         params: dict[str, Any] = {"from_value": from_value, "to_value": to_value}
+        where_a = "toLower(COALESCE(a.name, a.title)) = toLower($from_value)"
+        where_b = "toLower(COALESCE(b.name, b.title)) = toLower($to_value)"
         if scope is not None and scope.org_id and scope.user_id:
+            a_clause, scope_params = scope_filter_cypher(scope, "a")
+            b_clause, _ = scope_filter_cypher(scope, "b")
+            where_a = f"{where_a} AND {a_clause}"
+            where_b = f"{where_b} AND {b_clause}"
+            params.update(scope_params)
             # SET on every MERGE — idempotent because we coalesce against
             # any prior values; an explicit caller can reassert the scope.
             set_clause = (
                 "SET r.org_id = coalesce(r.org_id, $scope_org_id), "
                 "    r.user_id = coalesce(r.user_id, $scope_user_id) "
             )
-            params["scope_org_id"] = scope.org_id
-            params["scope_user_id"] = scope.user_id
         cypher = (
-            f"MATCH (a:{from_label} {{{from_key}: $from_value}}) "
-            f"MATCH (b:{to_label} {{{to_key}: $to_value}}) "
+            f"MATCH (a:{from_label}) WHERE {where_a} "
+            f"MATCH (b:{to_label}) WHERE {where_b} "
+            # One deterministic (a, b) pair so a name/title case collision
+            # can't fan the MERGE into several edges.
+            f"WITH a, b LIMIT 1 "
             f"MERGE (a)-[r:{rel_type}]->(b) "
             f"{set_clause}"
             f"RETURN type(r) AS rel_type, "
-            f"a.{from_key} AS from_name, b.{to_key} AS to_name, "
+            f"COALESCE(a.name, a.title) AS from_name, "
+            f"COALESCE(b.name, b.title) AS to_name, "
             f"a.obsidian_path AS from_obsidian_path"
         )
         records, _, _ = await self._driver.execute_query(

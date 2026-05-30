@@ -27,14 +27,31 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
   Thresholds are conservative named constants, tunable as the graph grows.
 
+### Security
+
+- **`merge_relation` now scope-filters both endpoints (#93).** Endpoint
+  matching was unscoped while `lookup_node_label` was tenant-filtered. That
+  asymmetry let a relation write reach a node owned by another tenant — forming
+  a cross-tenant edge, and letting `engrama_relate`'s success/failure act as an
+  existence oracle for another tenant's node names. Both endpoints are now
+  matched within the caller's scope (`scope=None` still allowed for
+  admin/import/migration), and the MCP relate paths pass scope so the edge is
+  stamped with identity. An endpoint owned by another tenant resolves to "not
+  found".
+
 ### Fixed
 
-- **Silent inline-relation failures are now surfaced (#93).** Relations that
-  don't connect are no longer hidden behind `status: ok` / `relations_created:
-  0` with only a server-log warning. `relations_failed` lists targets where
-  **no edge was created** (an exact match was found but the merge matched
-  nothing, or a stub couldn't be created). Each new field carries an
-  explanatory `_note`, mirroring the existing `relations_rejected`.
+- **Relation merge no longer drops edges to nodes that exist (#93).** Endpoints
+  are now matched the same permissive, case-insensitive `COALESCE(name, title)`
+  way `lookup_node_label` resolves them, instead of a single statically
+  re-derived key. Lookup and merge can no longer disagree: a node keyed by
+  `title` while `TITLE_KEYED_LABELS` predicts `name` (or differing only in case)
+  now connects instead of silently failing. The `relations_failed`
+  (`match_failed`) report path remains as a backstop.
+- **Silent inline-relation failures are surfaced (#93).** Relations that don't
+  connect are no longer hidden behind `status: ok` / `relations_created: 0` with
+  only a server-log warning — `relations_failed` lists targets where no edge was
+  created, with an explanatory `_note` mirroring `relations_rejected`.
 - **`engrama_relate` pinpoints the failing endpoint (#93).** A failed relate
   now returns a structured `status: "error"` naming *which* endpoint was
   missing, and distinguishes a wrong/out-of-scope name from a label mismatch
