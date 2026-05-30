@@ -9,6 +9,29 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Security
+
+- **`engrama_reindex` scan is now tenant-scoped.** `list_unembedded_nodes`
+  takes an optional scope; the reindex tool passes the request's resolved
+  scope, so `detect`/`classify` only sample the caller's own vector-less nodes
+  and `apply` only re-embeds them. Previously the scan was cross-tenant and
+  exposed other tenants' node names/ids in its samples. The internal
+  opportunistic sweep and the admin CLI keep the deployment-wide backfill via
+  `scope=None`.
+
+### Added
+
+- **`engrama_status.admin_tools`.** New field listing the not-tenant-isolated
+  tools (`engrama_status`, `engrama_reindex`) with a reason each, so a
+  multi-tenant gateway can discover what to gate at runtime instead of
+  hardcoding names.
+
+### Docs
+
+- Documented fail-closed multi-tenant isolation across `security`,
+  `architecture`, and `graph-schema` (EN + ES); refreshed the README for the
+  PyPI release (`pip install engrama`).
+
 ## [0.13.0] — 2026-05-28
 
 > **Breaking — pre-1.0 minor bump (semver `0.x`).** This release introduces

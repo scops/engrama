@@ -17,7 +17,7 @@
 | HTTP asíncrono | httpx | ≥ 0.27 | Llamadas de embedding no bloqueantes en el servidor MCP |
 | Contenedor (solo Neo4j) | Docker Desktop | latest | Infraestructura Neo4j reproducible |
 | CI/CD | GitHub Actions | — | Tests y publicación en PyPI |
-| Empaquetado | pyproject.toml | — | `uv sync` (base) / `uv sync --extra neo4j` (opt-in); publicación en PyPI prevista |
+| Empaquetado | pyproject.toml | — | Publicado en PyPI como `engrama`; `pip install engrama` o `pip install "engrama[neo4j]"` |
 
 ## Qué hace diferente a Engrama
 
@@ -65,7 +65,7 @@ block-beta
     columns 5
     hybrid["HybridSearch\nEngine"]
     temporal["Temporal\n(decay, valid_to)"]
-    security["Security\n(planned)"]
+    scope["Scope\n(tenancy fail-closed)"]
     write["Write Pipeline\n(MERGE)"]
     query["Query"]
   end
@@ -445,6 +445,39 @@ combina confianza con recencia.
 `temporal_score = confidence × 2^(-days / half_life)`.
 Por defecto γ=0.1 y half_life=30 días.
 
+## Identidad y tenancy (Spec 001)
+
+Cada nodo y relación pertenece a una identidad `(org_id, user_id)`, y las
+lecturas son **fail-closed**: un scope `None`, vacío o resuelto a medias no
+matchea nada en vez de ensancharse a "verlo todo". Engrama **no** autentica
+— consume una identidad aseverada upstream.
+
+- **Helpers de scope** (`core/scope.py`): `scope_filter_cypher` /
+  `scope_filter_sql` construyen el fragmento `WHERE` que cada lectura añade.
+  Devuelven `(false)` / `(1 = 0)` para un scope incompleto — el único punto
+  de estrangulamiento que hace el aislamiento fail-closed.
+- **Resolución por petición** (límite MCP): el servidor lee
+  `X-Engrama-Org-Id` / `X-Engrama-User-Id` de la petición y fija el scope de
+  la llamada. Exactamente una cabecera presente → `ScopeUnresolved` (las
+  lecturas devuelven cero resultados; las escrituras se rechazan). Sin
+  cabeceras → la **identidad standalone** del proceso, calculada una vez al
+  arranque (una instalación de un solo proceso no necesita configuración).
+- **Guard de escritura** (`EngramaEngine`): `merge_node` / `merge_relation`
+  lanzan ante una llamada SDK directa sin scope completo, de modo que un
+  bypass por SDK no puede escribir filas sin scope.
+- **Guard de CI** (`scripts/check_scoped_queries.py`): un escaneo AST rompe el
+  build ante cualquier query de backend nueva que ni pase por el helper de
+  scope ni lleve un `# scope-exempt: <razón>` explícito. Integrado en CI como
+  paso bloqueante.
+- **Migración**: `engrama migrate tenancy --owner-sub <sub> --apply` sella la
+  propiedad sobre un grafo pre-0.13 cuyas filas son, de otro modo, invisibles
+  bajo lecturas fail-closed.
+
+Ver [graph-schema.es.md](graph-schema.es.md#campos-de-identidad-todos-los-nodos-y-relaciones)
+para los campos almacenados y [security.es.md](security.es.md#aislamiento-por-tenant-multi-tenant)
+para el modelo de aislamiento de cara al operador y las herramientas
+admin/cross-tenant.
+
 ## Integración con Obsidian (DDR-002)
 
 El vault es la **capa narrativa**. El grafo es la **capa relacional**.
@@ -552,13 +585,15 @@ correspondiente. Toda la lógica de almacenamiento reside en
 `*AsyncStore`; los handlers de herramientas MCP se encargan solo de
 orquestación, validación, E/S del vault y formateo de respuestas.
 
-Doce herramientas:
+Trece herramientas:
 
 - `engrama_status` — introspección de solo lectura: ruta del vault,
-  backend, embedder, modo de búsqueda, versión. Los agentes deben
-  llamar a esto al inicio de sesión cuando Engrama coexiste con otros
-  MCP capaces de acceder a Obsidian, para poder desambiguar a qué
-  servidor se refiere "el vault" antes de cualquier sincronización.
+  backend, embedder, modo de búsqueda, versión y `admin_tools` (las
+  herramientas no aisladas por tenant, una pista para un gateway
+  multi-tenant). Los agentes deben llamar a esto al inicio de sesión cuando
+  Engrama coexiste con otros MCP capaces de acceder a Obsidian, para poder
+  desambiguar a qué servidor se refiere "el vault" antes de cualquier
+  sincronización.
 - `engrama_search` — búsqueda híbrida en el grafo de memoria
 - `engrama_remember` — crear o actualizar un nodo (siempre MERGE)
 - `engrama_relate` — crear una relación (gestiona nodos con clave title)
@@ -570,6 +605,9 @@ Doce herramientas:
   creación/actualización y listar los archivos que recibirían una
   inyección de `engrama_id`
 - `engrama_ingest` — leer contenido y devolver guía de extracción
+- `engrama_reindex` — detectar / clasificar / re-embeber nodos sin su
+  vector (el embedder estaba caído al escribir); el escaneo está acotado al
+  tenant llamante
 - `engrama_reflect` — detección adaptativa de patrones cross-entidad →
   nodos Insight
 - `engrama_surface_insights` — leer Insights pendientes para
@@ -586,7 +624,7 @@ agente puede hacer `if "path" in payload["vault"]:` de forma fiable.
 
 ```json
 {
-  "version": "0.10.0",
+  "version": "0.13.0",
   "backend": {
     "name": "sqlite",
     "ok": true,
@@ -607,7 +645,11 @@ agente puede hacer `if "path" in payload["vault"]:` de forma fiable.
     "mode": "hybrid",
     "degraded": false,
     "reason": ""
-  }
+  },
+  "admin_tools": [
+    {"name": "engrama_status",  "reason": "conteos a nivel de deployment; sin aislamiento por tenant"},
+    {"name": "engrama_reindex", "reason": "datos acotados por tenant, pero re-embed masivo de carácter admin"}
+  ]
 }
 ```
 
@@ -671,6 +713,10 @@ genera módulos personalizados mediante una entrevista conversacional.
 | `OLLAMA_URL` | `http://localhost:11434` | Endpoint de la API de Ollama (proveedor legacy) |
 | `HYBRID_ALPHA` | `0.6` | Peso vectorial vs fulltext |
 | `HYBRID_GRAPH_BETA` | `0.15` | Peso del boost por topología del grafo |
+| `ENGRAMA_ORG_ID` | — | Org propietaria en standalone (Spec 001); sin fijar → identidad standalone derivada |
+| `ENGRAMA_USER_ID` | — | Usuario propietario en standalone (Spec 001); sin fijar → identidad standalone derivada |
+| `ENGRAMA_LOCAL_SUB` | — | Semilla de la identidad standalone derivada cuando org/user no están fijados |
+| `ENGRAMA_TRANSPORT` | `stdio` | Transporte MCP: `stdio` o `http` (Streamable HTTP, loopback, sin auth) |
 
 ## Reglas de implementación
 

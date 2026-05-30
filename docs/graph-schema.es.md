@@ -144,6 +144,34 @@ Cada nodo lleva metadatos temporales gestionados por el motor (DDR-003 Fase D):
 
 Los nodos con embeddings también llevan la etiqueta secundaria `:Embedded` para la indexación vectorial.
 
+## Campos de identidad (todos los nodos y relaciones)
+
+Desde **0.13.0** (Spec 001) cada nodo **y cada relación** lleva la identidad
+de propiedad que lo acota:
+
+```
+{
+  org_id:  string,   // organización propietaria — requerido
+  user_id: string,   // usuario propietario — requerido
+}
+```
+
+- Sellados por el motor en cada escritura; nunca tomados de propiedades de
+  nodo suministradas por el llamante.
+- Las lecturas son **fail-closed**: el filtro de scope restringe cada query a
+  la identidad `(org_id, user_id)` del llamante. Un nodo o arista de otro
+  tenant es invisible — un scope ausente o parcial no matchea *nada*, nunca
+  todo.
+- Una instalación de un solo proceso corre como una **identidad standalone**
+  estable, así que estos campos están presentes y son uniformes sin ninguna
+  configuración.
+- Índices compuestos sobre `(org_id, user_id, <clave>)` respaldan las
+  búsquedas acotadas en ambos backends.
+
+Consultad [security.es.md](security.es.md#aislamiento-por-tenant-multi-tenant)
+para el modelo de aislamiento completo y la ruta de migración de grafos
+pre-0.13.
+
 ## Relaciones
 
 ```
@@ -198,7 +226,8 @@ RETURN path LIMIT 50
 
 - **`MERGE` siempre** — el motor nunca usa `CREATE` directamente
 - **Timestamps automáticos** — el motor gestiona `created_at` / `updated_at`
-- **Sin propiedades en relaciones en v1** — se añadirán solo cuando surja una necesidad demostrada
+- **Las relaciones llevan identidad** — cada arista se sella con `(org_id, user_id)` para que una lectura acotada por relación filtre sin re-recorrer ambos extremos (Spec 001). Más allá de la identidad, las propiedades de relación se añaden solo cuando surge una necesidad demostrada.
+- **Acotado fail-closed** — cada lectura se restringe a la identidad `(org_id, user_id)` del llamante; un scope ausente o parcial no matchea nada. Ver [security.es.md](security.es.md#aislamiento-por-tenant-multi-tenant).
 - **Los embeddings son opcionales** — la búsqueda semántica a través de cualquier servicio compatible con la API de OpenAI (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina) mejora la búsqueda cuando está habilitada (DDR-003 Fase B+C, DDR-004). En Neo4j el índice vectorial sobre `(:Embedded)` cubre todos los tipos de nodo; en SQLite los vectores residen en la tabla virtual `vec0` `node_embeddings`.
 - **Siempre parametrizar consultas** — nunca formatear cadenas en Cypher (Neo4j) ni en SQL (SQLite). Ambos backends usan vinculación de parámetros.
 - **Campos temporales auto-gestionados** — `valid_from`, `confidence` se asignan al crear; `valid_to` se limpia al revivir (MATCH). El decaimiento se aplica mediante `engrama decay` en la CLI.

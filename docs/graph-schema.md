@@ -143,6 +143,31 @@ Every node carries temporal metadata managed by the engine (DDR-003 Phase D):
 
 Nodes with embeddings also carry the `:Embedded` secondary label for vector indexing.
 
+## Identity fields (all nodes and relations)
+
+Since **0.13.0** (Spec 001) every node **and every relation** carries the
+ownership identity that scopes it:
+
+```
+{
+  org_id:  string,   // owning organisation — required
+  user_id: string,   // owning user — required
+}
+```
+
+- Stamped by the engine on every write; never taken from caller-supplied
+  node properties.
+- Reads are **fail-closed**: the scope filter restricts every query to the
+  caller's `(org_id, user_id)`. A node or edge owned by another tenant is
+  invisible — a missing or partial scope matches *nothing*, never everything.
+- A single-process install runs as one stable **standalone identity**, so
+  these fields are present and uniform without any configuration.
+- Composite indexes on `(org_id, user_id, <key>)` back the scoped lookups on
+  both backends.
+
+See [security.md](security.md#tenant-isolation-multi-tenant) for the full
+isolation model and the migration path for pre-0.13 graphs.
+
 ## Relationships
 
 ```
@@ -197,7 +222,8 @@ RETURN path LIMIT 50
 
 - **`MERGE` always** — engine never uses bare `CREATE`
 - **Automatic timestamps** — engine manages `created_at` / `updated_at`
-- **No relationship properties in v1** — added only when demonstrated need arises
+- **Relations carry identity** — every edge is stamped with `(org_id, user_id)` so a relation-scoped read filters without re-walking both endpoints (Spec 001). Beyond identity, relationship properties are added only when a demonstrated need arises.
+- **Fail-closed scoping** — every read is restricted to the caller's `(org_id, user_id)`; a missing or partial scope matches nothing. See [security.md](security.md#tenant-isolation-multi-tenant).
 - **Embeddings are optional** — semantic search via any OpenAI-compatible service (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina) enhances search when enabled (DDR-003 Phase B+C, DDR-004). On Neo4j the vector index on `(:Embedded)` covers all node types; on SQLite vectors live in the `node_embeddings` `vec0` virtual table.
 - **Always parameterise queries** — never string-format Cypher (Neo4j) or SQL (SQLite). Both backends use parameter binding.
 - **Temporal fields auto-managed** — `valid_from`, `confidence` set on creation; `valid_to` cleared on revival (MATCH). Decay applied via `engrama decay` CLI.
