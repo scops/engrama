@@ -17,7 +17,7 @@
 | Async HTTP | httpx | ≥ 0.27 | Non-blocking embedding calls in MCP server |
 | Container (Neo4j only) | Docker Desktop | latest | Reproducible Neo4j infrastructure |
 | CI/CD | GitHub Actions | — | Tests and PyPI publishing |
-| Packaging | pyproject.toml | — | `uv sync` (base) / `uv sync --extra neo4j` (opt-in); PyPI publication planned |
+| Packaging | pyproject.toml | — | Published on PyPI as `engrama`; `pip install engrama` or `pip install "engrama[neo4j]"` |
 
 ## What makes Engrama different
 
@@ -65,7 +65,7 @@ block-beta
     columns 5
     hybrid["HybridSearch\nEngine"]
     temporal["Temporal\n(decay, valid_to)"]
-    security["Security\n(planned)"]
+    scope["Scope\n(fail-closed tenancy)"]
     write["Write Pipeline\n(MERGE)"]
     query["Query"]
   end
@@ -436,6 +436,38 @@ confidence with recency.
 `temporal_score = confidence × 2^(-days / half_life)`.
 Default γ=0.1 and half_life=30 days.
 
+## Identity and tenancy (Spec 001)
+
+Every node and relation is owned by an `(org_id, user_id)` identity, and
+reads are **fail-closed**: a `None`, empty, or half-resolved scope matches
+nothing rather than widening to "see all". Engrama does **not** authenticate
+— it consumes an identity asserted upstream.
+
+- **Scope helpers** (`core/scope.py`): `scope_filter_cypher` /
+  `scope_filter_sql` build the `WHERE` fragment that every read appends. They
+  return `(false)` / `(1 = 0)` for an incomplete scope — the single chokepoint
+  that makes isolation fail-closed.
+- **Per-request resolution** (MCP boundary): the server reads
+  `X-Engrama-Org-Id` / `X-Engrama-User-Id` from the request and binds the
+  scope for the call. Exactly one header present → `ScopeUnresolved` (reads
+  return zero results; writes are rejected). No headers → the process's
+  **standalone identity**, computed once at startup (a single-process install
+  needs no configuration).
+- **Write guard** (`EngramaEngine`): `merge_node` / `merge_relation` raise on
+  a direct SDK call that lacks a complete scope, so an SDK bypass can't write
+  unscoped rows.
+- **CI guard** (`scripts/check_scoped_queries.py`): an AST scan fails the
+  build on any new backend query that neither routes through the scope helper
+  nor carries an explicit `# scope-exempt: <reason>`. Wired into CI as a
+  blocking step.
+- **Migration**: `engrama migrate tenancy --owner-sub <sub> --apply` stamps
+  ownership onto a pre-0.13 graph whose rows are otherwise invisible under
+  fail-closed reads.
+
+See [graph-schema.md](graph-schema.md#identity-fields-all-nodes-and-relations)
+for the stored fields and [security.md](security.md#tenant-isolation-multi-tenant)
+for the operator-facing isolation model and the admin/cross-tenant tools.
+
 ## Obsidian integration (DDR-002)
 
 The vault is the **narrative layer**. The graph is the **relational
@@ -538,12 +570,13 @@ Native MCP server built with FastMCP and the matching async store. All
 storage logic lives in `*AsyncStore`; the MCP tool handlers handle
 orchestration, validation, vault I/O, and response formatting only.
 
-Twelve tools:
+Thirteen tools:
 
 - `engrama_status` — read-only introspection: vault path, backend,
-  embedder, search mode, version. Agents should call this at session
-  start when Engrama coexists with other Obsidian-capable MCPs so they
-  can disambiguate which server "the vault" refers to before any sync.
+  embedder, search mode, version, and `admin_tools` (the not-tenant-isolated
+  tools, a hint for a multi-tenant gateway). Agents should call this at
+  session start when Engrama coexists with other Obsidian-capable MCPs so
+  they can disambiguate which server "the vault" refers to before any sync.
 - `engrama_search` — hybrid search across the memory graph
 - `engrama_remember` — create or update a node (always MERGE)
 - `engrama_relate` — create a relationship (handles title-keyed nodes)
@@ -554,6 +587,9 @@ Twelve tools:
   accepts `dry_run=true` to project create/update counts and list the
   files that would receive an `engrama_id` injection
 - `engrama_ingest` — read content and return extraction guidance
+- `engrama_reindex` — detect / classify / re-embed nodes missing their
+  vector (embedder was down at write time); scan is scoped to the caller's
+  tenant
 - `engrama_reflect` — adaptive cross-entity pattern detection → Insight nodes
 - `engrama_surface_insights` — read pending Insights for agent presentation
 - `engrama_approve_insight` — human approves or dismisses an Insight
@@ -567,7 +603,7 @@ payload["vault"]:` reliably.
 
 ```json
 {
-  "version": "0.10.0",
+  "version": "0.13.0",
   "backend": {
     "name": "sqlite",
     "ok": true,
@@ -588,7 +624,11 @@ payload["vault"]:` reliably.
     "mode": "hybrid",
     "degraded": false,
     "reason": ""
-  }
+  },
+  "admin_tools": [
+    {"name": "engrama_status",  "reason": "deployment-wide counts; no tenant isolation"},
+    {"name": "engrama_reindex", "reason": "tenant-scoped data, but admin-flavoured bulk re-embed"}
+  ]
 }
 ```
 
@@ -650,6 +690,10 @@ through a conversational interview.
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint (legacy provider) |
 | `HYBRID_ALPHA` | `0.6` | Vector vs fulltext weight |
 | `HYBRID_GRAPH_BETA` | `0.15` | Graph topology boost weight |
+| `ENGRAMA_ORG_ID` | — | Standalone owning org (Spec 001); unset → derived standalone identity |
+| `ENGRAMA_USER_ID` | — | Standalone owning user (Spec 001); unset → derived standalone identity |
+| `ENGRAMA_LOCAL_SUB` | — | Seed for the derived standalone identity when org/user are unset |
+| `ENGRAMA_TRANSPORT` | `stdio` | MCP transport: `stdio` or `http` (Streamable HTTP, loopback, no auth) |
 
 ## Implementation rules
 
