@@ -1692,7 +1692,9 @@ class SqliteGraphStore:
             for r in cur.fetchall()
         ]
 
-    def list_unembedded_nodes(self, limit: int = 100) -> list[dict[str, Any]]:
+    def list_unembedded_nodes(
+        self, limit: int = 100, scope: MemoryScope | None = None
+    ) -> list[dict[str, Any]]:
         """Return nodes that carry no vector, newest-agnostic, capped at ``limit``.
 
         Source of truth is the presence of a row in the ``node_embeddings``
@@ -1700,26 +1702,42 @@ class SqliteGraphStore:
         embed-on-write failed has no vector row and shows up here. Backs the
         opportunistic sweep and ``engrama_reindex``. Returns
         ``{engrama_id, label, key_field, key_value, props}``.
+
+        When ``scope`` is provided the scan is restricted to that tenant, so
+        ``engrama_reindex`` (which passes a resolved scope) never reveals
+        another tenant's node names. The internal opportunistic sweep and the
+        admin CLI pass ``scope=None`` to keep the cross-tenant backfill.
         """
-        # scope-exempt: admin reindex/sweep — backfills missing vectors across
-        # the whole graph; embedding lives on the same node it came from, so
-        # this never crosses tenant boundaries on the data side. The MCP
-        # reindex tool is gated separately (admin identity required).
+        # scope-exempt: ``scope=None`` is the admin reindex/sweep path —
+        # backfills missing vectors across the whole graph; the embedding lives
+        # on the same node it came from, so this never crosses tenant
+        # boundaries on the data side. When a scope IS passed (the per-tenant
+        # MCP reindex path) the scan is filtered below via scope_filter_sql.
+        params: dict[str, Any] = {"limit": limit}
+        scope_clause = ""
+        if scope is not None:
+            clause, scope_params = scope_filter_sql(scope, "n", json_column="props")
+            scope_clause = f"AND {clause} "
+            params.update(scope_params)
         try:
             cur = self._conn.execute(
                 "SELECT n.label AS label, n.key_field AS key_field, "
                 "       n.key_value AS key_value, n.props AS props "
                 "FROM nodes n "
                 "WHERE NOT EXISTS (SELECT 1 FROM node_embeddings v WHERE v.node_id = n.id) "
-                "LIMIT ?",
-                (limit,),
+                f"{scope_clause}"
+                "LIMIT :limit",
+                params,
             )
         except sqlite3.OperationalError:
             # vec table never created (no embedder configured) → every node
             # is unembedded.
+            fallback_clause = f"WHERE {clause} " if scope is not None else ""
             cur = self._conn.execute(
-                "SELECT label, key_field, key_value, props FROM nodes LIMIT ?",
-                (limit,),
+                "SELECT n.label AS label, n.key_field AS key_field, "
+                "       n.key_value AS key_value, n.props AS props "
+                f"FROM nodes n {fallback_clause}LIMIT :limit",
+                params,
             )
         out: list[dict[str, Any]] = []
         for r in cur.fetchall():

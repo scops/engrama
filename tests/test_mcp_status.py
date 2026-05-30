@@ -106,6 +106,25 @@ async def test_status_reports_backend_and_version(tmp_path: Path) -> None:
     assert payload["version"] == __version__
 
 
+async def test_status_lists_admin_tools_for_gateway_gating(tmp_path: Path) -> None:
+    """``admin_tools`` declares the not-tenant-isolated tools so a
+    multi-tenant gateway can gate them without hardcoding names
+    (tenant-isolation audit, 2026-05-30)."""
+    server = create_engrama_mcp(
+        backend="sqlite",
+        config={"ENGRAMA_DB_PATH": str(tmp_path / "engrama.db")},
+        vault_path=None,
+    )
+    payload = await _call_status(server)
+
+    admin = payload.get("admin_tools")
+    assert isinstance(admin, list) and admin, "admin_tools must be a non-empty list"
+    names = {t["name"] for t in admin}
+    assert names == {"engrama_status", "engrama_reindex"}
+    # Every entry must carry a human-readable reason for the gateway author.
+    assert all(t.get("reason") for t in admin)
+
+
 async def test_status_search_mode_fulltext_only_when_embedder_null(
     tmp_path: Path,
 ) -> None:

@@ -47,6 +47,32 @@ def test_same_user_string_isolated_by_org(tmp_path: Path) -> None:
     assert "acme-doc" not in names
 
 
+def test_reindex_scan_does_not_leak_node_names_across_tenants(tmp_path: Path) -> None:
+    """``list_unembedded_nodes(scope=...)`` — backing engrama_reindex's
+    detect/classify — must only return the caller's own nodes. The unscoped
+    admin path (scope=None) still spans all tenants (sweep / CLI backfill).
+    Tenant-isolation audit (2026-05-30): detect/classify previously sampled
+    other tenants' node names.
+    """
+    db = tmp_path / "shared.db"
+    # EMBEDDING_PROVIDER=null → every node is unembedded, so all show up here.
+    with Engrama(backend="sqlite", db_path=db, org_id="acme", user_id="alice") as eng:
+        eng.remember("Concept", "alice-doc", "alice memo")
+    with Engrama(backend="sqlite", db_path=db, org_id="globex", user_id="bob") as eng:
+        eng.remember("Concept", "bob-doc", "bob memo")
+
+    with Engrama(backend="sqlite", db_path=db, org_id="acme", user_id="alice") as eng:
+        scoped = {
+            c["key_value"]
+            for c in eng._store.list_unembedded_nodes(scope=eng._engine.default_scope)
+        }
+        admin = {c["key_value"] for c in eng._store.list_unembedded_nodes()}
+
+    assert "bob-doc" not in scoped  # the leak the audit flagged
+    assert "alice-doc" in scoped
+    assert {"alice-doc", "bob-doc"} <= admin  # admin path still cross-tenant
+
+
 def test_context_traversal_does_not_cross_tenants(tmp_path: Path) -> None:
     # A pathological cross-tenant relation must still not leak via traversal
     # (T-9). We wire the edge through the unscoped store, then read scoped.
