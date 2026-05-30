@@ -9,18 +9,32 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Changed
+
+- **Inline relations resolve by confidence, not silent stubbing (#93).** When
+  `engrama_remember` gets an inline relation whose target doesn't match an
+  existing node exactly, measured name similarity (scope-filtered, so it never
+  sees another tenant's nodes) now drives a three-way decision instead of always
+  minting a stub:
+  - **near-certain in-scope match** → connects to that node and reports
+    `relations_resolved` (`resolved_by: fuzzy_match`) — auto-connection is
+    always visible, never silent;
+  - **ambiguous candidates** → creates **nothing** and returns
+    `relations_ambiguous` with a `did_you_mean` list of in-scope names, so a
+    wrong edge (harder to detect than a missing one) is never guessed;
+  - **no similar candidate** → creates a stub as before, reported in
+    `relations_stubbed`.
+
+  Thresholds are conservative named constants, tunable as the graph grows.
+
 ### Fixed
 
-- **Silent inline-relation failures are now surfaced (#93).** When
-  `engrama_remember` is given inline `relations` and a target doesn't connect,
-  the response no longer hides it behind `status: ok` / `relations_created: 0`
-  with only a server-log warning. Two new response fields mirror the existing
-  `relations_rejected`: `relations_failed` lists targets where **no edge was
-  created** (the merge matched nothing, or a stub couldn't be created), and
-  `relations_stubbed` lists targets where the edge landed on a **newly-created
-  stub** rather than a pre-existing node — so an orphan stub (e.g. relating to
-  `Engrama` when the real node is `engrama-saas`) isn't mistaken for the
-  intended link. Each carries an explanatory `_note`.
+- **Silent inline-relation failures are now surfaced (#93).** Relations that
+  don't connect are no longer hidden behind `status: ok` / `relations_created:
+  0` with only a server-log warning. `relations_failed` lists targets where
+  **no edge was created** (an exact match was found but the merge matched
+  nothing, or a stub couldn't be created). Each new field carries an
+  explanatory `_note`, mirroring the existing `relations_rejected`.
 - **`engrama_relate` pinpoints the failing endpoint (#93).** A failed relate
   now returns a structured `status: "error"` naming *which* endpoint was
   missing, and distinguishes a wrong/out-of-scope name from a label mismatch

@@ -203,3 +203,110 @@ async def test_relate_reports_label_mismatch(tmp_path: Path) -> None:
     assert resp.get("status") == "error"
     err = resp.get("error", "")
     assert "thing" in err and ":Concept" in err and "fix the label" in err
+
+
+# --- #93 follow-up: confidence-gated three-way resolution (connect / ask / create) ---
+
+
+async def test_inline_relation_fuzzy_connects_to_near_certain_match(tmp_path: Path) -> None:
+    """Path 1: a near-identical in-scope node wins, so the edge connects to it
+    instead of minting an orphan stub — and the auto-connection is reported,
+    never silent."""
+    server = _server(tmp_path / "engrama.db")
+    await _call(
+        server,
+        "engrama_remember",
+        {"label": "Project", "properties": {"name": "engrama-saas"}},
+    )
+    resp = await _call(
+        server,
+        "engrama_remember",
+        {
+            "label": "Problem",
+            "properties": {
+                "title": "noisy-prob",
+                "relations": {"RELATED_TO": ["engrama-sas"]},  # typo of engrama-saas
+            },
+        },
+    )
+    assert resp.get("status") == "ok"
+    assert resp.get("relations_created") == 1
+    assert "relations_stubbed" not in resp
+    resolved = resp.get("relations_resolved")
+    assert resolved is not None
+    assert resolved[0]["target"] == "engrama-sas"
+    assert resolved[0]["resolved_to"] == "engrama-saas"
+    assert resolved[0]["resolved_by"] == "fuzzy_match"
+
+
+async def test_inline_relation_ambiguous_asks_instead_of_connecting(tmp_path: Path) -> None:
+    """Path 2: candidates exist but none clearly wins, so NOTHING is created and
+    the in-scope candidates come back as did_you_mean. When in doubt, ask."""
+    server = _server(tmp_path / "engrama.db")
+    for name in ("engrama-saas", "engrama-core"):
+        await _call(server, "engrama_remember", {"label": "Project", "properties": {"name": name}})
+    resp = await _call(
+        server,
+        "engrama_remember",
+        {
+            "label": "Problem",
+            "properties": {
+                "title": "amb-prob",
+                "relations": {"RELATED_TO": ["engrama"]},
+            },
+        },
+    )
+    assert resp.get("status") == "ok"
+    # Grey zone: no edge, no stub.
+    assert resp.get("relations_created") == 0
+    assert "relations_stubbed" not in resp
+    assert "relations_resolved" not in resp
+    amb = resp.get("relations_ambiguous")
+    assert amb is not None
+    suggested = {c["name"] for c in amb[0]["did_you_mean"]}
+    assert {"engrama-saas", "engrama-core"} <= suggested
+
+
+async def test_inline_relation_other_tenant_target_never_leaks(tmp_path: Path) -> None:
+    """Hard isolation constraint: a node that exists ONLY in another tenant must
+    never be fuzzy-connected to and never surface in did_you_mean, even on a
+    near-identical name. Candidate discovery is scope-filtered, so the standalone
+    caller can't see — let alone link to — tenant B's node."""
+    from engrama import Engrama
+
+    db = tmp_path / "shared.db"
+    # Tenant B owns a node whose name is a near-match for what the caller types.
+    with Engrama(backend="sqlite", db_path=db, org_id="globex", user_id="bob") as eng:
+        eng.remember("Project", "engrama-saas", "tenant B private project")
+
+    # The MCP server runs standalone (a different scope from tenant B).
+    server = _server(db)
+    resp = await _call(
+        server,
+        "engrama_remember",
+        {
+            "label": "Problem",
+            "properties": {
+                "title": "probe",
+                "relations": {"RELATED_TO": ["engrama-sas"]},  # ~0.96 vs B's node
+            },
+        },
+    )
+    assert resp.get("status") == "ok"
+    # Never connected to B's node, never suggested it.
+    assert "relations_resolved" not in resp
+    # B's exact name must not appear anywhere in the response.
+    assert "engrama-saas" not in json.dumps(resp)
+
+    # And B's node must be untouched — no cross-tenant edge formed.
+    from engrama.backends.sqlite.store import SqliteGraphStore
+    from engrama.core.scope import MemoryScope
+
+    store = SqliteGraphStore(db)
+    try:
+        nbrs = store.get_neighbours(
+            "Project", "name", "engrama-saas", scope=MemoryScope(org_id="globex", user_id="bob")
+        )
+    finally:
+        store.close()
+    assert nbrs == []
