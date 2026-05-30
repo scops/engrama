@@ -137,10 +137,12 @@ class TestAssociate:
         """Associate creates a relationship between existing nodes."""
         neo4j_session.run(
             "MERGE (p:Project {name: $proj}) SET p.test = true, "
+            "p.org_id = $org_id, p.user_id = $user_id, "
             "p.created_at = datetime(), p.updated_at = datetime() "
             "MERGE (t:Technology {name: $tech}) SET t.test = true, "
+            "t.org_id = $org_id, t.user_id = $user_id, "
             "t.created_at = datetime(), t.updated_at = datetime()",
-            {"proj": "SDK_AssocProj", "tech": "SDK_AssocTech"},
+            {"proj": "SDK_AssocProj", "tech": "SDK_AssocTech", **_SCOPE_CYPHER_PARAMS},
         )
 
         result = eng.associate("SDK_AssocProj", "Project", "USES", "SDK_AssocTech", "Technology")
