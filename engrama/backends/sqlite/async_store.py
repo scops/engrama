@@ -503,6 +503,37 @@ class SqliteAsyncStore:
         return await self._run(self._vector.count_embeddings)
 
     # ------------------------------------------------------------------
+    # GDPR right-to-erasure (Spec 001 US-3 / T029)
+    # ------------------------------------------------------------------
+
+    async def gdpr_forget(
+        self,
+        *,
+        org_id: str,
+        user_id: str,
+        dry_run: bool = False,
+        apply: bool = False,
+    ) -> dict[str, Any]:
+        """Erase one identity's graph + embeddings (delegates to migrate)."""
+        from engrama.migrate import gdpr_forget as _gdpr_forget
+
+        return await self._run(
+            _gdpr_forget,
+            self._sync,
+            self._vector,
+            org_id=org_id,
+            user_id=user_id,
+            dry_run=dry_run,
+            apply=apply,
+        )
+
+    async def obsidian_paths_for_scope(self, org_id: str, user_id: str) -> list[str]:
+        """Vault-relative note paths owned by ``(org_id, user_id)`` (T030)."""
+        from engrama.adapters.obsidian.sync import vault_paths_for_scope
+
+        return await self._run(vault_paths_for_scope, self._sync, org_id, user_id)
+
+    # ------------------------------------------------------------------
     # Temporal operations (DDR-003 Phase D)
     # ------------------------------------------------------------------
 

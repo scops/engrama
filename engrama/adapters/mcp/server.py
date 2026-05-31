@@ -600,6 +600,20 @@ class ReindexInput(BaseModel):
     )
 
 
+class GdprForgetInput(BaseModel):
+    """Input for engrama_gdpr_forget."""
+
+    model_config = ConfigDict(extra="forbid")
+    mode: str = Field(
+        default="dry-run",
+        description=(
+            "'dry-run' (default, safe) reports what would be erased without "
+            "deleting anything; 'apply' permanently erases the caller's own "
+            "identity. There is no undo and no server-side backup."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Server factory
 # ---------------------------------------------------------------------------
@@ -3381,5 +3395,97 @@ def create_engrama_mcp(
             default=str,
             indent=2,
         )
+
+    # -- Tool: engrama_gdpr_forget -----
+
+    @mcp.tool(
+        name="engrama_gdpr_forget",
+        annotations=ToolAnnotations(
+            title="Erase My Data (GDPR right-to-erasure)",
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def engrama_gdpr_forget(params: GdprForgetInput, ctx: Context) -> str:
+        """Permanently erase **the caller's own** memory (GDPR, Spec 001 US-3).
+
+        Physically deletes every node, relationship and embedding belonging to
+        the resolved identity, plus its notes in Engrama's internal vault. This
+        is real erasure: there is no soft-delete and no server-side backup (a
+        retained copy would defeat the request and create a fresh PII
+        liability). Export your data with the export tool *first* if you want a
+        copy — that copy leaves with you and is no longer our responsibility.
+
+        **Scope is the caller, never an arbitrary tenant.** The target identity
+        is the one resolved from the request headers — a tenant can only erase
+        itself. Erasing a *different* tenant is an operator action via the
+        ``engrama migrate`` CLI against the admin DB, not this tool.
+
+        **Mode.** ``mode='dry-run'`` (default, safe) reports the per-label node
+        counts, relations, embeddings and notes that *would* be erased and
+        writes nothing. ``mode='apply'`` performs the deletion. Idempotent: a
+        second ``apply`` on an already-erased identity reports all zeros.
+
+        **Vault.** Touches Engrama's own internal vault (``VAULT_PATH``) only;
+        no-op there if it is unconfigured, and it never follows a path outside
+        the vault root (never an external user-managed vault).
+
+        **Identity (Spec 001 FR-4).** Required: both ``X-Engrama-Org-Id`` and
+        ``X-Engrama-User-Id`` headers, or neither for standalone. Unresolved →
+        explicit error, nothing erased.
+
+        Returns the Deletion report as JSON: ``mode``, ``org_id``, ``user_id``,
+        ``deleted_nodes_by_label``, ``deleted_relations``,
+        ``deleted_embeddings``, ``deleted_notes``, ``timestamp``.
+        """
+        state = ctx.request_context.lifespan_context
+        store = _store(ctx)
+
+        try:
+            scope = _resolve_and_bind(ctx)
+        except ScopeUnresolved as e:
+            return json.dumps({"status": "error", "message": str(e)}, indent=2)
+
+        mode = (params.mode or "").strip().lower()
+        if mode not in ("dry-run", "apply"):
+            return json.dumps(
+                {"status": "error", "message": "mode must be 'dry-run' or 'apply'"},
+                indent=2,
+            )
+        apply = mode == "apply"
+        dry_run = not apply
+
+        errors: list[str] = []
+
+        # Vault notes first: their paths live on the graph rows we are about to
+        # erase, so they must be read (and, on apply, unlinked) before the
+        # DETACH DELETE / DELETE wipes them.
+        notes_deleted = 0
+        obsidian: ObsidianAdapter | None = state.get("obsidian")
+        if obsidian is not None:
+            try:
+                from engrama.adapters.obsidian.sync import unlink_vault_notes
+
+                paths = await store.obsidian_paths_for_scope(scope.org_id, scope.user_id)
+                notes_deleted = await asyncio.to_thread(
+                    unlink_vault_notes, obsidian, paths, apply=apply
+                )
+            except Exception as e:  # noqa: BLE001 — vault failure must not abort graph erasure
+                logger.warning("gdpr_forget: vault note erasure failed: %s", e)
+                errors.append(f"vault: {e}")
+
+        report = await store.gdpr_forget(
+            org_id=scope.org_id,
+            user_id=scope.user_id,
+            dry_run=dry_run,
+            apply=apply,
+        )
+        report["mode"] = mode
+        report["deleted_notes"] = notes_deleted
+        if errors:
+            report["errors"] = errors
+        return json.dumps(report, default=str, indent=2)
 
     return mcp

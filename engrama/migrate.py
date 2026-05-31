@@ -649,6 +649,187 @@ def _migrate_tenancy_sqlite(
     return report
 
 
+# ---------------------------------------------------------------------------
+# Spec 001 US-3 / T028-T029 — GDPR right-to-erasure
+# ---------------------------------------------------------------------------
+
+
+def gdpr_forget(
+    graph_store: Any,
+    vector_store: Any,
+    *,
+    org_id: str,
+    user_id: str,
+    dry_run: bool = False,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Physically erase every node, relation and embedding of one identity.
+
+    GDPR right-to-erasure (Spec 001, US-3). Unlike the fail-closed read
+    filter — which only *hides* other tenants' data — this destroys the
+    target identity's rows outright: there is no soft-delete and no
+    server-side backup (a retained copy would defeat the erasure and
+    create a fresh PII liability; the user downloads their own copy via
+    the export tool *before* calling this).
+
+    Contract:
+
+    * ``dry_run=True`` counts what *would* be deleted and writes nothing.
+    * ``apply=True`` deletes the rows. Idempotent — a second apply on an
+      already-erased identity reports all zeros.
+    * Exactly one of ``dry_run`` / ``apply`` MUST be set.
+    * Only the ``(org_id, user_id)`` identity is touched; every other
+      tenant is left byte-for-byte intact.
+
+    Returns a Deletion report (Spec 001 data-model.md)::
+
+        {"org_id", "user_id", "deleted_nodes_by_label": {label: n},
+         "deleted_relations": n, "deleted_embeddings": n,
+         "deleted_notes": n, "timestamp": iso8601}
+
+    Backends:
+
+    * SQLite — ``hasattr(graph_store, "_conn")``. Deletes ``nodes`` +
+      ``edges`` by scope and the vec0 ``node_embeddings`` rows for those
+      node ids (vec0 has no FK cascade, so embeddings are deleted first).
+    * Neo4j (sync) — ``hasattr(graph_store, "_client")``. ``DETACH DELETE``
+      removes the node, its relationships and its ``embedding`` property
+      (and the vector-index entry) in one step.
+    """
+    if dry_run == apply:
+        raise ValueError("must pass exactly one of dry_run=True or apply=True")
+    if not isinstance(org_id, str) or not org_id.strip():
+        raise ValueError("org_id must be a non-empty identity string")
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise ValueError("user_id must be a non-empty identity string")
+    org_id = org_id.strip()
+    user_id = user_id.strip()
+
+    if hasattr(graph_store, "_conn"):
+        return _gdpr_forget_sqlite(
+            graph_store, vector_store, org_id=org_id, user_id=user_id, dry_run=dry_run, apply=apply
+        )
+    if hasattr(graph_store, "_client"):
+        return _gdpr_forget_neo4j(
+            graph_store, vector_store, org_id=org_id, user_id=user_id, dry_run=dry_run, apply=apply
+        )
+    raise TypeError(
+        "gdpr_forget requires a SqliteGraphStore or Neo4jGraphStore; "
+        f"got {type(graph_store).__name__}"
+    )
+
+
+# Node identity lives in the JSON ``props`` blob; edges carry it as columns.
+_SQL_SCOPE_NODES = "json_extract(props, '$.org_id') = ? AND json_extract(props, '$.user_id') = ?"
+
+
+def _count_embeddings_sqlite(conn: Any, vector_store: Any, node_ids: list[int]) -> int:
+    """Count vec0 rows for ``node_ids``, tolerating an absent index table
+    (dimensionless install / embeddings never created)."""
+    if not node_ids:
+        return 0
+    index_name = getattr(vector_store, "_index_name", "node_embeddings")
+    exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (index_name,)).fetchone()
+    if not exists:
+        return 0
+    placeholders = ",".join("?" * len(node_ids))
+    return conn.execute(
+        f"SELECT COUNT(*) AS n FROM {index_name} WHERE node_id IN ({placeholders})",
+        node_ids,
+    ).fetchone()["n"]
+
+
+def _gdpr_forget_sqlite(
+    store: Any,
+    vector_store: Any,
+    *,
+    org_id: str,
+    user_id: str,
+    dry_run: bool,
+    apply: bool,
+) -> dict[str, Any]:
+    conn = store._conn
+    scope = (org_id, user_id)
+
+    node_rows = conn.execute(
+        f"SELECT id, label FROM nodes WHERE {_SQL_SCOPE_NODES}", scope
+    ).fetchall()
+    node_ids = [r["id"] for r in node_rows]
+    by_label: dict[str, int] = {}
+    for r in node_rows:
+        by_label[r["label"]] = by_label.get(r["label"], 0) + 1
+    rel_total = conn.execute(
+        "SELECT COUNT(*) AS n FROM edges WHERE org_id = ? AND user_id = ?", scope
+    ).fetchone()["n"]
+    embed_total = _count_embeddings_sqlite(conn, vector_store, node_ids)
+
+    report: dict[str, Any] = {
+        "org_id": org_id,
+        "user_id": user_id,
+        "deleted_nodes_by_label": by_label,
+        "deleted_relations": rel_total,
+        "deleted_embeddings": embed_total,
+        "deleted_notes": 0,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if dry_run:
+        return report
+
+    # Order: embeddings first (vec0 has no FK cascade), then edges, then
+    # nodes. Deleting nodes would cascade their edges, but we delete edges
+    # by scope explicitly so an org-shared edge of this identity goes too.
+    if node_ids:
+        vector_store.delete_vectors([str(n) for n in node_ids])
+    conn.execute("DELETE FROM edges WHERE org_id = ? AND user_id = ?", scope)
+    conn.execute(f"DELETE FROM nodes WHERE {_SQL_SCOPE_NODES}", scope)
+    conn.commit()
+    return report
+
+
+def _gdpr_forget_neo4j(
+    store: Any,
+    vector_store: Any,
+    *,
+    org_id: str,
+    user_id: str,
+    dry_run: bool,
+    apply: bool,
+) -> dict[str, Any]:
+    client = store._client
+    params = {"org": org_id, "user": user_id}
+
+    label_rows = client.run(
+        "MATCH (n {org_id: $org, user_id: $user}) RETURN labels(n)[0] AS label, count(n) AS n",
+        params,
+    )
+    by_label = {r["label"]: r["n"] for r in label_rows if r["n"]}
+    rel_total = client.run(
+        "MATCH ()-[r {org_id: $org, user_id: $user}]->() RETURN count(r) AS n", params
+    )[0]["n"]
+    embed_total = client.run(
+        "MATCH (n {org_id: $org, user_id: $user}) WHERE n.embedding IS NOT NULL "
+        "RETURN count(n) AS n",
+        params,
+    )[0]["n"]
+
+    report: dict[str, Any] = {
+        "org_id": org_id,
+        "user_id": user_id,
+        "deleted_nodes_by_label": by_label,
+        "deleted_relations": rel_total,
+        "deleted_embeddings": embed_total,
+        "deleted_notes": 0,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if dry_run:
+        return report
+
+    # DETACH DELETE drops the node, its relationships and its embedding
+    # property (and the vector-index entry) atomically.
+    client.run("MATCH (n {org_id: $org, user_id: $user}) DETACH DELETE n", params)
+    return report
+
+
 _CYPHER_NODES_NEED_STAMP = "MATCH (n) WHERE n.org_id IS NULL OR n.user_id IS NULL"
 
 
