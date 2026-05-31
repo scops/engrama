@@ -593,6 +593,84 @@ class Neo4jAsyncStore:
         )
         return [dict(r) for r in records]
 
+    # ------------------------------------------------------------------
+    # GDPR right-to-erasure (Spec 001 US-3 / T028)
+    # ------------------------------------------------------------------
+
+    async def gdpr_forget(
+        self,
+        *,
+        org_id: str,
+        user_id: str,
+        dry_run: bool = False,
+        apply: bool = False,
+    ) -> dict[str, Any]:
+        """Physically erase one identity's nodes, relations and embeddings.
+
+        Embeddings are node properties on Neo4j, so ``DETACH DELETE`` removes
+        the node, its relationships and its ``embedding`` (and the
+        vector-index entry) in one atomic step (R-9). Idempotent. Exactly one
+        of ``dry_run`` / ``apply`` must be set; the report mirrors the SQLite
+        backend (see :func:`engrama.migrate.gdpr_forget`).
+        """
+        from datetime import UTC, datetime
+
+        # scope-exempt: GDPR erasure hard-scopes to an EXACT (org_id, user_id)
+        # by design — the opposite of the fail-closed read filter (which also
+        # admits the org-shared ``__entity__`` sentinel). Using scope_filter_*
+        # here would wrongly erase org-shared nodes, so we bind identity inline.
+        if dry_run == apply:
+            raise ValueError("must pass exactly one of dry_run=True or apply=True")
+        params = {"org": org_id, "user": user_id}
+
+        label_recs, _, _ = await self._driver.execute_query(
+            "MATCH (n {org_id: $org, user_id: $user}) RETURN labels(n)[0] AS label, count(n) AS n",
+            parameters_=params,
+            database_=self._database,
+        )
+        by_label = {r["label"]: r["n"] for r in label_recs if r["n"]}
+        rel_recs, _, _ = await self._driver.execute_query(
+            "MATCH ()-[r {org_id: $org, user_id: $user}]->() RETURN count(r) AS n",
+            parameters_=params,
+            database_=self._database,
+        )
+        emb_recs, _, _ = await self._driver.execute_query(
+            "MATCH (n {org_id: $org, user_id: $user}) WHERE n.embedding IS NOT NULL "
+            "RETURN count(n) AS n",
+            parameters_=params,
+            database_=self._database,
+        )
+        report: dict[str, Any] = {
+            "org_id": org_id,
+            "user_id": user_id,
+            "deleted_nodes_by_label": by_label,
+            "deleted_relations": rel_recs[0]["n"] if rel_recs else 0,
+            "deleted_embeddings": emb_recs[0]["n"] if emb_recs else 0,
+            "deleted_notes": 0,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        if dry_run:
+            return report
+
+        await self._driver.execute_query(
+            "MATCH (n {org_id: $org, user_id: $user}) DETACH DELETE n",
+            parameters_=params,
+            database_=self._database,
+        )
+        return report
+
+    async def obsidian_paths_for_scope(self, org_id: str, user_id: str) -> list[str]:
+        """Vault-relative note paths owned by ``(org_id, user_id)`` (T030)."""
+        # scope-exempt: GDPR erasure helper — hard-scopes to the exact identity
+        # being erased (see gdpr_forget), not the fail-closed read filter.
+        recs, _, _ = await self._driver.execute_query(
+            "MATCH (n {org_id: $org, user_id: $user}) WHERE n.obsidian_path IS NOT NULL "
+            "RETURN DISTINCT n.obsidian_path AS p",
+            parameters_={"org": org_id, "user": user_id},
+            database_=self._database,
+        )
+        return [r["p"] for r in recs if r["p"]]
+
     async def lookup_node_label(
         self,
         name: str,

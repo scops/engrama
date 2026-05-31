@@ -114,6 +114,19 @@ class ObsidianSync:
 
         return status
 
+    def delete_notes_for_scope(self, org_id: str, user_id: str, *, apply: bool) -> int:
+        """Delete the internal-vault notes belonging to one identity (T030).
+
+        Thin wrapper over :func:`vault_paths_for_scope` +
+        :func:`unlink_vault_notes` for the sync/CLI path. The MCP server
+        reuses those helpers directly off its async store. See
+        :func:`unlink_vault_notes` for the safety contract.
+        """
+        if self.adapter is None:
+            return 0
+        paths = vault_paths_for_scope(self.engine._store, org_id, user_id)
+        return unlink_vault_notes(self.adapter, paths, apply=apply)
+
     def archive_missing(self) -> int:
         """Archive graph nodes whose Obsidian notes no longer exist.
 
@@ -407,3 +420,74 @@ class ObsidianSync:
             "FEEDS": "Pipeline",
         }
         return _REL_TO_LABEL.get(rel_type, "Concept")
+
+
+# ---------------------------------------------------------------------------
+# Spec 001 US-3 / T030 — vault note erasure by identity
+# ---------------------------------------------------------------------------
+#
+# Module-level so both the sync path (:meth:`ObsidianSync.delete_notes_for_scope`)
+# and the async MCP server (off its async store) share one implementation. The
+# scope→paths query is backend-aware; the unlink is backend-agnostic and is the
+# single place the vault-boundary (P6) guard lives.
+
+
+def vault_paths_for_scope(store: object, org_id: str, user_id: str) -> list[str]:
+    """Vault-relative paths of in-scope nodes carrying an ``obsidian_path``.
+
+    Backend-aware over a *sync* store: SQLite via ``_conn``, Neo4j via
+    ``_client``. Several nodes may point at the same note, so paths are
+    de-duplicated — the caller counts notes, not node rows. Must be called
+    *before* the graph rows are erased, otherwise the paths are gone.
+    """
+    conn = getattr(store, "_conn", None)
+    if conn is not None:
+        rows = conn.execute(
+            "SELECT DISTINCT json_extract(props, '$.obsidian_path') AS p FROM nodes "
+            "WHERE json_extract(props, '$.org_id') = ? "
+            "AND json_extract(props, '$.user_id') = ? "
+            "AND json_extract(props, '$.obsidian_path') IS NOT NULL",
+            (org_id, user_id),
+        ).fetchall()
+        return [r["p"] for r in rows if r["p"]]
+    client = getattr(store, "_client", None)
+    if client is not None:
+        rows = client.run(
+            "MATCH (n {org_id: $org, user_id: $user}) "
+            "WHERE n.obsidian_path IS NOT NULL "
+            "RETURN DISTINCT n.obsidian_path AS p",
+            {"org": org_id, "user": user_id},
+        )
+        return [r["p"] for r in rows if r["p"]]
+    return []
+
+
+def unlink_vault_notes(
+    adapter: ObsidianAdapter | None, rel_paths: list[str], *, apply: bool
+) -> int:
+    """Delete (``apply=True``) or count (``apply=False``) vault notes.
+
+    Returns the number of notes that exist inside the internal vault and
+    belong to the identity. Safety:
+
+    * No-op (returns ``0``) when no adapter / vault is configured — the
+      gateway and the single-user MVP may run vault-less.
+    * Only files that resolve *inside* ``VAULT_PATH`` are touched. A stored
+      ``obsidian_path`` that would escape the vault root (P6: never external
+      vaults) is skipped, not followed.
+    """
+    if adapter is None:
+        return 0
+    count = 0
+    for rel in rel_paths:
+        try:
+            target = adapter._resolve(rel)
+        except ValueError:
+            # Path traversal / outside the vault root — never follow it.
+            continue
+        if not target.exists():
+            continue
+        count += 1
+        if apply:
+            target.unlink()
+    return count
