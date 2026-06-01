@@ -985,3 +985,125 @@ class TestRankingObservability:
             assert hasattr(r, "trust_score")
         # At least one result carries a non-zero fused relevance base.
         assert max(r.rrf_score for r in results) > 0.0
+
+
+# ---------------------------------------------------------------------------
+# T026 — Recall@10: rrf+rerank vs legacy linear (SC-001). A controlled
+# multi-hop / cross-channel fixture; the new default must lift recall@10 by
+# ≥10% relative over the legacy linear blend. (Real-corpus validation is a
+# separate, dataset-dependent benchmark.)
+# ---------------------------------------------------------------------------
+
+
+class TestRecallImprovement:
+    """The relevant answers form a connected cluster and appear mid-rank in
+    *both* channels; distractors are strong in a *single* channel and
+    isolated. Linear (per-channel min-max + alpha) surfaces the loud
+    single-channel distractors; rrf rewards cross-channel agreement and
+    graph cohesion lifts the cluster — so recall@10 improves."""
+
+    @staticmethod
+    def _fixture():
+        relevant = [f"r{i}" for i in range(1, 6)]  # 5 relevant, connected
+        vec_distractors = [f"dv{i}" for i in range(1, 5)]  # vector-only, loud
+        ft_distractors = [f"df{i}" for i in range(1, 5)]  # fulltext-only, loud
+
+        # Vector channel, score-desc: loud distractors first, then relevant
+        # mid-rank. Fulltext channel mirrors it with the *other* distractors.
+        vector_rows = [
+            {"label": "Note", "name": n, "score": s}
+            for n, s in [(d, 1.0 - 0.01 * i) for i, d in enumerate(vec_distractors)]
+            + [(r, 0.9 - 0.01 * i) for i, r in enumerate(relevant)]
+        ]
+        fulltext_rows = [
+            {"type": "Note", "name": n, "score": s}
+            for n, s in [(d, 1.0 - 0.01 * i) for i, d in enumerate(ft_distractors)]
+            + [(r, 0.9 - 0.01 * i) for i, r in enumerate(relevant)]
+        ]
+        # Relevant cluster: clique. Distractors isolated.
+        neighbours = {r: [x for x in relevant if x != r] for r in relevant}
+        return relevant, vector_rows, fulltext_rows, neighbours
+
+    @staticmethod
+    def _recall_at_10(results, relevant) -> float:
+        top = {r.name for r in results[:10]}
+        return len(top & set(relevant)) / len(relevant)
+
+    @pytest.mark.asyncio
+    async def test_rrf_rerank_improves_recall_at_10_by_10pct(self):
+        relevant, vec_rows, ft_rows, nbr = self._fixture()
+
+        def _engine(cfg):
+            return HybridSearchEngine(
+                _AsyncGraphWithNeighbours(ft_rows, nbr),
+                _AsyncMockVectorStore(vec_rows),
+                _MockEmbedder(),
+                config=cfg,
+            )
+
+        common = dict(temporal_gamma=0.0, trust_delta=0.0)
+        linear = await _engine(
+            HybridConfig(fusion_mode="linear", graph_rerank=False, **common)
+        ).asearch("q", limit=10)
+        rrf = await _engine(HybridConfig(fusion_mode="rrf", graph_rerank=True, **common)).asearch(
+            "q", limit=10
+        )
+
+        recall_linear = self._recall_at_10(linear, relevant)
+        recall_rrf = self._recall_at_10(rrf, relevant)
+
+        # SC-001: ≥10% relative improvement on this multi-hop / cross-channel set.
+        assert recall_linear > 0.0
+        assert recall_rrf >= 1.10 * recall_linear
+
+
+# ---------------------------------------------------------------------------
+# T030 — Tenancy/security hardening (P9): the graph-rerank neighbour fetch
+# must carry the engine's per-request scope, never a process-global one.
+# ---------------------------------------------------------------------------
+
+
+class _ScopeSpyGraph:
+    """Records the scope passed to every get_node_with_neighbours call."""
+
+    def __init__(self, results: list[dict[str, Any]]):
+        self._results = results
+        self.scopes_seen: list[Any] = []
+
+    async def fulltext_search(self, query: str, limit: int = 10, **kwargs) -> list[dict[str, Any]]:
+        return self._results[:limit]
+
+    async def get_neighbours(self, *a, **kw) -> list[dict[str, Any]]:
+        return []
+
+    async def get_node_with_neighbours(
+        self, label: str, key_field: str, key_value: str, hops: int = 1, scope: Any = None
+    ) -> dict[str, Any]:
+        self.scopes_seen.append(scope)
+        return {"node": {"name": key_value}, "neighbours": []}
+
+
+class TestGraphRerankScopeThreading:
+    """Scope is threaded per-request into every neighbour lookup (P9)."""
+
+    @pytest.mark.asyncio
+    async def test_neighbour_fetch_uses_per_request_scope(self):
+        rows = [
+            {"type": "Note", "name": "a", "score": 2.0},
+            {"type": "Note", "name": "b", "score": 1.0},
+        ]
+        request_scope = object()  # an opaque per-request scope token
+        graph = _ScopeSpyGraph(rows)
+        engine = HybridSearchEngine(
+            graph,
+            _AsyncNullVectorStore(),
+            _NullEmbedder(),
+            config=HybridConfig(fusion_mode="rrf", graph_rerank=True),
+            scope=request_scope,
+        )
+        await engine.asearch("a b", limit=5)
+
+        # Every neighbour fetch carried exactly the engine's request scope —
+        # not None, not a module-global default.
+        assert graph.scopes_seen, "graph rerank never fetched neighbours"
+        assert all(s is request_scope for s in graph.scopes_seen)

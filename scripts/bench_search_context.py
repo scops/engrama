@@ -104,6 +104,25 @@ def _measure(label: str, fn, count: int) -> dict[str, float]:
     }
 
 
+def _bench_search(db_path: Path, queries: list[str], *, graph_rerank: bool) -> dict[str, float]:
+    """Open a fresh engine over ``db_path`` and measure ``search`` latency.
+
+    ``graph_rerank`` toggles the spec-002 node-distance stage via
+    ``ENGRAMA_GRAPH_RERANK`` (read at ``HybridConfig`` construction), so the
+    two passes differ only by that stage — their delta isolates its cost.
+    """
+    import os
+
+    os.environ["ENGRAMA_GRAPH_RERANK"] = "1" if graph_rerank else "0"
+    with Engrama(backend="sqlite", db_path=db_path, org_id="bench", user_id="bench") as eng:
+        for _ in range(20):  # warm-up: connection + first FTS5 query
+            eng.search("warmup", limit=5)
+        it = iter(queries)
+        stats = _measure("search", lambda: eng.search(next(it), limit=10), len(queries))
+    stats["graph_rerank"] = graph_rerank
+    return stats
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--nodes", type=int, default=500)
@@ -166,18 +185,42 @@ def main() -> int:
                 args.queries // 2,  # context is heavier; half the load
             )
 
+        # --- Spec 002 SC-003: cost of the graph-rerank stage ---
+        # Re-run search with the stage on vs off over the same seeded DB and
+        # report the added latency. Budget: added median < 50ms, p95 < 150ms
+        # (< 300ms pathological).
+        rerank_queries = [rng.choice(seeded)[1] for _ in range(args.queries)]
+        on = _bench_search(db_path, rerank_queries, graph_rerank=True)
+        off = _bench_search(db_path, rerank_queries, graph_rerank=False)
+        added_p50 = round(on["p50_ms"] - off["p50_ms"], 3)
+        added_p95 = round(on["p95_ms"] - off["p95_ms"], 3)
+        graph_rerank_stats = {
+            "search_rerank_on": on,
+            "search_rerank_off": off,
+            "added_p50_ms": added_p50,
+            "added_p95_ms": added_p95,
+            "budget": {"median_ms": 50, "p95_ms": 150, "pathological_ms": 300},
+            "within_budget": added_p50 < 50 and added_p95 < 150,
+        }
+
     report = {
         "n_nodes": args.nodes,
         "n_queries": args.queries,
         "seed": args.seed,
         "search": search_stats,
         "context": context_stats,
+        "graph_rerank": graph_rerank_stats,
     }
     out = json.dumps(report, indent=2)
     print(out)
     if args.report:
         Path(args.report).parent.mkdir(parents=True, exist_ok=True)
         Path(args.report).write_text(out, encoding="utf-8")
+    verdict = "PASS" if graph_rerank_stats["within_budget"] else "OVER BUDGET"
+    print(
+        f"graph-rerank added latency: p50 {added_p50}ms / p95 {added_p95}ms — {verdict}",
+        file=sys.stderr,
+    )
     return 0
 
 
