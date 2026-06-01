@@ -20,7 +20,12 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from engrama.core.rerank import rrf_fuse
+from engrama.core.rerank import (
+    RrfFusion,
+    graph_distance_scores,
+    resolve_anchor,
+    rrf_fuse,
+)
 
 logger = logging.getLogger("engrama.core.search")
 
@@ -443,6 +448,10 @@ class HybridSearchEngine:
         # --- Merge ---
         merged = self._merge(v_results, f_results, alpha)
 
+        # --- Graph-aware node-distance rerank (spec 002 US2, sync path) ---
+        if self.config.fusion_mode == "rrf" and self.config.graph_rerank:
+            self._graph_rerank_sync(merged, query, self.scope)
+
         # --- Rank ---
         merged.sort(key=lambda r: r.final_score, reverse=True)
         return merged[:limit]
@@ -485,10 +494,147 @@ class HybridSearchEngine:
 
         self.last_mode = self._compute_mode(vector_reason)
 
-        # --- Merge + rank (sync computation) ---
+        # --- Merge ---
         merged = self._merge(v_results, f_results, alpha)
+
+        # --- Graph-aware node-distance rerank (spec 002 US2) ---
+        # Runs over the full fused candidate window before the final cut, so
+        # cohesion/anchor see every co-retrieved node (RG-7 bounds the cost).
+        if self.config.fusion_mode == "rrf" and self.config.graph_rerank:
+            await self._graph_rerank(merged, query, self.scope)
+
+        # --- Rank ---
         merged.sort(key=lambda r: r.final_score, reverse=True)
         return merged[:limit]
+
+    async def _graph_rerank(
+        self,
+        results: list[SearchResult],
+        query: str,
+        scope: Any,
+    ) -> None:
+        """Async node-distance rerank: fetch neighbours, then score.
+
+        For each candidate it fetches the in-tenant 1-hop neighbours via the
+        scoped async ``get_node_with_neighbours`` and keeps only those inside
+        the candidate window; the shared scorer then folds cohesion (and the
+        optional anchor boost) into ``final_score``.
+        """
+        named = self._graph_candidates(results)
+        if named is None:
+            return
+        candidate_set = {r.name for r in named}
+        neighbours: dict[str, list[str]] = {}
+        for r in named:
+            try:
+                data = await self.graph.get_node_with_neighbours(
+                    r.label, "name", r.name, hops=1, scope=scope
+                )
+            except Exception as e:
+                logger.warning("Graph rerank neighbour fetch failed for %r: %s", r.name, e)
+                data = None
+            neighbours[r.name] = self._window_neighbours(data, candidate_set)
+        self._apply_graph_scores(named, query, neighbours)
+
+    def _graph_rerank_sync(
+        self,
+        results: list[SearchResult],
+        query: str,
+        scope: Any,
+    ) -> None:
+        """Sync counterpart of :meth:`_graph_rerank` (spec 002 T019).
+
+        Uses the sync store's ``get_node_with_neighbours``; the scoring math
+        is identical. No event loop is touched — the async path stays the
+        first-class one, this keeps a pure-sync ``search()`` working too.
+        """
+        named = self._graph_candidates(results)
+        if named is None:
+            return
+        candidate_set = {r.name for r in named}
+        neighbours: dict[str, list[str]] = {}
+        for r in named:
+            try:
+                data = self.graph.get_node_with_neighbours(
+                    r.label, "name", r.name, hops=1, scope=scope
+                )
+            except Exception as e:
+                logger.warning("Graph rerank neighbour fetch failed for %r: %s", r.name, e)
+                data = None
+            neighbours[r.name] = self._window_neighbours(data, candidate_set)
+        self._apply_graph_scores(named, query, neighbours)
+
+    def _graph_candidates(self, results: list[SearchResult]) -> list[SearchResult] | None:
+        """Return the named candidates to rerank, or ``None`` to skip cleanly.
+
+        Skips when there is nothing to rerank or the store cannot supply
+        neighbours (graph rerank is then a no-op, scores stay 0).
+        """
+        if not results or not hasattr(self.graph, "get_node_with_neighbours"):
+            return None
+        named = [r for r in results if r.name]
+        return named or None
+
+    @staticmethod
+    def _window_neighbours(data: Any, candidate_set: set[str]) -> list[str]:
+        """Names of a node's neighbours that fall inside the candidate window.
+
+        Restricting to the window is also where any stray out-of-tenant
+        neighbour is dropped (defence-in-depth on top of scoped fetch; RG-4).
+        """
+        if not data:
+            return []
+        out: list[str] = []
+        for n in data.get("neighbours", []):
+            nm = n.get("name")
+            if nm and nm in candidate_set:
+                out.append(nm)
+        return out
+
+    def _apply_graph_scores(
+        self,
+        named: list[SearchResult],
+        query: str,
+        neighbours: dict[str, list[str]],
+    ) -> None:
+        """Compute ``graph_distance_score`` over the induced subgraph and fold
+        it into ``final_score`` as ``graph_beta · graph_distance_score`` (T018).
+
+        Replaces the legacy degree ``graph_boost`` in rrf mode; honours the
+        ``anchor_boost`` toggle. Backend-agnostic — both (a)search paths share
+        it so SQLite and Neo4j rank identically (FR-012).
+        """
+        candidate_names = [r.name for r in named]
+        rrf_scores = {r.name: r.rrf_score for r in named}
+
+        anchor = None
+        if self.config.anchor_boost:
+            fused = [
+                RrfFusion(
+                    name=r.name,
+                    vector_rank=r.vector_rank,
+                    fulltext_rank=r.fulltext_rank,
+                    rrf_score=r.rrf_score,
+                )
+                for r in named
+            ]
+            anchor = resolve_anchor(query, fused)
+
+        scores = graph_distance_scores(
+            candidate_names,
+            rrf_scores,
+            neighbours,
+            hops=self.config.graph_distance_hops,
+            cohesion_decay=self.config.cohesion_decay,
+            fanout_cap=self.config.fanout_cap,
+            anchor=anchor,
+            anchor_beta=self.config.anchor_beta,
+        )
+
+        beta = self.config.graph_beta
+        for r in named:
+            r.graph_distance_score = scores.get(r.name, 0.0)
+            r.final_score += beta * r.graph_distance_score
 
     def _compute_mode(self, vector_reason: str) -> SearchMode:
         """Build the :class:`SearchMode` descriptor for the most recent

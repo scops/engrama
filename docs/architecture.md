@@ -401,12 +401,18 @@ Since spec 002 the default relevance base is **Reciprocal Rank Fusion**
 raw score — so a correct answer surfaces regardless of how the per-channel
 score scales differ. Scoring formula (rrf mode):
 
-    final = rrf_score + γ × temporal + δ × trust
+    final = rrf_score + β × graph_distance + γ × temporal + δ × trust
 
-`rrf_score` is the rank-fused, [0,1]-normalised relevance base
-(`1/(k + rank)` summed across the channels a node appears in, `k` =
-`ENGRAMA_RRF_K`, default 60). A node-distance graph signal is folded into
-this formula in a later stage of spec 002.
+- `rrf_score`: the rank-fused, [0,1]-normalised relevance base
+  (`1/(k + rank)` summed across the channels a node appears in, `k` =
+  `ENGRAMA_RRF_K`, default 60).
+- `graph_distance`: a typed-graph **node-distance** signal (`graph_rerank`,
+  default on) computed over the fused candidate window — result-set
+  *cohesion* (a candidate near other strong candidates is boosted, decaying
+  per hop) plus, when the query resolves to an in-result *anchor* node, a
+  distance boost toward it. Replaces the old degree-count `graph_boost` and
+  is scope-filtered (only in-tenant neighbours count). Bounded by
+  `ENGRAMA_GRAPH_HOPS` / `ENGRAMA_FANOUT_CAP`.
 
 **Legacy linear blend** — set `ENGRAMA_RANKING_LEGACY=1` (or
 `fusion_mode="linear"`) to revert to the pre-spec-002 formula:

@@ -796,3 +796,104 @@ class TestRRFFusionIntegration:
         rescaled_rrf = {r.name: r.rrf_score for r in rescaled}
         assert base_rrf == rescaled_rrf
         assert max(base_rrf.values()) > 0.0
+
+
+# ---------------------------------------------------------------------------
+# T014 — Graph-aware node-distance rerank integration (US2). Written first;
+# MUST FAIL until the engine runs the graph stage (T017/T018): today
+# `graph_distance_score` stays 0.0 and no neighbours are fetched.
+# ---------------------------------------------------------------------------
+
+
+class _AsyncGraphWithNeighbours:
+    """Async graph store mock exposing 1-hop neighbours per node.
+
+    ``fulltext_search`` returns the candidate rows (score order = rank); the
+    engine's graph stage calls ``get_node_with_neighbours`` per candidate to
+    build the in-window adjacency the cohesion/anchor math runs over.
+    """
+
+    def __init__(self, results: list[dict[str, Any]], neighbours: dict[str, list[str]]):
+        self._results = results
+        self._nbr = neighbours
+
+    async def fulltext_search(self, query: str, limit: int = 10, **kwargs) -> list[dict[str, Any]]:
+        return self._results[:limit]
+
+    async def get_neighbours(self, *args, **kwargs) -> list[dict[str, Any]]:
+        return []
+
+    async def get_node_with_neighbours(
+        self, label: str, key_field: str, key_value: str, hops: int = 1, scope: Any = None
+    ) -> dict[str, Any]:
+        names = self._nbr.get(key_value, [])
+        return {
+            "node": {"name": key_value},
+            "neighbours": [{"label": "Note", "name": n} for n in names],
+        }
+
+
+class TestGraphRerankIntegration:
+    """End-to-end node-distance reranking through the engine."""
+
+    @pytest.mark.asyncio
+    async def test_cohesion_lifts_cluster_over_isolated(self):
+        """A connected cluster outranks an isolated, higher-relevance node.
+
+        ``iso`` ranks #1 in fulltext (top RRF) but has no neighbour; ``cl1``
+        and ``cl2`` are connected. With the graph stage on, cohesion lifts a
+        cluster node above ``iso``; the isolated node scores 0 cohesion.
+        """
+        graph = _AsyncGraphWithNeighbours(
+            [
+                {"type": "Note", "name": "iso", "score": 3.0},
+                {"type": "Note", "name": "cl1", "score": 2.0},
+                {"type": "Note", "name": "cl2", "score": 1.0},
+            ],
+            {"iso": [], "cl1": ["cl2"], "cl2": ["cl1"]},
+        )
+        cfg = HybridConfig(
+            fusion_mode="rrf",
+            graph_rerank=True,
+            anchor_boost=False,
+            graph_beta=2.0,
+            temporal_gamma=0.0,
+            trust_delta=0.0,
+        )
+        engine = HybridSearchEngine(graph, _AsyncNullVectorStore(), _NullEmbedder(), config=cfg)
+        results = await engine.asearch("q", limit=5)
+        by_name = {r.name: r for r in results}
+
+        assert by_name["iso"].graph_distance_score == pytest.approx(0.0)
+        assert by_name["cl2"].graph_distance_score > 0.0
+        # The clustered node overtakes the isolated top-relevance one.
+        assert results[0].name in {"cl1", "cl2"}
+
+    @pytest.mark.asyncio
+    async def test_anchor_query_lifts_nodes_near_anchor(self):
+        """A query naming an anchor lifts candidates closer to it.
+
+        Chain ANCH–near–far. The query mentions ``ANCH``; the node-distance
+        score must rank ``near`` (1 hop) above ``far`` (2 hops).
+        """
+        graph = _AsyncGraphWithNeighbours(
+            [
+                {"type": "Note", "name": "far", "score": 3.0},
+                {"type": "Note", "name": "near", "score": 2.0},
+                {"type": "Note", "name": "ANCH", "score": 1.0},
+            ],
+            {"ANCH": ["near"], "near": ["ANCH", "far"], "far": ["near"]},
+        )
+        cfg = HybridConfig(
+            fusion_mode="rrf",
+            graph_rerank=True,
+            anchor_boost=True,
+            graph_beta=1.0,
+            temporal_gamma=0.0,
+            trust_delta=0.0,
+        )
+        engine = HybridSearchEngine(graph, _AsyncNullVectorStore(), _NullEmbedder(), config=cfg)
+        results = await engine.asearch("tell me about ANCH", limit=5)
+        by_name = {r.name: r for r in results}
+
+        assert by_name["near"].graph_distance_score > by_name["far"].graph_distance_score
