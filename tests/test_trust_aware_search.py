@@ -117,6 +117,13 @@ class TestTrustRanking:
             _NullVector(),
             _NullEmbedder(),
             config=HybridConfig(
+                # Linear mode: the trust signal is an additive layer that
+                # behaves identically in both modes, but RRF assigns equal-
+                # score rows consecutive (positional) ranks, so "equal
+                # relevance" can only be isolated on the linear base, where
+                # min==max ⇒ both rows normalise to 1.0. RRF+trust is covered
+                # by US3 (T021).
+                fusion_mode="linear",
                 alpha=0.0,
                 graph_beta=0.0,
                 temporal_gamma=0.0,
