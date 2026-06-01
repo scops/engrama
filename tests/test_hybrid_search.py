@@ -314,7 +314,11 @@ class TestTemporalMissingUpdatedAt:
     def _config(self, *, temporal_gamma=0.1):
         # Isolate the temporal signal: zero out vector/fulltext/trust
         # weights so any score difference is attributable to temporal.
+        # Linear mode is required for the equal-relevance fixtures — RRF gives
+        # equal-score rows consecutive (positional) ranks, so only the linear
+        # base (min==max ⇒ 1.0 for all) lets the temporal layer decide order.
         return HybridConfig(
+            fusion_mode="linear",
             alpha=0.0,
             graph_beta=0.0,
             temporal_gamma=temporal_gamma,
@@ -717,3 +721,78 @@ class TestHybridSearchIntegration:
         )
         results = engine.search("TestHybridNeo4j", limit=5)
         assert any(r.name == "TestHybridNeo4j" for r in results)
+
+
+# ---------------------------------------------------------------------------
+# T007 — RRF fusion integration (US1). Written first; MUST FAIL until the
+# engine is wired to use rrf_fuse as the relevance base (T009/T010): today
+# the engine ignores fusion_mode and never populates `rrf_score`.
+# ---------------------------------------------------------------------------
+
+
+class TestRRFFusionIntegration:
+    """End-to-end: split lexical/semantic answers both surface, and order is
+    stable when one channel's raw scores are rescaled (RG-1)."""
+
+    @staticmethod
+    def _engine(fulltext_scale: float = 1.0):
+        """A hybrid engine whose two channels carry deliberately mismatched
+        scales: vector scores are tiny, fulltext scores are huge (×scale).
+
+        ``Semantic`` is a vector-only answer, ``Lexical`` a fulltext-only
+        answer, ``Shared`` ranks #2 in both. RRF (rank-based) must surface
+        all three regardless of the scale gap.
+        """
+        vector = _AsyncMockVectorStore(
+            [
+                {"label": "Note", "name": "Semantic", "score": 0.0009},
+                {"label": "Note", "name": "Shared", "score": 0.0008},
+                {"label": "Note", "name": "VTail", "score": 0.0007},
+            ]
+        )
+        graph = _AsyncMockGraphStore(
+            [
+                {"type": "Note", "name": "Lexical", "score": 5000.0 * fulltext_scale},
+                {"type": "Note", "name": "Shared", "score": 3000.0 * fulltext_scale},
+                {"type": "Note", "name": "FTail", "score": 1000.0 * fulltext_scale},
+            ]
+        )
+        # Isolate the relevance base: no temporal/trust contribution.
+        cfg = HybridConfig(fusion_mode="rrf", temporal_gamma=0.0, trust_delta=0.0)
+        return HybridSearchEngine(graph, vector, _MockEmbedder(), config=cfg)
+
+    @pytest.mark.asyncio
+    async def test_split_answers_both_surface_and_rrf_score_populated(self):
+        """Both the vector-only and fulltext-only answers reach the top, and
+        the RRF relevance base is exposed on results (contract §1 / SC-006)."""
+        results = await self._engine().asearch("q", limit=5)
+        names = [r.name for r in results]
+
+        # The lexical-only and semantic-only answers both surface despite the
+        # ~7-orders-of-magnitude scale gap between channels.
+        assert "Semantic" in names
+        assert "Lexical" in names
+
+        # RRF actually ran: the fused relevance base is populated (non-zero)
+        # on the top result. This is what fails today (rrf_score stays 0.0).
+        assert results[0].rrf_score > 0.0
+        assert all(0.0 <= r.rrf_score <= 1.0 for r in results)
+
+    @pytest.mark.asyncio
+    async def test_order_stable_under_raw_score_rescale(self):
+        """RG-1: multiplying the fulltext channel's raw scores by a positive
+        constant leaves the result order unchanged (rank-based fusion)."""
+        base = await self._engine(fulltext_scale=1.0).asearch("q", limit=5)
+        rescaled = await self._engine(fulltext_scale=1000.0).asearch("q", limit=5)
+
+        assert [r.name for r in base] == [r.name for r in rescaled]
+
+        # Order stability here must come from the rank-based RRF base, not an
+        # incidental property of min-max: the per-name rrf_score map is
+        # identical across the rescale (rank-driven), and RRF actually
+        # produced signal. (Under min-max the least-relevant tail normalizes
+        # to 0.0, so the guarantee is max>0, not all>0.)
+        base_rrf = {r.name: r.rrf_score for r in base}
+        rescaled_rrf = {r.name: r.rrf_score for r in rescaled}
+        assert base_rrf == rescaled_rrf
+        assert max(base_rrf.values()) > 0.0

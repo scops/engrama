@@ -20,6 +20,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from engrama.core.rerank import rrf_fuse
+
 logger = logging.getLogger("engrama.core.search")
 
 # Default trust score for a node that has no ``trust_level`` property.
@@ -37,6 +39,88 @@ DEFAULT_TEMPORAL_SCORE: float = 0.5
 
 
 # ---------------------------------------------------------------------------
+# Env parsing helpers (spec 002 — fail-fast config loader)
+# ---------------------------------------------------------------------------
+#
+# Contract §3 (search-ranking.md): every spec-002 ranking knob is overridable
+# by an ``ENGRAMA_*`` env var, and an unknown/invalid value **fails fast** at
+# config construction with a clear error — never a silent fallback to a
+# surprising ranking mode. (The pre-existing ``ENGRAMA_TRUST_DELTA`` keeps its
+# older warn-and-ignore semantics; see ``HybridConfig.__post_init__``.)
+#
+# Each helper returns ``None`` when the var is unset (caller keeps the
+# dataclass default) and raises ``ValueError`` on a malformed/out-of-range
+# value.
+
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off"}
+
+
+def _env_choice(name: str, choices: tuple[str, ...]) -> str | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    val = raw.strip().lower()
+    if val not in choices:
+        raise ValueError(f"Invalid {name}={raw!r}: expected one of {', '.join(choices)}")
+    return val
+
+
+def _env_bool(name: str) -> bool | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    val = raw.strip().lower()
+    if val in _TRUE:
+        return True
+    if val in _FALSE:
+        return False
+    raise ValueError(
+        f"Invalid {name}={raw!r}: expected a boolean (1/0, true/false, yes/no, on/off)"
+    )
+
+
+def _env_int(name: str, *, minimum: int) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    try:
+        val = int(raw)
+    except ValueError:
+        raise ValueError(f"Invalid {name}={raw!r}: expected an integer") from None
+    if val < minimum:
+        raise ValueError(f"Invalid {name}={raw!r}: must be >= {minimum}")
+    return val
+
+
+def _env_float(
+    name: str,
+    *,
+    minimum: float,
+    maximum: float | None = None,
+    min_exclusive: bool = False,
+) -> float | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    try:
+        val = float(raw)
+    except ValueError:
+        raise ValueError(f"Invalid {name}={raw!r}: expected a float") from None
+    low_ok = val > minimum if min_exclusive else val >= minimum
+    if not low_ok or (maximum is not None and val > maximum):
+        bound = (
+            f"in ({minimum}, {maximum}]"
+            if min_exclusive and maximum is not None
+            else f">= {minimum}"
+            if maximum is None
+            else f"in [{minimum}, {maximum}]"
+        )
+        raise ValueError(f"Invalid {name}={raw!r}: must be {bound}")
+    return val
+
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
@@ -45,11 +129,35 @@ DEFAULT_TEMPORAL_SCORE: float = 0.5
 class HybridConfig:
     """Tuning knobs for hybrid search.
 
+    Spec 002 (hybrid reranking) makes Reciprocal Rank Fusion the default
+    relevance base and adds a typed-graph node-distance signal. The legacy
+    linear blend is preserved for one-flag revert (``fusion_mode="linear"``);
+    see ``specs/002-hybrid-reranking/data-model.md`` for the full contract.
+
     Attributes:
-        alpha: Weight for vector score (0.0 = fulltext only, 1.0 = vector
-            only).  Default ``0.6`` per DDR-003.
-        graph_beta: Weight for the optional graph-boost signal.
-        boost_cap: Maximum graph-boost per node.
+        alpha: Legacy-mode vector/fulltext blend weight (0.0 = fulltext
+            only, 1.0 = vector only). Used **only** when
+            ``fusion_mode="linear"``. Default ``0.6`` per DDR-003.
+        fusion_mode: Relevance base — ``"rrf"`` (new default, scale-invariant
+            Reciprocal Rank Fusion) or ``"linear"`` (legacy min-max blend).
+        rrf_k: RRF constant ``k``; larger flattens the top-rank advantage.
+            Default ``60`` (canonical). Used only in ``rrf`` mode.
+        graph_beta: Weight for the graph signal — node-distance in ``rrf``
+            mode, capped degree ``graph_boost`` in ``linear`` mode.
+        graph_rerank: Toggle the node-distance stage (``rrf`` mode only).
+            ``False`` ⇒ graph term contributes 0.
+        graph_distance_hops: Max hops for cohesion + anchor distance.
+            Default ``2``.
+        cohesion_decay: Per-hop proximity decay in ``(0, 1]``. Default
+            ``0.5`` (each extra hop halves the contribution).
+        anchor_boost: Toggle the query-anchor sub-mode within the
+            node-distance stage. ``False`` ⇒ cohesion only.
+        anchor_beta: Weight of the anchor-distance term within
+            ``graph_distance_score``. Default ``0.5``.
+        fanout_cap: Max neighbours fetched per candidate — bounds graph
+            rerank latency (RG-7). Default ``64``.
+        boost_cap: Maximum degree ``graph_boost`` per node. Used **only**
+            in ``linear`` mode.
         vector_k: Candidate count from vector search.
         fulltext_k: Candidate count from fulltext search.
         temporal_gamma: Weight for the temporal signal (Phase D).
@@ -62,7 +170,17 @@ class HybridConfig:
     """
 
     alpha: float = 0.6
+    # Spec 002 — relevance base + node-distance rerank knobs.
+    fusion_mode: str = "rrf"
+    rrf_k: int = 60
     graph_beta: float = 0.15
+    graph_rerank: bool = True
+    graph_distance_hops: int = 2
+    cohesion_decay: float = 0.5
+    anchor_boost: bool = True
+    anchor_beta: float = 0.5
+    fanout_cap: int = 64
+    # Legacy linear-mode knobs (used only when fusion_mode="linear").
     boost_cap: float = 0.3
     vector_k: int = 20
     fulltext_k: int = 20
@@ -71,6 +189,9 @@ class HybridConfig:
     trust_delta: float = 0.1
 
     def __post_init__(self) -> None:
+        # Pre-existing knob: warn-and-ignore on invalid (older semantics,
+        # locked by tests/test_trust_aware_search.py). Spec 002 knobs below
+        # use fail-fast instead.
         raw = os.environ.get("ENGRAMA_TRUST_DELTA")
         if raw is not None:
             try:
@@ -80,6 +201,53 @@ class HybridConfig:
                     "Ignoring invalid ENGRAMA_TRUST_DELTA=%r (expected float)",
                     raw,
                 )
+
+        # Spec 002 ranking knobs — fail-fast (contract §3). A malformed value
+        # raises here at construction rather than silently picking a default,
+        # so an operator never gets a surprising ranking mode.
+        fusion_mode = _env_choice("ENGRAMA_FUSION_MODE", ("rrf", "linear"))
+        if fusion_mode is not None:
+            self.fusion_mode = fusion_mode
+
+        rrf_k = _env_int("ENGRAMA_RRF_K", minimum=1)
+        if rrf_k is not None:
+            self.rrf_k = rrf_k
+
+        graph_rerank = _env_bool("ENGRAMA_GRAPH_RERANK")
+        if graph_rerank is not None:
+            self.graph_rerank = graph_rerank
+
+        hops = _env_int("ENGRAMA_GRAPH_HOPS", minimum=1)
+        if hops is not None:
+            self.graph_distance_hops = hops
+
+        cohesion_decay = _env_float(
+            "ENGRAMA_COHESION_DECAY", minimum=0.0, maximum=1.0, min_exclusive=True
+        )
+        if cohesion_decay is not None:
+            self.cohesion_decay = cohesion_decay
+
+        anchor_boost = _env_bool("ENGRAMA_ANCHOR_BOOST")
+        if anchor_boost is not None:
+            self.anchor_boost = anchor_boost
+
+        anchor_beta = _env_float("ENGRAMA_ANCHOR_BETA", minimum=0.0)
+        if anchor_beta is not None:
+            self.anchor_beta = anchor_beta
+
+        fanout_cap = _env_int("ENGRAMA_FANOUT_CAP", minimum=1)
+        if fanout_cap is not None:
+            self.fanout_cap = fanout_cap
+
+        # Composite one-flag revert (data-model.md, RG-6). Applied LAST so it
+        # authoritatively overrides any individual fusion_mode/graph_rerank
+        # env override: ENGRAMA_RANKING_LEGACY=1 ⇒ legacy linear blend with
+        # the degree graph_boost (inherent to fusion_mode="linear"). The
+        # byte-for-byte legacy-branch guarantee is finished in US3 (T023/T024).
+        ranking_legacy = _env_bool("ENGRAMA_RANKING_LEGACY")
+        if ranking_legacy:
+            self.fusion_mode = "linear"
+            self.graph_rerank = False
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +307,29 @@ class SearchResult:
     fulltext_score: float = 0.0
     """Normalised fulltext score (0-1)."""
 
+    vector_rank: int | None = None
+    """1-based rank in the vector channel (spec 002). ``None`` if the result
+    did not appear in the vector channel. At least one of ``vector_rank`` /
+    ``fulltext_rank`` is non-``None`` for every result."""
+
+    fulltext_rank: int | None = None
+    """1-based rank in the fulltext channel (spec 002). ``None`` if absent."""
+
+    rrf_score: float = 0.0
+    """Normalised Reciprocal Rank Fusion relevance base, 0-1 (spec 002).
+
+    The fused signal that replaces the min-max linear blend in
+    ``fusion_mode="rrf"``. Unused (left 0) in ``linear`` mode."""
+
     graph_boost: float = 0.0
-    """Graph-based boost (e.g. relationship count)."""
+    """Degree-count graph boost (e.g. relationship count). Legacy signal —
+    populated only in ``fusion_mode="linear"``; replaced by
+    ``graph_distance_score`` in ``rrf`` mode."""
+
+    graph_distance_score: float = 0.0
+    """Node-distance graph signal, 0-1 (spec 002): result-set cohesion plus
+    an optional query-anchor distance boost. Replaces ``graph_boost`` in
+    ``fusion_mode="rrf"``; 0 in ``linear`` mode."""
 
     temporal_score: float = 1.0
     """Temporal relevance (confidence × recency), 0-1."""
@@ -404,6 +593,36 @@ class HybridSearchEngine:
                         properties=props,
                     )
 
+        # --- RRF fusion (spec 002 US1) ---
+        # In ``rrf`` mode the rank-based fusion replaces min-max magnitudes as
+        # the relevance base. Ranks are derived from each channel's score
+        # order (descending); a down/empty vector channel yields an empty
+        # vector list, so rrf_fuse degrades to the fulltext channel's order —
+        # the single-channel fallback (RG-2/RG-5). The ``degraded``/``mode``
+        # signal is computed independently in ``_compute_mode`` and unchanged.
+        if self.config.fusion_mode == "rrf":
+            v_ranked = sorted(
+                (r for r in v_results if r.get("name")),
+                key=lambda r: r.get("score", 0.0),
+                reverse=True,
+            )
+            f_ranked = sorted(
+                (dict(r) if not isinstance(r, dict) else r for r in f_results),
+                key=lambda d: d.get("score", 0.0),
+                reverse=True,
+            )
+            fused = rrf_fuse(
+                [r["name"] for r in v_ranked],
+                [d["name"] for d in f_ranked if d.get("name")],
+                k=self.config.rrf_k,
+            )
+            for name, fusion in fused.items():
+                sr = by_name.get(name)
+                if sr is not None:
+                    sr.rrf_score = fusion.rrf_score
+                    sr.vector_rank = fusion.vector_rank
+                    sr.fulltext_rank = fusion.fulltext_rank
+
         # --- Temporal scoring (Phase D) ---
         gamma = self.config.temporal_gamma
         if gamma > 0:
@@ -436,13 +655,21 @@ class HybridSearchEngine:
         # --- Score ---
         beta = self.config.graph_beta
         for sr in by_name.values():
-            sr.final_score = (
-                alpha * sr.vector_score
-                + (1 - alpha) * sr.fulltext_score
-                + beta * min(sr.graph_boost, self.config.boost_cap)
-                + gamma * sr.temporal_score
-                + delta * sr.trust_score
-            )
+            if self.config.fusion_mode == "rrf":
+                # Spec 002 US1: RRF relevance base + temporal + trust. The
+                # graph term is 0 here; US2 adds ``beta·graph_distance_score``
+                # in the rerank stage. ``alpha``/``graph_boost`` are unused in
+                # this mode (degradation is handled by rrf_fuse's fallback).
+                sr.final_score = sr.rrf_score + gamma * sr.temporal_score + delta * sr.trust_score
+            else:
+                # Legacy linear blend (fusion_mode="linear"), unchanged.
+                sr.final_score = (
+                    alpha * sr.vector_score
+                    + (1 - alpha) * sr.fulltext_score
+                    + beta * min(sr.graph_boost, self.config.boost_cap)
+                    + gamma * sr.temporal_score
+                    + delta * sr.trust_score
+                )
 
         return list(by_name.values())
 

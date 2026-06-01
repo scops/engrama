@@ -390,17 +390,33 @@ node after merging. The vector is stored:
 - **Neo4j:** as a `n.embedding` property; nodes get an `:Embedded`
   secondary label so the vector index covers all node types.
 
-## Hybrid search (DDR-003 Phase C)
+## Hybrid search (DDR-003 Phase C; ranking reworked in spec 002)
 
-`HybridSearchEngine` (`core/search.py`) fuses fulltext + vector +
-graph-boost + temporal signals. Both sync (`search()`) and async
-(`asearch()`) methods are available. Scoring formula:
+`HybridSearchEngine` (`core/search.py`) fuses fulltext + vector relevance
+with temporal and trust signals. Both sync (`search()`) and async
+(`asearch()`) methods are available.
 
-    final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal
+Since spec 002 the default relevance base is **Reciprocal Rank Fusion**
+(`fusion_mode="rrf"`), which combines the two channels by *rank* rather than
+raw score — so a correct answer surfaces regardless of how the per-channel
+score scales differ. Scoring formula (rrf mode):
 
-When `EMBEDDING_PROVIDER=none`, α is forced to 0 — pure fulltext with
-optional graph-boost. Graceful degradation: if the embedding service is
-unreachable, the vector branch is skipped silently.
+    final = rrf_score + γ × temporal + δ × trust
+
+`rrf_score` is the rank-fused, [0,1]-normalised relevance base
+(`1/(k + rank)` summed across the channels a node appears in, `k` =
+`ENGRAMA_RRF_K`, default 60). A node-distance graph signal is folded into
+this formula in a later stage of spec 002.
+
+**Legacy linear blend** — set `ENGRAMA_RANKING_LEGACY=1` (or
+`fusion_mode="linear"`) to revert to the pre-spec-002 formula:
+
+    final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal + δ × trust
+
+When `EMBEDDING_PROVIDER=none` the vector channel is empty — RRF degrades to
+the fulltext channel's order (linear mode forces α to 0). Graceful
+degradation: if the embedding service is unreachable the vector branch is
+skipped silently and the `degraded`/`mode` signal records it.
 
 Both sync and async stores expose `search_similar` returning a uniform
 shape `{node_id, label, name, score, summary, tags, confidence,

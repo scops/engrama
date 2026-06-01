@@ -395,17 +395,33 @@ nodo tras el merge. El vector se almacena:
   etiqueta secundaria `:Embedded` para que el índice vectorial cubra
   todos los tipos de nodo.
 
-## Búsqueda híbrida (DDR-003 Fase C)
+## Búsqueda híbrida (DDR-003 Fase C; ranking renovado en spec 002)
 
-`HybridSearchEngine` (`core/search.py`) fusiona señales de fulltext +
-vectorial + boost por grafo + temporalidad. Dispone de métodos síncronos
-(`search()`) y asíncronos (`asearch()`). Fórmula de puntuación:
+`HybridSearchEngine` (`core/search.py`) fusiona la relevancia fulltext +
+vectorial con señales temporal y de confianza. Dispone de métodos síncronos
+(`search()`) y asíncronos (`asearch()`).
 
-    final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal
+Desde spec 002 la base de relevancia por defecto es **Reciprocal Rank
+Fusion** (`fusion_mode="rrf"`), que combina ambos canales por *rango* y no
+por score crudo — así la respuesta correcta emerge sin importar cuánto
+difieran las escalas de score de cada canal. Fórmula de puntuación (modo rrf):
 
-Cuando `EMBEDDING_PROVIDER=none`, α se fuerza a 0 — fulltext puro con
-boost por grafo opcional. Degradación elegante: si el servicio de
-embeddings no responde, la rama vectorial se omite silenciosamente.
+    final = rrf_score + γ × temporal + δ × trust
+
+`rrf_score` es la base de relevancia fusionada por rango y normalizada a
+[0,1] (`1/(k + rango)` sumado sobre los canales en que aparece el nodo, `k`
+= `ENGRAMA_RRF_K`, por defecto 60). Una señal de grafo por distancia de nodo
+se incorpora a esta fórmula en una etapa posterior de spec 002.
+
+**Mezcla lineal legacy** — define `ENGRAMA_RANKING_LEGACY=1` (o
+`fusion_mode="linear"`) para volver a la fórmula previa a spec 002:
+
+    final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal + δ × trust
+
+Cuando `EMBEDDING_PROVIDER=none` el canal vectorial queda vacío — RRF
+degrada al orden del canal fulltext (el modo lineal fuerza α a 0).
+Degradación elegante: si el servicio de embeddings no responde, la rama
+vectorial se omite silenciosamente y la señal `degraded`/`mode` lo registra.
 
 Tanto los stores síncronos como los asíncronos exponen `search_similar`
 devolviendo una forma uniforme `{node_id, label, name, score, summary,
