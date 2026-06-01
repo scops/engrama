@@ -62,9 +62,7 @@ def _env_choice(name: str, choices: tuple[str, ...]) -> str | None:
         return None
     val = raw.strip().lower()
     if val not in choices:
-        raise ValueError(
-            f"Invalid {name}={raw!r}: expected one of {', '.join(choices)}"
-        )
+        raise ValueError(f"Invalid {name}={raw!r}: expected one of {', '.join(choices)}")
     return val
 
 
@@ -662,11 +660,7 @@ class HybridSearchEngine:
                 # graph term is 0 here; US2 adds ``beta·graph_distance_score``
                 # in the rerank stage. ``alpha``/``graph_boost`` are unused in
                 # this mode (degradation is handled by rrf_fuse's fallback).
-                sr.final_score = (
-                    sr.rrf_score
-                    + gamma * sr.temporal_score
-                    + delta * sr.trust_score
-                )
+                sr.final_score = sr.rrf_score + gamma * sr.temporal_score + delta * sr.trust_score
             else:
                 # Legacy linear blend (fusion_mode="linear"), unchanged.
                 sr.final_score = (
