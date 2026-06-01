@@ -202,7 +202,73 @@ def graph_distance_scores(
     Returns:
         Mapping of candidate name → ``graph_distance_score`` in ``[0, 1]``.
     """
-    raise NotImplementedError("T015 — implement cohesion + anchor distance")
+    candidate_set = set(candidates)
+
+    # Shortest in-window hop distances from every candidate (BFS, bounded by
+    # ``hops``, honouring ``fanout_cap`` per node). Restricting traversal to
+    # ``candidate_set`` is what keeps an out-of-window (e.g. cross-tenant)
+    # neighbour from ever entering a path (RG-4).
+    dist_maps: dict[str, dict[str, int]] = {
+        d: _bfs_distances(d, neighbours, candidate_set, hops, fanout_cap) for d in candidate_set
+    }
+
+    # Relevance-weighted cohesion with per-hop decay.
+    raw_cohesion: dict[str, float] = {}
+    for d in candidate_set:
+        total = 0.0
+        for node, hop in dist_maps[d].items():
+            if hop == 0:  # the candidate itself
+                continue
+            total += rrf_scores.get(node, 0.0) * (cohesion_decay ** (hop - 1))
+        raw_cohesion[d] = total
+
+    # Divide-by-max normalization: preserves proportions and maps an isolated
+    # node (raw 0) to 0. Guarded against an all-zero window.
+    peak = max(raw_cohesion.values(), default=0.0)
+    cohesion_norm = {d: (raw_cohesion[d] / peak if peak > 0 else 0.0) for d in candidate_set}
+
+    use_anchor = anchor is not None and anchor.resolved
+    out: dict[str, float] = {}
+    for d in candidate_set:
+        anchor_term = 0.0
+        if use_anchor:
+            anchor_dist = dist_maps[d].get(anchor.name)  # type: ignore[union-attr]
+            if anchor_dist is not None:
+                anchor_term = anchor_beta * (1.0 / (1.0 + anchor_dist))
+        out[d] = _clamp01(cohesion_norm[d] + anchor_term)
+    return out
+
+
+def _bfs_distances(
+    source: str,
+    neighbours: Mapping[str, Sequence[str]],
+    candidate_set: set[str],
+    hops: int,
+    fanout_cap: int,
+) -> dict[str, int]:
+    """Shortest hop distance from ``source`` to each reachable in-window node.
+
+    Traversal stays within ``candidate_set`` and honours ``fanout_cap`` (only
+    the first ``fanout_cap`` neighbours of each node are followed) and ``hops``
+    (the maximum distance). The source maps to 0.
+    """
+    dist: dict[str, int] = {source: 0}
+    frontier = [source]
+    for depth in range(1, hops + 1):
+        nxt: list[str] = []
+        for node in frontier:
+            for nbr in list(neighbours.get(node, ()))[:fanout_cap]:
+                if nbr in candidate_set and nbr not in dist:
+                    dist[nbr] = depth
+                    nxt.append(nbr)
+        if not nxt:
+            break
+        frontier = nxt
+    return dist
+
+
+def _clamp01(x: float) -> float:
+    return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
 
 
 def resolve_anchor(
@@ -226,4 +292,11 @@ def resolve_anchor(
         :meth:`QueryAnchor.unresolved` when the query matches none — a
         normal, non-error outcome that downstream treats as cohesion-only.
     """
-    raise NotImplementedError("T016 — implement scoped anchor resolution")
+    query_lower = query.lower()
+    matches = [c for c in candidates if c.name and c.name.lower() in query_lower]
+    if not matches:
+        return QueryAnchor.unresolved()
+    # Deterministic pick: highest fused relevance, tie-broken by the
+    # lexicographically smallest name.
+    pick = min(matches, key=lambda c: (-c.rrf_score, c.name))
+    return QueryAnchor(node_id="", label="", name=pick.name, resolved=True)

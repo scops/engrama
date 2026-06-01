@@ -796,3 +796,314 @@ class TestRRFFusionIntegration:
         rescaled_rrf = {r.name: r.rrf_score for r in rescaled}
         assert base_rrf == rescaled_rrf
         assert max(base_rrf.values()) > 0.0
+
+
+# ---------------------------------------------------------------------------
+# T014 — Graph-aware node-distance rerank integration (US2). Written first;
+# MUST FAIL until the engine runs the graph stage (T017/T018): today
+# `graph_distance_score` stays 0.0 and no neighbours are fetched.
+# ---------------------------------------------------------------------------
+
+
+class _AsyncGraphWithNeighbours:
+    """Async graph store mock exposing 1-hop neighbours per node.
+
+    ``fulltext_search`` returns the candidate rows (score order = rank); the
+    engine's graph stage calls ``get_node_with_neighbours`` per candidate to
+    build the in-window adjacency the cohesion/anchor math runs over.
+    """
+
+    def __init__(self, results: list[dict[str, Any]], neighbours: dict[str, list[str]]):
+        self._results = results
+        self._nbr = neighbours
+
+    async def fulltext_search(self, query: str, limit: int = 10, **kwargs) -> list[dict[str, Any]]:
+        return self._results[:limit]
+
+    async def get_neighbours(self, *args, **kwargs) -> list[dict[str, Any]]:
+        return []
+
+    async def get_node_with_neighbours(
+        self, label: str, key_field: str, key_value: str, hops: int = 1, scope: Any = None
+    ) -> dict[str, Any]:
+        names = self._nbr.get(key_value, [])
+        return {
+            "node": {"name": key_value},
+            "neighbours": [{"label": "Note", "name": n} for n in names],
+        }
+
+
+class TestGraphRerankIntegration:
+    """End-to-end node-distance reranking through the engine."""
+
+    @pytest.mark.asyncio
+    async def test_cohesion_lifts_cluster_over_isolated(self):
+        """A connected cluster outranks an isolated, higher-relevance node.
+
+        ``iso`` ranks #1 in fulltext (top RRF) but has no neighbour; ``cl1``
+        and ``cl2`` are connected. With the graph stage on, cohesion lifts a
+        cluster node above ``iso``; the isolated node scores 0 cohesion.
+        """
+        graph = _AsyncGraphWithNeighbours(
+            [
+                {"type": "Note", "name": "iso", "score": 3.0},
+                {"type": "Note", "name": "cl1", "score": 2.0},
+                {"type": "Note", "name": "cl2", "score": 1.0},
+            ],
+            {"iso": [], "cl1": ["cl2"], "cl2": ["cl1"]},
+        )
+        cfg = HybridConfig(
+            fusion_mode="rrf",
+            graph_rerank=True,
+            anchor_boost=False,
+            graph_beta=2.0,
+            temporal_gamma=0.0,
+            trust_delta=0.0,
+        )
+        engine = HybridSearchEngine(graph, _AsyncNullVectorStore(), _NullEmbedder(), config=cfg)
+        results = await engine.asearch("q", limit=5)
+        by_name = {r.name: r for r in results}
+
+        assert by_name["iso"].graph_distance_score == pytest.approx(0.0)
+        assert by_name["cl2"].graph_distance_score > 0.0
+        # The clustered node overtakes the isolated top-relevance one.
+        assert results[0].name in {"cl1", "cl2"}
+
+    @pytest.mark.asyncio
+    async def test_anchor_query_lifts_nodes_near_anchor(self):
+        """A query naming an anchor lifts candidates closer to it.
+
+        Chain ANCH–near–far. The query mentions ``ANCH``; the node-distance
+        score must rank ``near`` (1 hop) above ``far`` (2 hops).
+        """
+        graph = _AsyncGraphWithNeighbours(
+            [
+                {"type": "Note", "name": "far", "score": 3.0},
+                {"type": "Note", "name": "near", "score": 2.0},
+                {"type": "Note", "name": "ANCH", "score": 1.0},
+            ],
+            {"ANCH": ["near"], "near": ["ANCH", "far"], "far": ["near"]},
+        )
+        cfg = HybridConfig(
+            fusion_mode="rrf",
+            graph_rerank=True,
+            anchor_boost=True,
+            graph_beta=1.0,
+            temporal_gamma=0.0,
+            trust_delta=0.0,
+        )
+        engine = HybridSearchEngine(graph, _AsyncNullVectorStore(), _NullEmbedder(), config=cfg)
+        results = await engine.asearch("tell me about ANCH", limit=5)
+        by_name = {r.name: r for r in results}
+
+        assert by_name["near"].graph_distance_score > by_name["far"].graph_distance_score
+
+
+# ---------------------------------------------------------------------------
+# T020 / T022 — Reversibility & observability (US3). The composite revert
+# (T023) and the bit-for-bit linear branch (T024) already landed with the
+# config loader / scoring (T004 / T010), so these lock that behaviour and
+# guard against regression rather than driving new code.
+# ---------------------------------------------------------------------------
+
+
+class TestRankingReversibility:
+    """`ENGRAMA_RANKING_LEGACY=1` fully reverts to the legacy linear ranking."""
+
+    @staticmethod
+    def _rows_and_neighbours():
+        rows = [
+            {"type": "Note", "name": "a", "score": 3.0},
+            {"type": "Note", "name": "b", "score": 2.0},
+            {"type": "Note", "name": "c", "score": 1.0},
+        ]
+        nbr = {"a": ["b"], "b": ["a", "c"], "c": ["b"]}
+        return rows, nbr
+
+    def test_legacy_flag_sets_linear_and_disables_graph(self, monkeypatch):
+        monkeypatch.setenv("ENGRAMA_RANKING_LEGACY", "1")
+        cfg = HybridConfig()
+        assert cfg.fusion_mode == "linear"
+        assert cfg.graph_rerank is False
+
+    @pytest.mark.asyncio
+    async def test_legacy_flag_matches_explicit_linear_byte_for_byte(self, monkeypatch):
+        rows, nbr = self._rows_and_neighbours()
+
+        # Revert via the single composite env flag.
+        monkeypatch.setenv("ENGRAMA_RANKING_LEGACY", "1")
+        eng_legacy = HybridSearchEngine(
+            _AsyncGraphWithNeighbours(rows, nbr),
+            _AsyncNullVectorStore(),
+            _NullEmbedder(),
+            config=HybridConfig(),
+        )
+        legacy = await eng_legacy.asearch("a b c", limit=5)
+
+        # Reference: an explicit pre-feature linear config (no env).
+        monkeypatch.delenv("ENGRAMA_RANKING_LEGACY")
+        eng_linear = HybridSearchEngine(
+            _AsyncGraphWithNeighbours(rows, nbr),
+            _AsyncNullVectorStore(),
+            _NullEmbedder(),
+            config=HybridConfig(fusion_mode="linear", graph_rerank=False),
+        )
+        linear = await eng_linear.asearch("a b c", limit=5)
+
+        assert [r.name for r in legacy] == [r.name for r in linear]
+        assert {r.name: round(r.final_score, 9) for r in legacy} == {
+            r.name: round(r.final_score, 9) for r in linear
+        }
+        # The legacy path leaves the spec-002 signals untouched (no rrf, no
+        # graph-distance contribution).
+        assert all(r.rrf_score == 0.0 and r.graph_distance_score == 0.0 for r in legacy)
+
+
+class TestRankingObservability:
+    """Every per-signal score is exposed on the result (SC-006)."""
+
+    @pytest.mark.asyncio
+    async def test_result_exposes_rrf_and_graph_distance(self):
+        graph = _AsyncGraphWithNeighbours(
+            [
+                {"type": "Note", "name": "x", "score": 2.0},
+                {"type": "Note", "name": "y", "score": 1.0},
+            ],
+            {"x": ["y"], "y": ["x"]},
+        )
+        cfg = HybridConfig(fusion_mode="rrf", graph_rerank=True)
+        engine = HybridSearchEngine(graph, _AsyncNullVectorStore(), _NullEmbedder(), config=cfg)
+        results = await engine.asearch("x y", limit=5)
+
+        for r in results:
+            # New spec-002 signals sit alongside the existing per-signal scores.
+            assert 0.0 <= r.rrf_score <= 1.0
+            assert 0.0 <= r.graph_distance_score <= 1.0
+            assert hasattr(r, "vector_score")
+            assert hasattr(r, "fulltext_score")
+            assert hasattr(r, "temporal_score")
+            assert hasattr(r, "trust_score")
+        # At least one result carries a non-zero fused relevance base.
+        assert max(r.rrf_score for r in results) > 0.0
+
+
+# ---------------------------------------------------------------------------
+# T026 — Recall@10: rrf+rerank vs legacy linear (SC-001). A controlled
+# multi-hop / cross-channel fixture; the new default must lift recall@10 by
+# ≥10% relative over the legacy linear blend. (Real-corpus validation is a
+# separate, dataset-dependent benchmark.)
+# ---------------------------------------------------------------------------
+
+
+class TestRecallImprovement:
+    """The relevant answers form a connected cluster and appear mid-rank in
+    *both* channels; distractors are strong in a *single* channel and
+    isolated. Linear (per-channel min-max + alpha) surfaces the loud
+    single-channel distractors; rrf rewards cross-channel agreement and
+    graph cohesion lifts the cluster — so recall@10 improves."""
+
+    @staticmethod
+    def _fixture():
+        relevant = [f"r{i}" for i in range(1, 6)]  # 5 relevant, connected
+        vec_distractors = [f"dv{i}" for i in range(1, 5)]  # vector-only, loud
+        ft_distractors = [f"df{i}" for i in range(1, 5)]  # fulltext-only, loud
+
+        # Vector channel, score-desc: loud distractors first, then relevant
+        # mid-rank. Fulltext channel mirrors it with the *other* distractors.
+        vector_rows = [
+            {"label": "Note", "name": n, "score": s}
+            for n, s in [(d, 1.0 - 0.01 * i) for i, d in enumerate(vec_distractors)]
+            + [(r, 0.9 - 0.01 * i) for i, r in enumerate(relevant)]
+        ]
+        fulltext_rows = [
+            {"type": "Note", "name": n, "score": s}
+            for n, s in [(d, 1.0 - 0.01 * i) for i, d in enumerate(ft_distractors)]
+            + [(r, 0.9 - 0.01 * i) for i, r in enumerate(relevant)]
+        ]
+        # Relevant cluster: clique. Distractors isolated.
+        neighbours = {r: [x for x in relevant if x != r] for r in relevant}
+        return relevant, vector_rows, fulltext_rows, neighbours
+
+    @staticmethod
+    def _recall_at_10(results, relevant) -> float:
+        top = {r.name for r in results[:10]}
+        return len(top & set(relevant)) / len(relevant)
+
+    @pytest.mark.asyncio
+    async def test_rrf_rerank_improves_recall_at_10_by_10pct(self):
+        relevant, vec_rows, ft_rows, nbr = self._fixture()
+
+        def _engine(cfg):
+            return HybridSearchEngine(
+                _AsyncGraphWithNeighbours(ft_rows, nbr),
+                _AsyncMockVectorStore(vec_rows),
+                _MockEmbedder(),
+                config=cfg,
+            )
+
+        common = dict(temporal_gamma=0.0, trust_delta=0.0)
+        linear = await _engine(
+            HybridConfig(fusion_mode="linear", graph_rerank=False, **common)
+        ).asearch("q", limit=10)
+        rrf = await _engine(HybridConfig(fusion_mode="rrf", graph_rerank=True, **common)).asearch(
+            "q", limit=10
+        )
+
+        recall_linear = self._recall_at_10(linear, relevant)
+        recall_rrf = self._recall_at_10(rrf, relevant)
+
+        # SC-001: ≥10% relative improvement on this multi-hop / cross-channel set.
+        assert recall_linear > 0.0
+        assert recall_rrf >= 1.10 * recall_linear
+
+
+# ---------------------------------------------------------------------------
+# T030 — Tenancy/security hardening (P9): the graph-rerank neighbour fetch
+# must carry the engine's per-request scope, never a process-global one.
+# ---------------------------------------------------------------------------
+
+
+class _ScopeSpyGraph:
+    """Records the scope passed to every get_node_with_neighbours call."""
+
+    def __init__(self, results: list[dict[str, Any]]):
+        self._results = results
+        self.scopes_seen: list[Any] = []
+
+    async def fulltext_search(self, query: str, limit: int = 10, **kwargs) -> list[dict[str, Any]]:
+        return self._results[:limit]
+
+    async def get_neighbours(self, *a, **kw) -> list[dict[str, Any]]:
+        return []
+
+    async def get_node_with_neighbours(
+        self, label: str, key_field: str, key_value: str, hops: int = 1, scope: Any = None
+    ) -> dict[str, Any]:
+        self.scopes_seen.append(scope)
+        return {"node": {"name": key_value}, "neighbours": []}
+
+
+class TestGraphRerankScopeThreading:
+    """Scope is threaded per-request into every neighbour lookup (P9)."""
+
+    @pytest.mark.asyncio
+    async def test_neighbour_fetch_uses_per_request_scope(self):
+        rows = [
+            {"type": "Note", "name": "a", "score": 2.0},
+            {"type": "Note", "name": "b", "score": 1.0},
+        ]
+        request_scope = object()  # an opaque per-request scope token
+        graph = _ScopeSpyGraph(rows)
+        engine = HybridSearchEngine(
+            graph,
+            _AsyncNullVectorStore(),
+            _NullEmbedder(),
+            config=HybridConfig(fusion_mode="rrf", graph_rerank=True),
+            scope=request_scope,
+        )
+        await engine.asearch("a b", limit=5)
+
+        # Every neighbour fetch carried exactly the engine's request scope —
+        # not None, not a module-global default.
+        assert graph.scopes_seen, "graph rerank never fetched neighbours"
+        assert all(s is request_scope for s in graph.scopes_seen)

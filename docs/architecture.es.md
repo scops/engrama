@@ -406,12 +406,19 @@ Fusion** (`fusion_mode="rrf"`), que combina ambos canales por *rango* y no
 por score crudo — así la respuesta correcta emerge sin importar cuánto
 difieran las escalas de score de cada canal. Fórmula de puntuación (modo rrf):
 
-    final = rrf_score + γ × temporal + δ × trust
+    final = rrf_score + β × graph_distance + γ × temporal + δ × trust
 
-`rrf_score` es la base de relevancia fusionada por rango y normalizada a
-[0,1] (`1/(k + rango)` sumado sobre los canales en que aparece el nodo, `k`
-= `ENGRAMA_RRF_K`, por defecto 60). Una señal de grafo por distancia de nodo
-se incorpora a esta fórmula en una etapa posterior de spec 002.
+- `rrf_score`: la base de relevancia fusionada por rango y normalizada a
+  [0,1] (`1/(k + rango)` sumado sobre los canales en que aparece el nodo,
+  `k` = `ENGRAMA_RRF_K`, por defecto 60).
+- `graph_distance`: señal de grafo por **distancia de nodo** (`graph_rerank`,
+  activa por defecto) calculada sobre la ventana de candidatos fusionados —
+  *cohesión* del result-set (un candidato cercano a otros candidatos fuertes
+  sube, con decaimiento por salto) más, cuando la query resuelve a un nodo
+  *ancla* dentro de los resultados, un boost por cercanía a él. Reemplaza el
+  viejo `graph_boost` por grado y está filtrada por scope (solo cuentan
+  vecinos del mismo tenant). Acotada por `ENGRAMA_GRAPH_HOPS` /
+  `ENGRAMA_FANOUT_CAP`.
 
 **Mezcla lineal legacy** — define `ENGRAMA_RANKING_LEGACY=1` (o
 `fusion_mode="linear"`) para volver a la fórmula previa a spec 002:

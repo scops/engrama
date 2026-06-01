@@ -197,3 +197,196 @@ def test_rrf_tie_broken_by_rank_then_name():
 def test_rrf_both_empty_returns_empty():
     """No candidates in either channel ⇒ empty mapping, no error."""
     assert rrf_fuse([], [], k=60) == {}
+
+
+# ===========================================================================
+# T011 — Unit tests for cohesion in ``graph_distance_scores`` (US2). Written
+# first; MUST FAIL until T015 (currently raises NotImplementedError).
+#
+# Contract pinned here: cohesion is relevance-weighted over the candidate
+# window only, per-hop decay = cohesion_decay**(dist-1), bounded by `hops`
+# and `fanout_cap`, then divide-by-max normalized (isolated node ⇒ 0). The
+# final score is clamp01(cohesion_norm + anchor_term).
+# ===========================================================================
+
+
+def test_cohesion_clustered_beats_isolated():
+    """A connected cluster outranks an isolated node of equal relevance."""
+    cands = ["A", "B", "C", "D"]
+    rrf = {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0}
+    nbr = {"A": ["B", "C"], "B": ["A", "C"], "C": ["A", "B"], "D": []}
+    scores = graph_distance_scores(cands, rrf, nbr, hops=2, cohesion_decay=0.5, fanout_cap=64)
+    assert scores["A"] > scores["D"]
+    assert scores["D"] == pytest.approx(0.0)  # no neighbour ⇒ zero cohesion
+
+
+def test_cohesion_per_hop_decay():
+    """A 2-hop neighbour contributes ``decay`` of a 1-hop one.
+
+    Chain A–B–C, all rrf 1.0, hops=2, decay=0.5 (divide-by-max norm):
+        cohesion(A) = B(d1)·1 + C(d2)·0.5 = 1.5
+        cohesion(B) = A(d1) + C(d1)       = 2.0   (max)
+        cohesion(C) = B(d1) + A(d2)·0.5   = 1.5
+    ⇒ A=C=0.75, B=1.0. A<B proves the 2-hop hop was decayed (else A=B=1.0).
+    """
+    cands = ["A", "B", "C"]
+    rrf = {"A": 1.0, "B": 1.0, "C": 1.0}
+    nbr = {"A": ["B"], "B": ["A", "C"], "C": ["B"]}
+    scores = graph_distance_scores(cands, rrf, nbr, hops=2, cohesion_decay=0.5, fanout_cap=64)
+    assert scores["B"] == pytest.approx(1.0)
+    assert scores["A"] == pytest.approx(0.75)
+    assert scores["C"] == pytest.approx(0.75)
+
+
+def test_cohesion_no_neighbour_is_noop():
+    """An isolated candidate scores exactly 0 (no error, no NaN)."""
+    scores = graph_distance_scores(
+        ["solo"], {"solo": 1.0}, {"solo": []}, hops=2, cohesion_decay=0.5, fanout_cap=64
+    )
+    assert scores["solo"] == pytest.approx(0.0)
+
+
+def test_cohesion_normalized_0_1():
+    """Every cohesion score lands in [0, 1]."""
+    cands = ["A", "B", "C", "D"]
+    rrf = {"A": 0.9, "B": 0.5, "C": 0.3, "D": 0.1}
+    nbr = {"A": ["B"], "B": ["A", "C"], "C": ["B", "D"], "D": ["C"]}
+    scores = graph_distance_scores(cands, rrf, nbr, hops=2, cohesion_decay=0.5, fanout_cap=64)
+    assert all(0.0 <= s <= 1.0 for s in scores.values())
+
+
+def test_cohesion_bounded_by_hops():
+    """Nodes beyond ``hops`` do not contribute.
+
+    Chain A–B–C–D with hops=1: A sees only B (d1); C and D are out of range.
+    cohesion(A)=B=1.0; max cohesion is the 2-neighbour middles (B,C)=2.0,
+    so A normalizes to 0.5. Were C/D counted, A would be higher.
+    """
+    cands = ["A", "B", "C", "D"]
+    rrf = {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0}
+    nbr = {"A": ["B"], "B": ["A", "C"], "C": ["B", "D"], "D": ["C"]}
+    scores = graph_distance_scores(cands, rrf, nbr, hops=1, cohesion_decay=0.5, fanout_cap=64)
+    assert scores["A"] == pytest.approx(0.5)
+
+
+def test_cohesion_bounded_by_fanout_cap():
+    """At most ``fanout_cap`` neighbours per node are honoured.
+
+    A has two 1-hop neighbours B, C. With cap=1 only B counts, so A ties the
+    others at 1.0; with cap=2 both count, lifting A strictly above them.
+    """
+    cands = ["A", "B", "C"]
+    rrf = {"A": 1.0, "B": 1.0, "C": 1.0}
+    nbr = {"A": ["B", "C"], "B": ["A"], "C": ["A"]}
+    capped = graph_distance_scores(cands, rrf, nbr, hops=1, cohesion_decay=0.5, fanout_cap=1)
+    full = graph_distance_scores(cands, rrf, nbr, hops=1, cohesion_decay=0.5, fanout_cap=2)
+    assert capped["A"] == pytest.approx(capped["B"])
+    assert full["A"] > full["B"]
+
+
+# ===========================================================================
+# T012 — Unit tests for ``resolve_anchor`` + anchor boost (US2). Written
+# first; MUST FAIL until T016 (currently raises NotImplementedError).
+# ===========================================================================
+
+
+def _fusion(name: str, rrf: float) -> RrfFusion:
+    return RrfFusion(name=name, vector_rank=1, fulltext_rank=None, rrf_score=rrf)
+
+
+def test_resolve_anchor_by_name():
+    """The query resolves to the candidate whose name it mentions."""
+    cands = [_fusion("Neo4j", 1.0), _fusion("Cypher", 0.5)]
+    anchor = resolve_anchor("how does Neo4j scale writes", cands)
+    assert anchor.resolved is True
+    assert anchor.name == "Neo4j"
+
+
+def test_resolve_anchor_unresolved_is_not_error():
+    """No candidate mentioned ⇒ unresolved (a normal, non-error outcome)."""
+    cands = [_fusion("Neo4j", 1.0), _fusion("Cypher", 0.5)]
+    anchor = resolve_anchor("completely unrelated query", cands)
+    assert anchor.resolved is False
+
+
+def test_resolve_anchor_multi_picks_highest_relevance():
+    """Several names mentioned ⇒ the highest-rrf candidate wins."""
+    cands = [_fusion("Neo4j", 0.4), _fusion("Cypher", 0.9)]
+    anchor = resolve_anchor("Neo4j and Cypher together", cands)
+    assert anchor.name == "Cypher"
+
+
+def test_resolve_anchor_tie_broken_by_name():
+    """Equal relevance among matches ⇒ lexicographically smallest name."""
+    cands = [_fusion("beta", 0.5), _fusion("alpha", 0.5)]
+    anchor = resolve_anchor("compare alpha vs beta", cands)
+    assert anchor.name == "alpha"
+
+
+def test_anchor_boost_lifts_nodes_closer_to_anchor():
+    """With cohesion neutralised, a node nearer the anchor scores higher.
+
+    rrf all 0 ⇒ cohesion contributes 0; score = anchor_beta·1/(1+dist):
+        ANCH (d0)=0.5, near (d1)=0.25, far (d2)=0.167  (anchor_beta=0.5).
+    """
+    cands = ["ANCH", "near", "far"]
+    rrf = {"ANCH": 0.0, "near": 0.0, "far": 0.0}
+    nbr = {"ANCH": ["near"], "near": ["ANCH", "far"], "far": ["near"]}
+    anchor = QueryAnchor(node_id="", label="", name="ANCH", resolved=True)
+    scores = graph_distance_scores(
+        cands,
+        rrf,
+        nbr,
+        hops=2,
+        cohesion_decay=0.5,
+        fanout_cap=64,
+        anchor=anchor,
+        anchor_beta=0.5,
+    )
+    assert scores["ANCH"] > scores["near"] > scores["far"]
+
+
+def test_unresolved_anchor_equals_cohesion_only():
+    """An unresolved anchor behaves exactly like no anchor."""
+    cands = ["A", "B", "C"]
+    rrf = {"A": 1.0, "B": 0.5, "C": 0.3}
+    nbr = {"A": ["B"], "B": ["A", "C"], "C": ["B"]}
+    kw = dict(hops=2, cohesion_decay=0.5, fanout_cap=64)
+    none_anchor = graph_distance_scores(cands, rrf, nbr, **kw)
+    unresolved = graph_distance_scores(cands, rrf, nbr, anchor=QueryAnchor.unresolved(), **kw)
+    assert none_anchor == unresolved
+
+
+# ===========================================================================
+# T013 — Tenancy tests (Constitution P9). Written first; MUST FAIL until
+# T015/T016. The pure layer only ever sees the scope-filtered candidate
+# window, so an out-of-tenant node cannot influence the ranking.
+# ===========================================================================
+
+
+def test_cross_tenant_neighbour_excluded():
+    """A neighbour outside the candidate window contributes nothing.
+
+    The scoped store omits cross-tenant nodes from the neighbour list, but
+    even if one slipped in by name it must not count: cohesion sums only
+    over the in-window candidates. A's score with a stray ``foreign``
+    neighbour equals its score without it.
+    """
+    cands = ["A", "B"]
+    rrf = {"A": 1.0, "B": 1.0}
+    kw = dict(hops=1, cohesion_decay=0.5, fanout_cap=64)
+    with_foreign = graph_distance_scores(cands, rrf, {"A": ["B", "foreign"], "B": ["A"]}, **kw)
+    without = graph_distance_scores(cands, rrf, {"A": ["B"], "B": ["A"]}, **kw)
+    assert with_foreign == without
+    assert "foreign" not in with_foreign
+
+
+def test_anchor_resolution_scoped():
+    """An out-of-tenant name never resolves as anchor.
+
+    Resolution only considers the (already scope-filtered) candidates, so a
+    query naming a node absent from the window yields ``unresolved``.
+    """
+    cands = [_fusion("InTenant", 1.0)]
+    anchor = resolve_anchor("give me the ForeignSecret data", cands)
+    assert anchor.resolved is False
