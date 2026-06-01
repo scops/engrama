@@ -1034,6 +1034,12 @@ def create_engrama_mcp(
                         "score": round(r.final_score, 4),
                         "vector_score": round(r.vector_score, 4),
                         "fulltext_score": round(r.fulltext_score, 4),
+                        # Spec 002 ranking signals (additive, back-compatible):
+                        # the RRF relevance base and the node-distance signal,
+                        # so a caller can explain the ranking from the payload
+                        # alone (SC-006). Both are 0 in legacy linear mode.
+                        "rrf_score": round(r.rrf_score, 4),
+                        "graph_distance_score": round(r.graph_distance_score, 4),
                         "temporal_score": round(r.temporal_score, 4),
                         # Node-enrichment: surface summary + tags so callers
                         # can act on search results without a second

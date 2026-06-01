@@ -897,3 +897,91 @@ class TestGraphRerankIntegration:
         by_name = {r.name: r for r in results}
 
         assert by_name["near"].graph_distance_score > by_name["far"].graph_distance_score
+
+
+# ---------------------------------------------------------------------------
+# T020 / T022 — Reversibility & observability (US3). The composite revert
+# (T023) and the bit-for-bit linear branch (T024) already landed with the
+# config loader / scoring (T004 / T010), so these lock that behaviour and
+# guard against regression rather than driving new code.
+# ---------------------------------------------------------------------------
+
+
+class TestRankingReversibility:
+    """`ENGRAMA_RANKING_LEGACY=1` fully reverts to the legacy linear ranking."""
+
+    @staticmethod
+    def _rows_and_neighbours():
+        rows = [
+            {"type": "Note", "name": "a", "score": 3.0},
+            {"type": "Note", "name": "b", "score": 2.0},
+            {"type": "Note", "name": "c", "score": 1.0},
+        ]
+        nbr = {"a": ["b"], "b": ["a", "c"], "c": ["b"]}
+        return rows, nbr
+
+    def test_legacy_flag_sets_linear_and_disables_graph(self, monkeypatch):
+        monkeypatch.setenv("ENGRAMA_RANKING_LEGACY", "1")
+        cfg = HybridConfig()
+        assert cfg.fusion_mode == "linear"
+        assert cfg.graph_rerank is False
+
+    @pytest.mark.asyncio
+    async def test_legacy_flag_matches_explicit_linear_byte_for_byte(self, monkeypatch):
+        rows, nbr = self._rows_and_neighbours()
+
+        # Revert via the single composite env flag.
+        monkeypatch.setenv("ENGRAMA_RANKING_LEGACY", "1")
+        eng_legacy = HybridSearchEngine(
+            _AsyncGraphWithNeighbours(rows, nbr),
+            _AsyncNullVectorStore(),
+            _NullEmbedder(),
+            config=HybridConfig(),
+        )
+        legacy = await eng_legacy.asearch("a b c", limit=5)
+
+        # Reference: an explicit pre-feature linear config (no env).
+        monkeypatch.delenv("ENGRAMA_RANKING_LEGACY")
+        eng_linear = HybridSearchEngine(
+            _AsyncGraphWithNeighbours(rows, nbr),
+            _AsyncNullVectorStore(),
+            _NullEmbedder(),
+            config=HybridConfig(fusion_mode="linear", graph_rerank=False),
+        )
+        linear = await eng_linear.asearch("a b c", limit=5)
+
+        assert [r.name for r in legacy] == [r.name for r in linear]
+        assert {r.name: round(r.final_score, 9) for r in legacy} == {
+            r.name: round(r.final_score, 9) for r in linear
+        }
+        # The legacy path leaves the spec-002 signals untouched (no rrf, no
+        # graph-distance contribution).
+        assert all(r.rrf_score == 0.0 and r.graph_distance_score == 0.0 for r in legacy)
+
+
+class TestRankingObservability:
+    """Every per-signal score is exposed on the result (SC-006)."""
+
+    @pytest.mark.asyncio
+    async def test_result_exposes_rrf_and_graph_distance(self):
+        graph = _AsyncGraphWithNeighbours(
+            [
+                {"type": "Note", "name": "x", "score": 2.0},
+                {"type": "Note", "name": "y", "score": 1.0},
+            ],
+            {"x": ["y"], "y": ["x"]},
+        )
+        cfg = HybridConfig(fusion_mode="rrf", graph_rerank=True)
+        engine = HybridSearchEngine(graph, _AsyncNullVectorStore(), _NullEmbedder(), config=cfg)
+        results = await engine.asearch("x y", limit=5)
+
+        for r in results:
+            # New spec-002 signals sit alongside the existing per-signal scores.
+            assert 0.0 <= r.rrf_score <= 1.0
+            assert 0.0 <= r.graph_distance_score <= 1.0
+            assert hasattr(r, "vector_score")
+            assert hasattr(r, "fulltext_score")
+            assert hasattr(r, "temporal_score")
+            assert hasattr(r, "trust_score")
+        # At least one result carries a non-zero fused relevance base.
+        assert max(r.rrf_score for r in results) > 0.0

@@ -209,3 +209,72 @@ class TestTrustOnVectorPath:
         assert results[0].trust_score == 0.9
         # final = 1.0 * vector(=1.0) + 0.1 * 0.9
         assert results[0].final_score == pytest.approx(1.0 + 0.1 * 0.9)
+
+
+# ---------------------------------------------------------------------------
+# 5. Per-stage toggles under spec 002 (US3 T021)
+# ---------------------------------------------------------------------------
+
+
+class TestRankingStageToggles:
+    """Trust is mode-independent; each ranking stage is independently set."""
+
+    def test_trust_still_applies_under_rrf(self):
+        # rrf relevance base + trust term. Single fulltext hit ⇒ rrf=1.0;
+        # gamma=0 isolates trust: final = 1.0 + 0.5·0.8 = 1.4.
+        rows = [{"type": "Concept", "name": "X", "score": 1.0, "trust_level": 0.8}]
+        engine = HybridSearchEngine(
+            _MockGraph(rows),
+            _NullVector(),
+            _NullEmbedder(),
+            config=HybridConfig(
+                fusion_mode="rrf",
+                temporal_gamma=0.0,
+                trust_delta=0.5,
+            ),
+        )
+        results = engine.search("X", limit=5)
+        assert results[0].rrf_score == pytest.approx(1.0)
+        assert results[0].trust_score == 0.8
+        assert results[0].final_score == pytest.approx(1.4)
+
+    def test_graph_rerank_off_leaves_no_graph_term(self):
+        # rrf mode, graph stage disabled ⇒ graph_distance_score stays 0 and
+        # final equals the rrf base (gamma=delta=0).
+        rows = [
+            {"type": "Concept", "name": "A", "score": 2.0},
+            {"type": "Concept", "name": "B", "score": 1.0},
+        ]
+        engine = HybridSearchEngine(
+            _MockGraph(rows),
+            _NullVector(),
+            _NullEmbedder(),
+            config=HybridConfig(
+                fusion_mode="rrf",
+                graph_rerank=False,
+                temporal_gamma=0.0,
+                trust_delta=0.0,
+            ),
+        )
+        results = engine.search("A B", limit=5)
+        assert all(r.graph_distance_score == 0.0 for r in results)
+        assert all(r.final_score == pytest.approx(r.rrf_score) for r in results)
+
+    def test_linear_mode_uses_legacy_formula(self):
+        # fusion_mode="linear" ⇒ pre-feature blend; rrf base is unused (0).
+        rows = [{"type": "Concept", "name": "X", "score": 1.0, "trust_level": 0.8}]
+        engine = HybridSearchEngine(
+            _MockGraph(rows),
+            _NullVector(),
+            _NullEmbedder(),
+            config=HybridConfig(
+                fusion_mode="linear",
+                graph_beta=0.0,
+                temporal_gamma=0.0,
+                trust_delta=0.1,
+            ),
+        )
+        results = engine.search("X", limit=5)
+        # alpha forced to 0 (no vector): final = fulltext(1.0) + 0.1·0.8.
+        assert results[0].rrf_score == 0.0
+        assert results[0].final_score == pytest.approx(1.0 + 0.1 * 0.8)
