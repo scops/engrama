@@ -420,12 +420,12 @@ Codex, pero **todavía no** como integración directa de ChatGPT Desktop.
 Para usar Engrama desde ChatGPT habría que exponer un endpoint MCP
 remoto y empaquetarlo como conector personalizado de ChatGPT.
 
-Ahora deberías ver las doce herramientas:
+Ahora deberías ver las catorce herramientas:
 
 | Herramienta | Descripción |
 |------|-------------|
 | `engrama_status` | Introspección de solo lectura (vault path, backend, embedder, modo de búsqueda, versión). Llámala al inicio de sesión cuando hay otros MCPs de Obsidian conectados. |
-| `engrama_search` | Búsqueda híbrida (vector + fulltext + boost de grafo + temporal) |
+| `engrama_search` | Búsqueda híbrida — vector + fulltext fusionados con Reciprocal Rank Fusion, luego un rerank por distancia de nodo en el grafo y un factor de recencia temporal. |
 | `engrama_remember` | Crear o actualizar un nodo (siempre MERGE) |
 | `engrama_relate` | Crear una relación entre dos nodos |
 | `engrama_context` | Recuperar el vecindario de un nodo |
@@ -436,6 +436,8 @@ Ahora deberías ver las doce herramientas:
 | `engrama_surface_insights` | Leer Insights pendientes para revisión |
 | `engrama_approve_insight` | Aprobar o descartar un Insight |
 | `engrama_write_insight_to_vault` | Escribir un Insight aprobado en Obsidian |
+| `engrama_reindex` | Reparar nodos a los que les falta el embedding vectorial. Tres fases: `detect` (escaneo de solo lectura), `classify`, `apply` (`dry_run=true` por defecto). |
+| `engrama_gdpr_forget` | Borrar permanentemente la memoria del propio llamante (derecho al olvido GDPR). `mode='dry-run'` por defecto informa de lo que se borraría; `mode='apply'` elimina. |
 
 Consulta [`examples/claude_desktop/system-prompt.md`](https://github.com/scops/engrama/blob/main/examples/claude_desktop/system-prompt.md)
 para un system prompt listo para pegar que enseña a Claude a usar el
@@ -533,9 +535,9 @@ fulltext nativo. Funciona sin dependencias extra.
 
 **Híbrida** (`EMBEDDING_PROVIDER=ollama` o `openai`) — combina
 similitud semántica (búsqueda vectorial) con coincidencia por palabras
-clave, más un boost por topología del grafo y un factor temporal.
-Encuentra nodos conceptualmente relacionados incluso sin coincidencia
-exacta de palabras clave.
+clave, una señal de proximidad en el grafo y un factor de recencia
+temporal. Encuentra nodos conceptualmente relacionados incluso sin
+coincidencia exacta de palabras clave.
 
 **Cómo activar la búsqueda híbrida:**
 1. Establece `EMBEDDING_PROVIDER` en `.env` (ver
@@ -544,12 +546,31 @@ exacta de palabras clave.
    existentes.
 3. Los nodos nuevos reciben embeddings automáticamente al crearse.
 
-La fórmula de puntuación es:
+Desde el trabajo de reranking híbrido (spec 002), la puntuación por
+defecto es:
 
-    final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal
+    final = rrf + β × graph_distance + γ × temporal
 
-con α=0.6, β=0.15, γ=0.1 por defecto. Configurables vía `HYBRID_ALPHA`
-y `HYBRID_GRAPH_BETA` en `.env`.
+donde:
+
+- **`rrf`** es la base de relevancia — **Reciprocal Rank Fusion** de los
+  canales vectorial y fulltext. Solo se fusionan los *rankings* de cada
+  canal (`Σ 1/(k + rank)`, normalizado a `[0,1]`), por lo que es
+  invariante de escala: reescalar cualquier canal no cambia el orden.
+  Sustituye a la antigua mezcla lineal min-max
+  `α × vector + (1-α) × fulltext`.
+- **`graph_distance`** es una señal de **distancia de nodo** en el grafo
+  tipado — cohesión del conjunto de resultados más un boost opcional de
+  proximidad al ancla de la consulta, calculada solo sobre la ventana de
+  candidatos fusionados. Sustituye al antiguo `graph_boost` por conteo de
+  grado.
+- **`temporal`** es el factor confianza × recencia.
+
+Valores por defecto: `β` (grafo) = 0.15, `γ` (temporal) = 0.1, RRF `k` =
+60, saltos de grafo = 2, decaimiento de cohesión = 0.5. La mezcla lineal
+heredada (con el `graph_boost` por grado) se conserva para revertir con
+un solo flag vía `ENGRAMA_RANKING_LEGACY=1`. Consulta la [referencia de
+configuración](#referencia-de-configuración) para todos los knobs.
 
 ---
 
@@ -686,8 +707,15 @@ freelance.
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Endpoint OpenAI-compat |
 | `OPENAI_API_KEY` | — | API key (cuando hace falta) |
 | `OLLAMA_URL` | `http://localhost:11434` | Endpoint API de Ollama |
-| `HYBRID_ALPHA` | `0.6` | Peso vector vs fulltext |
-| `HYBRID_GRAPH_BETA` | `0.15` | Peso del boost por topología |
+| `ENGRAMA_FUSION_MODE` | `rrf` | Base de relevancia: `rrf` (por defecto) o `linear` (mezcla heredada) |
+| `ENGRAMA_RRF_K` | `60` | Constante `k` de RRF — mayor aplana la ventaja del primer puesto |
+| `ENGRAMA_GRAPH_RERANK` | `true` | Activa la etapa de rerank por distancia de nodo (modo rrf) |
+| `ENGRAMA_GRAPH_HOPS` | `2` | Saltos máximos para cohesión + distancia al ancla |
+| `ENGRAMA_COHESION_DECAY` | `0.5` | Decaimiento de proximidad por salto en `(0, 1]` |
+| `ENGRAMA_ANCHOR_BOOST` | `true` | Activa el submodo de ancla de consulta (solo cohesión si off) |
+| `ENGRAMA_ANCHOR_BETA` | `0.5` | Peso del término de distancia al ancla |
+| `ENGRAMA_FANOUT_CAP` | `64` | Vecinos máximos por candidato (límite de latencia del rerank) |
+| `ENGRAMA_RANKING_LEGACY` | `false` | Revertir con un solo flag a la mezcla lineal heredada + `graph_boost` por grado |
 
 ---
 

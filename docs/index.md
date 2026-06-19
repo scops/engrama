@@ -403,12 +403,12 @@ the server reads them from `.env` when running against Neo4j.
 
 **3. Restart Claude Desktop** completely (quit and reopen).
 
-You should now see the twelve Engrama tools:
+You should now see the fourteen Engrama tools:
 
 | Tool | Description |
 |------|-------------|
 | `engrama_status` | Read-only introspection (vault path, backend, embedder, search mode, version). Call at session start when other Obsidian-capable MCPs are connected. |
-| `engrama_search` | Hybrid search (vector + fulltext + graph boost + temporal) |
+| `engrama_search` | Hybrid search — vector + fulltext fused via Reciprocal Rank Fusion, then a graph node-distance rerank plus a temporal recency factor. |
 | `engrama_remember` | Create or update a node (always MERGE) |
 | `engrama_relate` | Create a relationship between two nodes |
 | `engrama_context` | Retrieve the neighbourhood of a node |
@@ -419,6 +419,8 @@ You should now see the twelve Engrama tools:
 | `engrama_surface_insights` | Read pending Insights for review |
 | `engrama_approve_insight` | Approve or dismiss an Insight |
 | `engrama_write_insight_to_vault` | Write approved Insight to Obsidian |
+| `engrama_reindex` | Repair nodes missing their vector embedding. Three phases: `detect` (read-only scan), `classify`, `apply` (`dry_run=true` by default). |
+| `engrama_gdpr_forget` | Permanently erase the caller's own memory (GDPR right-to-erasure). `mode='dry-run'` by default reports what would be erased; `mode='apply'` deletes. |
 
 See [`examples/claude_desktop/system-prompt.md`](https://github.com/scops/engrama/blob/main/examples/claude_desktop/system-prompt.md)
 for a ready-to-paste system prompt that teaches Claude how to use the
@@ -572,8 +574,8 @@ matching. SQLite uses FTS5; Neo4j uses its native fulltext index.
 Works without any extra dependency.
 
 **Hybrid** (`EMBEDDING_PROVIDER=ollama` or `openai`) — combines
-semantic similarity (vector search) with keyword matching plus a graph
-topology boost and a temporal recency factor. Finds conceptually
+semantic similarity (vector search) with keyword matching, a graph
+proximity signal, and a temporal recency factor. Finds conceptually
 related nodes even without exact keyword overlap.
 
 **Activation:**
@@ -582,12 +584,28 @@ related nodes even without exact keyword overlap.
 2. Run `uv run engrama reindex` to embed existing nodes.
 3. New nodes are embedded automatically on creation.
 
-The scoring formula is:
+Since the hybrid-reranking work (spec 002), the default scoring is:
 
-    final = α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal
+    final = rrf + β × graph_distance + γ × temporal
 
-with α=0.6, β=0.15, γ=0.1 by default. Tune via `HYBRID_ALPHA` and
-`HYBRID_GRAPH_BETA` in `.env`.
+where:
+
+- **`rrf`** is the relevance base — **Reciprocal Rank Fusion** of the
+  vector and fulltext channels. Only the *ranks* of each channel are
+  fused (`Σ 1/(k + rank)`, normalised to `[0,1]`), so it is scale-
+  invariant: rescaling either channel can't change the order. This
+  replaces the old min-max linear blend `α × vector + (1-α) × fulltext`.
+- **`graph_distance`** is a typed-graph **node-distance** signal —
+  result-set cohesion plus an optional query-anchor proximity boost,
+  computed only over the fused candidate window. It replaces the old
+  degree-count `graph_boost`.
+- **`temporal`** is the confidence × recency factor.
+
+Defaults: `β` (graph) = 0.15, `γ` (temporal) = 0.1, RRF `k` = 60,
+graph hops = 2, cohesion decay = 0.5. The legacy linear blend (with the
+degree `graph_boost`) is preserved for a one-flag revert via
+`ENGRAMA_RANKING_LEGACY=1`. See the [Configuration
+reference](#configuration-reference) for all tuning knobs.
 
 ---
 
@@ -723,8 +741,15 @@ creative.
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compat endpoint |
 | `OPENAI_API_KEY` | — | API key (when needed) |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint |
-| `HYBRID_ALPHA` | `0.6` | Vector vs fulltext weight |
-| `HYBRID_GRAPH_BETA` | `0.15` | Graph topology boost weight |
+| `ENGRAMA_FUSION_MODE` | `rrf` | Relevance base: `rrf` (default) or `linear` (legacy blend) |
+| `ENGRAMA_RRF_K` | `60` | RRF constant `k` — larger flattens the top-rank advantage |
+| `ENGRAMA_GRAPH_RERANK` | `true` | Toggle the graph node-distance rerank stage (rrf mode) |
+| `ENGRAMA_GRAPH_HOPS` | `2` | Max hops for cohesion + anchor distance |
+| `ENGRAMA_COHESION_DECAY` | `0.5` | Per-hop proximity decay in `(0, 1]` |
+| `ENGRAMA_ANCHOR_BOOST` | `true` | Toggle the query-anchor sub-mode (cohesion-only when off) |
+| `ENGRAMA_ANCHOR_BETA` | `0.5` | Weight of the anchor-distance term |
+| `ENGRAMA_FANOUT_CAP` | `64` | Max neighbours per candidate (graph-rerank latency bound) |
+| `ENGRAMA_RANKING_LEGACY` | `false` | One-flag revert to the legacy linear blend + degree `graph_boost` |
 
 ---
 
