@@ -11,6 +11,14 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Added
 
+- **`engrama_gdpr_forget` tool — GDPR right-to-erasure (Spec 001 US-3).**
+  Permanently erases **the caller's own** memory: every node, relationship and
+  embedding belonging to the resolved identity, plus its notes in Engrama's
+  internal vault. Real erasure — no soft-delete, no server-side backup. Scope is
+  always the caller (resolved from the request headers); a tenant can only erase
+  itself, never another. `mode='dry-run'` (default, safe) reports the per-label
+  counts that *would* be erased; `mode='apply'` performs the deletion and is
+  idempotent. Export first if you want a copy.
 - **`engrama_status.admin_tools`.** New field listing the not-tenant-isolated
   tools (`engrama_status`, `engrama_reindex`) with a reason each, so a
   multi-tenant gateway can discover what to gate at runtime instead of
@@ -18,6 +26,23 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Changed
 
+- **Hybrid search relevance base is now Reciprocal Rank Fusion, with a
+  typed-graph node-distance rerank (spec 002, #98/#99).** The default scoring
+  changed from the min-max linear blend
+  `α × vector + (1-α) × fulltext + β × graph_boost + γ × temporal` to
+  `rrf + β × graph_distance + γ × temporal`:
+  - **RRF base** — vector and fulltext are fused on *rank* only
+    (`Σ 1/(k + rank)`, `k=60`, normalised to `[0,1]`), making the relevance
+    base scale-invariant: rescaling either channel can no longer flip the order.
+  - **Node-distance rerank** — the degree-count `graph_boost` is replaced by a
+    graph-distance signal (result-set cohesion + optional query-anchor
+    proximity), computed only over the fused candidate window.
+  - The `engrama_search` payload now exposes the per-result `rrf_score` and
+    `graph_distance_score`. New tuning knobs (`ENGRAMA_FUSION_MODE`,
+    `ENGRAMA_RRF_K`, `ENGRAMA_GRAPH_RERANK`, `ENGRAMA_GRAPH_HOPS`,
+    `ENGRAMA_COHESION_DECAY`, `ENGRAMA_ANCHOR_BOOST`, `ENGRAMA_ANCHOR_BETA`,
+    `ENGRAMA_FANOUT_CAP`). The legacy linear blend is preserved for a one-flag
+    revert via `ENGRAMA_RANKING_LEGACY=1`.
 - **Inline relations resolve by confidence, not silent stubbing (#93).** When
   `engrama_remember` gets an inline relation whose target doesn't match an
   existing node exactly, measured name similarity (scope-filtered, so it never

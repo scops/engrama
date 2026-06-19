@@ -30,7 +30,9 @@ Since **0.13.0**, every node and relation is owned by an
 partial scope matches nothing rather than falling back to "see all". A
 single-process install runs as one stable standalone identity and needs
 no configuration; a multi-tenant deployment supplies the identity per
-request from an authenticating gateway. See
+request from an authenticating gateway. Each identity can permanently
+erase its own memory through the `engrama_gdpr_forget` tool
+(GDPR right-to-erasure). See
 **[docs/security.md](docs/security.md#tenant-isolation-multi-tenant)**.
 
 Inspired by Karpathy's second-brain concept, but built for agents
