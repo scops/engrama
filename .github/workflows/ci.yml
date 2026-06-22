@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -53,7 +53,7 @@ jobs:
     # signal in a yellow check.
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -84,7 +84,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -126,7 +126,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -194,7 +194,7 @@ jobs:
       GRAPH_BACKEND: neo4j
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -276,7 +276,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # fetch-depth: 0 is needed so the diff step can see the base
           # of the PR. Without it `git diff base...HEAD` falls back to
