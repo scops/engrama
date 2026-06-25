@@ -25,9 +25,7 @@ from __future__ import annotations
 # parser. Kept in sync with QueryParserBase.escape() — note ``&`` and ``|`` are
 # escaped individually so the ``&&`` / ``||`` boolean operators cannot form,
 # and ``/`` is included (the regex delimiter that caused the production crash).
-_LUCENE_SPECIAL: frozenset[str] = frozenset(
-    '\\+-!(){}[]^"~*?:/&|'
-)
+_LUCENE_SPECIAL: frozenset[str] = frozenset('\\+-!(){}[]^"~*?:/&|')
 
 
 def escape_lucene_query(query: str) -> str:
