@@ -21,6 +21,7 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
+from engrama.backends.neo4j._cypher import escape_cypher_identifier
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.backends.neo4j.backend import (
     _SERVER_MANAGED_TIMESTAMPS,
@@ -171,8 +172,12 @@ class Neo4jAsyncStore:
             # ISO-string value (e.g. from the importer) is never stored
             # as a raw string. See #76.
             rhs = f"datetime(${pname})" if key in _TEMPORAL_PROPERTIES else f"${pname}"
-            set_create.append(f"n.{key} = {rhs}")
-            set_match.append(f"n.{key} = {rhs}")
+            # Property keys are caller-supplied and not whitelisted upstream, so
+            # backtick-quote them: a malformed key can never break out of the
+            # SET clause and corrupt the query. See ``_cypher``.
+            col = escape_cypher_identifier(key)
+            set_create.append(f"n.{col} = {rhs}")
+            set_match.append(f"n.{col} = {rhs}")
             params[pname] = value
 
         if embedding is not None:

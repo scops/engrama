@@ -61,6 +61,22 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Security
 
+- **Caller-supplied property keys are backtick-quoted before reaching Cypher.**
+  A node's property *key* names (free-form via the `engrama_remember`
+  `properties` bag) were interpolated raw into `SET n.<key> = $p0` in both the
+  sync and async Neo4j stores. A malformed key (a backtick, space or `=`) could
+  break the Cypher parser and crash the write — the same class of defect as the
+  unescaped Lucene query. Property keys are now wrapped with
+  `escape_cypher_identifier` (backtick-quoted, internal backticks doubled) so any
+  key is matched literally and can never alter the query structure. Property
+  *values* were already parameterised and unaffected.
+- **CLI `--label` / `--labels` are validated against the schema whitelist.**
+  `engrama decay` and `engrama migrate keys` passed their label arguments
+  straight to the backend, which interpolates them into Cypher — the MCP and
+  engine paths already validated labels, but these CLI paths did not.
+  `decay`/`query_at_date`/`migrate keys` now reject any label that is not a known
+  `NodeType` before it can reach a query (`EngramaEngine.decay_scores` validates
+  too, covering SDK callers).
 - **`merge_relation` now scope-filters both endpoints (#93).** Endpoint
   matching was unscoped while `lookup_node_label` was tenant-filtered. That
   asymmetry let a relation write reach a node owned by another tenant — forming

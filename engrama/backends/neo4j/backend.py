@@ -15,6 +15,7 @@ from neo4j import Record
 from neo4j.graph import Node, Relationship
 from neo4j.time import Date, DateTime, Duration, Time
 
+from engrama.backends.neo4j._cypher import escape_cypher_identifier
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
@@ -188,8 +189,12 @@ class Neo4jGraphStore:
             # ISO-string value (e.g. from the importer) is never stored
             # as a raw string. See #76.
             rhs = f"datetime(${param_name})" if key in _TEMPORAL_PROPERTIES else f"${param_name}"
-            set_clauses_create.append(f"n.{key} = {rhs}")
-            set_clauses_match.append(f"n.{key} = {rhs}")
+            # Property keys are caller-supplied and not whitelisted upstream, so
+            # backtick-quote them: a malformed key can never break out of the
+            # SET clause and corrupt the query. See ``_cypher``.
+            col = escape_cypher_identifier(key)
+            set_clauses_create.append(f"n.{col} = {rhs}")
+            set_clauses_match.append(f"n.{col} = {rhs}")
             params[param_name] = value
 
         if embedding is not None:

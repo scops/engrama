@@ -55,6 +55,24 @@ _PROJECT_ROOT = _PACKAGE_ROOT.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
 
+def _validate_label_args(*labels: str | None) -> str | None:
+    """Validate CLI ``--label``/``--labels`` values against the schema.
+
+    Labels reach Cypher via string interpolation in the backend, so an
+    unchecked CLI value would be an injection vector. Returns an error string
+    for the first invalid label (caller prints it and exits non-zero), or
+    ``None`` when all supplied labels are valid / absent.
+    """
+    from engrama.core.schema import NodeType
+
+    valid = {member.value for member in NodeType}
+    for label in labels:
+        if label and label not in valid:
+            allowed = ", ".join(sorted(valid))
+            return f"Error: invalid label {label!r}. Must be one of: {allowed}."
+    return None
+
+
 def _find_project_root() -> Path:
     """Walk up from cwd looking for pyproject.toml or profiles/."""
     cwd = Path.cwd()
@@ -409,6 +427,11 @@ def cmd_decay(args: argparse.Namespace) -> int:
             max_age = args.max_age
             label = args.label
 
+            label_err = _validate_label_args(label)
+            if label_err:
+                print(label_err, file=sys.stderr)
+                return 2
+
             if args.dry_run:
                 print("[DRY RUN] No changes will be written.\n")
                 print(
@@ -621,9 +644,15 @@ def cmd_migrate_keys(args: argparse.Namespace) -> int:
         from engrama.backends import create_stores
         from engrama.migrate import migrate_keys
 
+        labels = args.labels.split(",") if args.labels else None
+        if labels is not None:
+            label_err = _validate_label_args(*labels)
+            if label_err:
+                print(label_err, file=sys.stderr)
+                return 2
+
         graph_store, _ = create_stores()
         try:
-            labels = args.labels.split(",") if args.labels else None
             summary = migrate_keys(graph_store, labels=labels, apply=args.apply)
         finally:
             close = getattr(graph_store, "close", None)
