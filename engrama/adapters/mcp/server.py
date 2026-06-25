@@ -1313,9 +1313,9 @@ def create_engrama_mcp(
                         new_content += f"\n> {desc}\n"
 
                 await asyncio.to_thread(target.write_text, new_content, encoding="utf-8")
-                logger.info("Vault note written: %s", vault_path)
+                logger.info("Vault note written")
             except Exception as e:
-                logger.warning("Could not write vault note for %s: %s", merge_value, e)
+                logger.warning("Could not write vault note for a %s node: %s", label, e)
                 vault_path = None
 
         # --- Graph write using async store ---
@@ -1516,7 +1516,7 @@ def create_engrama_mcp(
                                     _with_mcp_provenance({"status": "stub"}, scope),
                                 )
                             except Exception as e:
-                                logger.warning("Could not create stub %s: %s", target_name, e)
+                                logger.warning("Could not create stub relation target: %s", e)
                                 relations_failed.append(
                                     {
                                         "rel_type": rel_type_upper,
@@ -2068,7 +2068,7 @@ def create_engrama_mcp(
                         embedding,
                     )
             except Exception as e:
-                logger.warning("Embed-on-sync failed for %s/%s: %s", node_label, merge_value, e)
+                logger.warning("Embed-on-sync failed for a %s node: %s", node_label, e)
 
         # Update frontmatter with engrama_id if new
         if not frontmatter.get("engrama_id"):
@@ -2284,10 +2284,10 @@ def create_engrama_mcp(
                                 target.write_text, new_content, encoding="utf-8"
                             )
                         except Exception as e:
-                            logger.warning("Could not update note %s: %s", note_path, e)
+                            logger.warning("Could not update a vault note: %s", e)
 
                 except Exception as e:
-                    logger.warning("Error syncing note %s: %s", note_path, e)
+                    logger.warning("Error syncing a vault note: %s", e)
                     errors.append(f"{note_path}: {str(e)}")
                     skipped_count += 1
 
@@ -3142,7 +3142,7 @@ def create_engrama_mcp(
             target = obsidian._resolve(params.target_note)
             new_content = content + insight_section
             await asyncio.to_thread(target.write_text, new_content, encoding="utf-8")
-            logger.info("Insight written to vault: %s", params.target_note)
+            logger.info("Insight written to vault")
         except Exception as e:
             logger.warning("Could not write insight to vault: %s", e)
             return json.dumps(
