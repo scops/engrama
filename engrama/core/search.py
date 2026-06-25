@@ -540,7 +540,7 @@ class HybridSearchEngine:
                     r.label, "name", r.name, hops=1, scope=scope
                 )
             except Exception as e:
-                logger.warning("Graph rerank neighbour fetch failed for %r: %s", r.name, e)
+                logger.warning("Graph rerank neighbour fetch failed: %s", e)
                 data = None
             neighbours[r.name] = self._window_neighbours(data, candidate_set)
         self._apply_graph_scores(named, query, neighbours)
@@ -568,7 +568,7 @@ class HybridSearchEngine:
                     r.label, "name", r.name, hops=1, scope=scope
                 )
             except Exception as e:
-                logger.warning("Graph rerank neighbour fetch failed for %r: %s", r.name, e)
+                logger.warning("Graph rerank neighbour fetch failed: %s", e)
                 data = None
             neighbours[r.name] = self._window_neighbours(data, candidate_set)
         self._apply_graph_scores(named, query, neighbours)

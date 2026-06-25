@@ -9,6 +9,21 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- **`engrama_surface_insights` accepts `title` / `query` filters.** `title`
+  returns one pending Insight by exact title; `query` returns pending Insights
+  related to the query via the same cosine gate as the search hint — so the agent
+  can surface exactly what a search flagged instead of dumping the backlog. The
+  output now includes each Insight's `engrama_id`.
+
+### Changed
+
+- **Archived nodes are excluded from search.** `fulltext_search` (SQLite +
+  Neo4j) now filters out `status='archived'` nodes, matching the graph-search
+  and decay paths — a soft-deleted ("forgotten") node no longer resurfaces in
+  search results. Archive is the trash; restoring/searching it is not exposed.
+
 ### Fixed
 
 - **The search `proactive_hint` for pending Insights now matches the real
@@ -25,13 +40,18 @@ Versioning: [Semantic Versioning](https://semver.org/)
   or a missing query vector (fulltext-only). The payload carries the matched
   `engrama_id`(s) so the agent can surface those specific Insights.
 
-### Added
+### Security
 
-- **`engrama_surface_insights` accepts `title` / `query` filters.** `title`
-  returns one pending Insight by exact title; `query` returns pending Insights
-  related to the query via the same cosine gate as the search hint — so the agent
-  can surface exactly what a search flagged instead of dumping the backlog. The
-  output now includes each Insight's `engrama_id`.
+- **MCP tools no longer return raw exception text to the client.** Several error
+  paths returned `str(e)` (and `engrama_status`'s `startup_error` / backend /
+  vault health errors), which could leak Neo4j URIs, filesystem paths and driver
+  internals — the same class of disclosure as the fixed Lucene-error. A
+  `_safe_error` helper now logs the detail server-side and returns a generic
+  message; all client-facing error payloads are redacted.
+- **User content is no longer written to logs.** Node names/titles, search
+  queries, relation endpoints and vault note paths were logged at INFO/WARNING;
+  in a shared log sink that is tenant content exposure. Logs now carry only
+  non-PII context (node label, relationship type) plus the exception.
 
 ## [0.14.0] — 2026-06-25
 

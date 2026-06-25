@@ -373,6 +373,15 @@ def test_fulltext_search_returns_summary_or_description(store):
 def test_fulltext_search_empty_query_returns_empty(store):
     store.merge_node("Project", "name", "p", {"description": "x"})
     assert store.fulltext_search("") == []
+
+
+def test_fulltext_search_excludes_archived(store):
+    # Archived nodes are the "trash" — a forgotten (soft-deleted) node must not
+    # resurface in search, matching the graph-search/decay behaviour.
+    store.merge_node("Project", "name", "ghost", {"description": "haunted memory engine"})
+    assert any(r["name"] == "ghost" for r in store.fulltext_search("memory"))
+    store.delete_node("Project", "name", "ghost", soft=True)
+    assert all(r["name"] != "ghost" for r in store.fulltext_search("memory"))
     assert store.fulltext_search("   ") == []
 
 

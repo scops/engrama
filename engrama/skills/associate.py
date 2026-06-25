@@ -147,11 +147,5 @@ class AssociateSkill:
                 return False
             return obsidian.add_relation(vault_path, rel_type, to_name)
         except Exception as e:
-            logger.warning(
-                "DDR-002 vault write failed for %s -[%s]-> %s: %s",
-                from_name,
-                rel_type,
-                to_name,
-                e,
-            )
+            logger.warning("DDR-002 vault write failed for a %s relation: %s", rel_type, e)
             return False
