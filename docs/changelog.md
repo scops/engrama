@@ -70,6 +70,20 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Security
 
+- **`engrama_context` no longer discloses another tenant's node.** The
+  context/root-node read (`get_node_with_neighbours`) scope-filtered only the
+  *neighbours* — the requested node itself was fetched by key with no scope
+  check, so a resolved tenant could read another tenant's node (with all its
+  enrichment fields) by guessing its `(label, name)`. Both backends now require
+  the root node to be visible at the caller's scope when one is supplied
+  (cross-tenant or out-of-scope → "not found"); a `None` scope keeps the
+  admin/debug fetch-by-key. Adds the `node_visible` scope predicate.
+- **GDPR erasure now also purges the SQLite full-text index.** `gdpr_forget`
+  (SQLite) deleted nodes, edges and embeddings but left the subject's rows in
+  the content-storing `nodes_fts` FTS5 table, so the erased subject's indexed
+  text (name/title/description/notes/…) survived on disk after a "permanent"
+  delete. The erasure now removes the matching `nodes_fts` rows too, matching
+  every other hard-delete path. Neo4j was unaffected (`DETACH DELETE` is atomic).
 - **Caller-supplied property keys are backtick-quoted before reaching Cypher.**
   A node's property *key* names (free-form via the `engrama_remember`
   `properties` bag) were interpolated raw into `SET n.<key> = $p0` in both the

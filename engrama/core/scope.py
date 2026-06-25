@@ -232,10 +232,29 @@ def scope_filter_cypher(
     return clause, params
 
 
+def node_visible(scope: MemoryScope | None, org_id: Any, user_id: Any) -> bool:
+    """Return ``True`` iff a node with the given provenance is visible at ``scope``.
+
+    The in-Python counterpart of :func:`scope_filter_sql` /
+    :func:`scope_filter_cypher`, for the rare path that has already loaded a node
+    and must check it against a scope (e.g. the SQLite root-node lookup in
+    ``get_node_with_neighbours``).
+
+    **Fail-closed**, with the *same* rule as the SQL/Cypher filters: a ``None`` or
+    incomplete scope sees nothing. A node is visible only to a request carrying
+    the same ``org_id`` and either the node's own ``user_id`` or the org-shared
+    ``__entity__`` sentinel.
+    """
+    if scope is None or not scope.org_id or not scope.user_id:
+        return False
+    return org_id == scope.org_id and user_id in (scope.user_id, ENTITY_SENTINEL)
+
+
 __all__ = [
     "ENTITY_SENTINEL",
     "MemoryScope",
     "ScopeIncomplete",
+    "node_visible",
     "scope_filter_cypher",
     "scope_filter_sql",
 ]
