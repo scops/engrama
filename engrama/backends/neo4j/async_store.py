@@ -767,9 +767,48 @@ class Neo4jAsyncStore:
         self,
         limit: int = 10,
         scope: MemoryScope | None = None,
+        title: str | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieve pending Insights ordered by confidence (highest first),
         breaking ties by ``created_at`` (newest first), within ``scope``.
+
+        ``title`` optionally restricts to a single pending Insight by title
+        (used by ``engrama_surface_insights``'s title filter). Returns
+        ``engrama_id`` so callers can reference a specific Insight.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty list.
+        """
+        scope_clause, scope_params = scope_filter_cypher(scope, "i")
+        where_sql = f"AND {scope_clause} " if scope_clause else ""
+        title_sql = "AND i.title = $title " if title else ""
+        params: dict[str, Any] = {"status": "pending", "limit": limit, **scope_params}
+        if title:
+            params["title"] = title
+        records, _, _ = await self._driver.execute_query(
+            "MATCH (i:Insight {status: $status}) "
+            f"WHERE 1=1 {where_sql}{title_sql}"
+            "RETURN i.engrama_id AS engrama_id, i.title AS title, i.body AS body, "
+            "       i.confidence AS confidence, "
+            "       i.source_query AS source_query, "
+            "       i.created_at AS created_at "
+            "ORDER BY i.confidence DESC, i.created_at DESC "
+            "LIMIT $limit",
+            parameters_=params,
+            database_=self._database,
+        )
+        return [dict(r) for r in records]
+
+    async def get_pending_insight_vectors(
+        self,
+        limit: int = 10,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Pending Insights **with their embedding**, for the proactive-search
+        relevance gate. Same ``status='pending'`` + ``scope`` filter as
+        :meth:`get_pending_insights` (the single source of truth), but also
+        returns ``embedding`` so the caller can cosine-score this subset against
+        a reused query embedding. Insights without an embedding are skipped
+        (they cannot be cosine-gated).
 
         Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty list.
         """
@@ -777,11 +816,9 @@ class Neo4jAsyncStore:
         where_sql = f"AND {scope_clause} " if scope_clause else ""
         records, _, _ = await self._driver.execute_query(
             "MATCH (i:Insight {status: $status}) "
-            f"WHERE 1=1 {where_sql}"
-            "RETURN i.title AS title, i.body AS body, "
-            "       i.confidence AS confidence, "
-            "       i.source_query AS source_query, "
-            "       i.created_at AS created_at "
+            f"WHERE i.embedding IS NOT NULL {where_sql}"
+            "RETURN i.engrama_id AS engrama_id, i.title AS title, i.body AS body, "
+            "       i.confidence AS confidence, i.embedding AS embedding "
             "ORDER BY i.confidence DESC, i.created_at DESC "
             "LIMIT $limit",
             parameters_={"status": "pending", "limit": limit, **scope_params},

@@ -9,6 +9,37 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- **`engrama_surface_insights` accepts `title` / `query` filters.** `title`
+  returns one pending Insight by exact title; `query` returns pending Insights
+  related to the query via the same cosine gate as the search hint — so the agent
+  can surface exactly what a search flagged instead of dumping the backlog. The
+  output now includes each Insight's `engrama_id`.
+
+### Changed
+
+- **Archived nodes are excluded from search.** `fulltext_search` (SQLite +
+  Neo4j) now filters out `status='archived'` nodes, matching the graph-search
+  and decay paths — a soft-deleted ("forgotten") node no longer resurfaces in
+  search results. Archive is the trash; restoring/searching it is not exposed.
+
+### Fixed
+
+- **The search `proactive_hint` for pending Insights now matches the real
+  queue.** It was computed from a *separate* fulltext search filtered to
+  `type=='Insight'` — with no `status` filter — so it fired on approved,
+  dismissed or synced Insights too, sending the agent to `engrama_surface_insights`
+  for a queue that came back empty (false positive). It also projected
+  `title`/`body`, which fulltext doesn't return, so the surfaced item was a
+  contentless `{score, confidence}` stub. The hint now reads the **same pending
+  queue** (`status='pending'`, scoped) as `engrama_surface_insights` and gates
+  each entry by **pure cosine** of the reused query embedding (≥ τ,
+  `ENGRAMA_INSIGHT_HINT_TAU`, default 0.6) **and** confidence (≥ κ,
+  `ENGRAMA_INSIGHT_HINT_KAPPA`, default 0.6). It short-circuits on an empty queue
+  or a missing query vector (fulltext-only). The payload carries the matched
+  `engrama_id`(s) so the agent can surface those specific Insights.
+
 ### Security
 
 - **MCP tools no longer return raw exception text to the client.** Several error
@@ -21,13 +52,6 @@ Versioning: [Semantic Versioning](https://semver.org/)
   queries, relation endpoints and vault note paths were logged at INFO/WARNING;
   in a shared log sink that is tenant content exposure. Logs now carry only
   non-PII context (node label, relationship type) plus the exception.
-
-### Changed
-
-- **Archived nodes are excluded from search.** `fulltext_search` (SQLite +
-  Neo4j) now filters out `status='archived'` nodes, matching the graph-search
-  and decay paths — a soft-deleted ("forgotten") node no longer resurfaces in
-  search results. Archive is the trash; restoring/searching it is not exposed.
 
 ## [0.14.0] — 2026-06-25
 
