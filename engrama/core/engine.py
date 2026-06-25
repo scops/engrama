@@ -328,6 +328,12 @@ class EngramaEngine:
         Returns:
             Dict with ``decayed`` and ``archived`` counts.
         """
+        # ``label`` is interpolated into Cypher by the backend, so validate it
+        # against the schema whitelist before it reaches the store — never let
+        # an unchecked label string into the query (same guarantee as
+        # ``merge_node``).
+        if label is not None:
+            self.sanitiser.validate_label(label)
         fn = getattr(self._store, "decay_scores", None)
         if fn is None:
             logger.warning("Backend does not support decay_scores")
