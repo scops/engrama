@@ -24,7 +24,7 @@ from typing import Any
 
 import sqlite_vec
 
-from engrama.core.scope import MemoryScope, scope_filter_sql
+from engrama.core.scope import MemoryScope, node_visible, scope_filter_sql
 
 logger = logging.getLogger("engrama.backends.sqlite")
 
@@ -613,12 +613,17 @@ class SqliteGraphStore:
         """Convenience: ``{node, neighbours}`` shape used by MCP context.
 
         DDR-003 Phase F: ``scope`` is forwarded to :meth:`get_neighbours`
-        so traversal respects scope visibility. The root node lookup
-        does *not* apply scope — admin/debug paths still need to fetch
-        a known node by key.
+        so traversal respects scope visibility. When a scope is supplied, the
+        root node is *also* scope-checked — a resolved tenant can never read a
+        node owned by another tenant via a guessed key. A ``None`` scope keeps
+        the admin/debug fetch-by-key (no tenant context).
         """
         node = self.get_node(label, key_field, key_value)
         if node is None:
+            return None
+        # Cross-tenant guard: a non-None scope must be able to see the root.
+        # (None == admin path; a non-None incomplete scope fails closed.)
+        if scope is not None and not node_visible(scope, node.get("org_id"), node.get("user_id")):
             return None
         # Strip embedding-like blobs and timestamps from neighbour props
         # to keep the response compact (mirrors Neo4j async behaviour).
