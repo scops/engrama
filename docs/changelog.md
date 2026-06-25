@@ -9,6 +9,8 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-06-25
+
 ### Added
 
 - **`engrama_gdpr_forget` tool — GDPR right-to-erasure (Spec 001 US-3).**
