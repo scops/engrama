@@ -459,15 +459,20 @@ class Neo4jAsyncStore:
         ``summary`` and ``tags`` so the model can decide whether to fetch
         a neighbour's full context.
 
-        DDR-003 Phase F: when ``scope`` is set, neighbours are filtered
-        by the scope-visibility rule. The root-node lookup itself is
-        unscoped — callers that already know a node's key are
-        considered authorised on this path.
+        DDR-003 Phase F: when ``scope`` is set, BOTH the root node and the
+        neighbours are filtered by the scope-visibility rule — a resolved tenant
+        can never read a node owned by another tenant via a guessed key. A
+        ``None`` scope keeps the admin/debug fetch-by-key (no tenant context).
         """
+        start_clause, start_params = scope_filter_cypher(scope, "start")
+        # Only constrain the root when a scope is supplied; None == admin path.
+        # A non-None but incomplete scope yields "(false)" → fail-closed (None).
+        start_where = f"WHERE {start_clause} " if scope is not None else ""
         nb_clause, nb_params = scope_filter_cypher(scope, "neighbour")
         where_sql = f"WHERE neighbour IS NULL OR ({nb_clause}) " if nb_clause else ""
         cypher = (
             f"MATCH (start:{label} {{{key_field}: $key_value}}) "
+            f"{start_where}"
             f"OPTIONAL MATCH (start)-[r*1..{hops}]-(neighbour) "
             f"{where_sql}"
             "RETURN start, "
@@ -478,7 +483,7 @@ class Neo4jAsyncStore:
         )
         records, _, _ = await self._driver.execute_query(
             cypher,
-            parameters_={"key_value": key_value, **nb_params},
+            parameters_={"key_value": key_value, **start_params, **nb_params},
             database_=self._database,
         )
         if not records:
