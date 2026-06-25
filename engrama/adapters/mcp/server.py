@@ -221,12 +221,31 @@ _ADMIN_TOOLS: tuple[dict[str, str], ...] = (
 )
 
 
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _require_identity() -> bool:
+    """Whether ``ENGRAMA_REQUIRE_IDENTITY`` opts the deployment into fail-closed
+    identity (defence-in-depth).
+
+    Unset/false (the default): a request with **no** identity headers falls back
+    to the standalone single-user identity (FR-7) — correct for bare OSS.
+
+    Set: a header-less request is **rejected** instead of pooled into the shared
+    standalone scope. For a multi-tenant deployment fronted by a gateway that
+    always injects both headers, this means a gateway misconfiguration or
+    header-drop fails closed (no cross-tenant pooling) rather than open.
+    """
+    return (os.environ.get("ENGRAMA_REQUIRE_IDENTITY") or "").strip().lower() in _TRUTHY
+
+
 class ScopeUnresolved(Exception):
     """A request carried partial/malformed identity (exactly one of the two
     headers). Reads translate this to zero results; writes reject it.
 
     Both headers absent is NOT unresolved — that is the standalone
-    single-user path (FR-7)."""
+    single-user path (FR-7) — unless ``ENGRAMA_REQUIRE_IDENTITY`` is set, which
+    makes a header-less request fail closed too (see :func:`_require_identity`)."""
 
 
 def _request_headers(ctx: Context) -> Any:
@@ -255,9 +274,10 @@ def resolve_scope(ctx: Context) -> MemoryScope:
     """Resolve the active tenant scope for THIS request (Spec 001, R-3).
 
     Both headers present → that ``(org_id, user_id)``. Both absent →
-    standalone single-user ``(sub_local, sub_local)``. Exactly one present →
-    :class:`ScopeUnresolved` (fail-closed: malformed identity is never
-    silently broadened).
+    standalone single-user ``(sub_local, sub_local)``, unless
+    ``ENGRAMA_REQUIRE_IDENTITY`` is set (then → :class:`ScopeUnresolved`).
+    Exactly one present → :class:`ScopeUnresolved` (fail-closed: malformed
+    identity is never silently broadened).
     """
     headers = _request_headers(ctx)
     org = (headers.get(_HDR_ORG) or "").strip()
@@ -265,6 +285,13 @@ def resolve_scope(ctx: Context) -> MemoryScope:
     if org and user:
         return MemoryScope(org_id=org, user_id=user)
     if not org and not user:
+        if _require_identity():
+            # Multi-tenant mode: never pool a header-less request into the
+            # shared standalone identity — fail closed instead.
+            raise ScopeUnresolved(
+                "identity required: ENGRAMA_REQUIRE_IDENTITY is set but neither "
+                "X-Engrama-Org-Id nor X-Engrama-User-Id was provided"
+            )
         sub = _standalone_sub(ctx)
         return MemoryScope(org_id=sub, user_id=sub)
     raise ScopeUnresolved(

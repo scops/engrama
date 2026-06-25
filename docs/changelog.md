@@ -23,6 +23,15 @@ Versioning: [Semantic Versioning](https://semver.org/)
   tools (`engrama_status`, `engrama_reindex`) with a reason each, so a
   multi-tenant gateway can discover what to gate at runtime instead of
   hardcoding names.
+- **`ENGRAMA_REQUIRE_IDENTITY` — fail-closed identity (defence-in-depth).** When
+  set, a request carrying **no** identity headers is rejected
+  (`ScopeUnresolved`) instead of falling back to the standalone single-user
+  identity. For a multi-tenant deployment fronted by a gateway that always
+  injects `X-Engrama-Org-Id`/`X-Engrama-User-Id`, this turns a gateway
+  misconfiguration or header-drop into a closed failure (no pooling of callers
+  into one shared scope) rather than an open one. Unset (the default) preserves
+  the bare-OSS standalone behaviour. The partial-identity case (exactly one
+  header) is unconditionally fail-closed as before.
 
 ### Changed
 
