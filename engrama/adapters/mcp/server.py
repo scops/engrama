@@ -239,6 +239,19 @@ def _require_identity() -> bool:
     return (os.environ.get("ENGRAMA_REQUIRE_IDENTITY") or "").strip().lower() in _TRUTHY
 
 
+# Generic, non-leaking error returned to MCP clients. Raw exception text can
+# carry DB URIs, file paths and driver internals (the same class of leak as the
+# fixed Lucene-error), so it is logged server-side only and never sent back.
+_CLIENT_ERROR_MESSAGE = "internal error — see server logs for details"
+
+
+def _safe_error(exc: Exception, *, key: str = "error", indent: int | None = None) -> str:
+    """Log ``exc`` server-side and return a generic JSON error for the client."""
+    logger.warning("MCP tool error: %s: %s", type(exc).__name__, exc)
+    payload = {"status": "error", key: _CLIENT_ERROR_MESSAGE}
+    return json.dumps(payload, indent=indent) if indent is not None else json.dumps(payload)
+
+
 class ScopeUnresolved(Exception):
     """A request carried partial/malformed identity (exactly one of the two
     headers). Reads translate this to zero results; writes reject it.
@@ -739,7 +752,7 @@ def create_engrama_mcp(
         except Exception as e:
             logger.warning("Store factory failed (non-fatal): %s", e)
             async_store = None
-            startup_error = str(e)
+            startup_error = "backend unavailable at startup"
 
         try:
             if async_store is not None:
@@ -926,7 +939,8 @@ def create_engrama_mcp(
                 if "node_count" in h:
                     backend_info["node_count"] = h["node_count"]
             except Exception as e:
-                backend_info["error"] = str(e)
+                logger.warning("Backend health check failed: %s", e)
+                backend_info["error"] = "backend health check failed"
         else:
             backend_info["error"] = "store not initialised"
 
@@ -941,7 +955,8 @@ def create_engrama_mcp(
                 notes = await asyncio.to_thread(obsidian.list_notes, "")
                 vault_info["note_count"] = len(notes)
             except Exception as e:
-                vault_info["error"] = str(e)
+                logger.warning("Vault listing failed: %s", e)
+                vault_info["error"] = "vault listing failed"
 
         # --- Embedder ---
         # ``configured`` reports *capability*, not mere presence: a
@@ -1253,7 +1268,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "error": str(e)})
+            return _safe_error(e)
 
         # --- Vault note creation (BUG-002 / DDR-002) ---
         state = ctx.request_context.lifespan_context
@@ -1313,9 +1328,9 @@ def create_engrama_mcp(
                         new_content += f"\n> {desc}\n"
 
                 await asyncio.to_thread(target.write_text, new_content, encoding="utf-8")
-                logger.info("Vault note written: %s", vault_path)
+                logger.info("Vault note written")
             except Exception as e:
-                logger.warning("Could not write vault note for %s: %s", merge_value, e)
+                logger.warning("Could not write vault note for a %s node: %s", label, e)
                 vault_path = None
 
         # --- Graph write using async store ---
@@ -1516,7 +1531,7 @@ def create_engrama_mcp(
                                     _with_mcp_provenance({"status": "stub"}, scope),
                                 )
                             except Exception as e:
-                                logger.warning("Could not create stub %s: %s", target_name, e)
+                                logger.warning("Could not create stub relation target: %s", e)
                                 relations_failed.append(
                                     {
                                         "rel_type": rel_type_upper,
@@ -1725,7 +1740,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "error": str(e)})
+            return _safe_error(e)
 
         # Determine merge keys
         from_key = "title" if params.from_label in TITLE_KEYED_LABELS else "name"
@@ -1978,7 +1993,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "message": str(e)}, indent=2)
+            return _safe_error(e, key="message", indent=2)
 
         note_data = await asyncio.to_thread(obsidian.read_note, params.path)
         if not note_data["success"]:
@@ -2068,7 +2083,7 @@ def create_engrama_mcp(
                         embedding,
                     )
             except Exception as e:
-                logger.warning("Embed-on-sync failed for %s/%s: %s", node_label, merge_value, e)
+                logger.warning("Embed-on-sync failed for a %s node: %s", node_label, e)
 
         # Update frontmatter with engrama_id if new
         if not frontmatter.get("engrama_id"):
@@ -2175,7 +2190,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "message": str(e)}, indent=2)
+            return _safe_error(e, key="message", indent=2)
 
         created_count = 0
         updated_count = 0
@@ -2284,18 +2299,19 @@ def create_engrama_mcp(
                                 target.write_text, new_content, encoding="utf-8"
                             )
                         except Exception as e:
-                            logger.warning("Could not update note %s: %s", note_path, e)
+                            logger.warning("Could not update a vault note: %s", e)
 
                 except Exception as e:
-                    logger.warning("Error syncing note %s: %s", note_path, e)
-                    errors.append(f"{note_path}: {str(e)}")
+                    logger.warning("Error syncing a vault note: %s", e)
+                    errors.append(f"{note_path}: sync failed")
                     skipped_count += 1
 
         except Exception as e:
+            logger.warning("Vault scan failed: %s", e)
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Could not scan vault: {str(e)}",
+                    "message": "could not scan vault",
                 },
                 indent=2,
             )
@@ -2369,7 +2385,7 @@ def create_engrama_mcp(
         try:
             _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "error": str(e)})
+            return _safe_error(e)
 
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -2493,7 +2509,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "error": str(e)})
+            return _safe_error(e)
 
         insights: list[dict[str, Any]] = []
         queries_run: list[str] = []
@@ -2901,7 +2917,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "error": str(e)})
+            return _safe_error(e)
 
         try:
             results = await store.get_pending_insights(limit=params.limit, scope=scope)
@@ -2972,7 +2988,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "error": str(e)})
+            return _safe_error(e)
 
         if params.action not in ("approve", "dismiss"):
             return json.dumps(
@@ -3000,7 +3016,7 @@ def create_engrama_mcp(
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Could not load Insight: {str(e)}",
+                    "message": "could not load Insight",
                 },
                 indent=2,
             )
@@ -3019,7 +3035,7 @@ def create_engrama_mcp(
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Could not update Insight: {str(e)}",
+                    "message": "could not update Insight",
                 },
                 indent=2,
             )
@@ -3083,7 +3099,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "error": str(e)})
+            return _safe_error(e)
 
         # Fetch the Insight
         try:
@@ -3101,7 +3117,7 @@ def create_engrama_mcp(
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Could not fetch Insight: {str(e)}",
+                    "message": "could not fetch Insight",
                 },
                 indent=2,
             )
@@ -3142,13 +3158,13 @@ def create_engrama_mcp(
             target = obsidian._resolve(params.target_note)
             new_content = content + insight_section
             await asyncio.to_thread(target.write_text, new_content, encoding="utf-8")
-            logger.info("Insight written to vault: %s", params.target_note)
+            logger.info("Insight written to vault")
         except Exception as e:
             logger.warning("Could not write insight to vault: %s", e)
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Could not write to vault: {str(e)}",
+                    "message": "could not write to vault",
                 },
                 indent=2,
             )
@@ -3327,7 +3343,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "error": str(e)})
+            return _safe_error(e)
 
         if params.mode not in {"detect", "classify", "apply"}:
             return f"Error: invalid mode {params.mode!r}. Use 'detect' | 'classify' | 'apply'."
@@ -3479,7 +3495,7 @@ def create_engrama_mcp(
         try:
             scope = _resolve_and_bind(ctx)
         except ScopeUnresolved as e:
-            return json.dumps({"status": "error", "message": str(e)}, indent=2)
+            return _safe_error(e, key="message", indent=2)
 
         mode = (params.mode or "").strip().lower()
         if mode not in ("dry-run", "apply"):
@@ -3507,7 +3523,7 @@ def create_engrama_mcp(
                 )
             except Exception as e:  # noqa: BLE001 — vault failure must not abort graph erasure
                 logger.warning("gdpr_forget: vault note erasure failed: %s", e)
-                errors.append(f"vault: {e}")
+                errors.append("vault note erasure failed")
 
         report = await store.gdpr_forget(
             org_id=scope.org_id,

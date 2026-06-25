@@ -172,7 +172,7 @@ class EngramaEngine:
                 text = node_to_text(label, properties)
                 embedding = self._embedder.embed(text)
             except Exception as e:
-                logger.warning("Embedding failed for %s/%s: %s", label, merge_value, e)
+                logger.warning("Embedding failed for a %s node: %s", label, e)
                 embedding = None
 
         # --- Guard against degenerate embeddings (issue #18) ---
@@ -216,7 +216,7 @@ class EngramaEngine:
                 if store_by_key:
                     store_by_key(label, merge_key, merge_value, embedding)
             except Exception as e:
-                logger.warning("Vector store failed for %s/%s: %s", label, merge_value, e)
+                logger.warning("Vector store failed for a %s node: %s", label, e)
 
         return result
 

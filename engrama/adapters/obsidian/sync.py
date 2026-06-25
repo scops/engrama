@@ -211,7 +211,7 @@ class ObsidianSync:
                         )
                         relations_created += 1
                     except Exception as e:
-                        logger.debug("Could not link %s -> %s: %s", pn.name, target_name, e)
+                        logger.debug("Could not link a wiki-link relation: %s", e)
 
         return relations_created
 
@@ -233,7 +233,7 @@ class ObsidianSync:
                     target_name=target,
                 )
             except Exception as e:
-                logger.debug("Could not link %s -> %s: %s", parsed.name, target, e)
+                logger.debug("Could not link a wiki-link relation: %s", e)
         return relations_created
 
     # ------------------------------------------------------------------
@@ -286,18 +286,12 @@ class ObsidianSync:
                             stubs_created += 1
                             known_nodes[target_lower] = target_label
                             logger.info(
-                                "Created stub %s:%s (target of %s from %s)",
+                                "Created stub %s node (target of a %s relation)",
                                 target_label,
-                                target_name,
                                 rel_type,
-                                pn.name,
                             )
                         except Exception as e:
-                            logger.warning(
-                                "Could not create stub for %s: %s",
-                                target_name,
-                                e,
-                            )
+                            logger.warning("Could not create stub node: %s", e)
                             continue
 
                     # Merge the relation
@@ -311,13 +305,7 @@ class ObsidianSync:
                         )
                         relations_merged += 1
                     except Exception as e:
-                        logger.debug(
-                            "Could not merge relation %s -[%s]-> %s: %s",
-                            pn.name,
-                            rel_type,
-                            target_name,
-                            e,
-                        )
+                        logger.debug("Could not merge a %s relation: %s", rel_type, e)
 
         return relations_merged, stubs_created
 
@@ -344,18 +332,12 @@ class ObsidianSync:
                             provenance=_SYNC_PROVENANCE,
                         )
                         logger.info(
-                            "Created stub %s:%s (target of %s from %s)",
+                            "Created stub %s node (target of a %s relation)",
                             target_label,
-                            target_name,
                             rel_type,
-                            parsed.name,
                         )
                     except Exception as e:
-                        logger.warning(
-                            "Could not create stub for %s: %s",
-                            target_name,
-                            e,
-                        )
+                        logger.warning("Could not create stub node: %s", e)
                         continue
 
                 try:
@@ -368,13 +350,7 @@ class ObsidianSync:
                     )
                     merged += 1
                 except Exception as e:
-                    logger.debug(
-                        "Could not merge relation %s -[%s]-> %s: %s",
-                        parsed.name,
-                        rel_type,
-                        target_name,
-                        e,
-                    )
+                    logger.debug("Could not merge a %s relation: %s", rel_type, e)
         return merged
 
     def _find_node_label(self, name: str) -> str | None:

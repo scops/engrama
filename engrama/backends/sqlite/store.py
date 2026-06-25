@@ -733,6 +733,7 @@ class SqliteGraphStore:
                 FROM nodes_fts
                 JOIN nodes n ON n.id = nodes_fts.rowid
                 WHERE nodes_fts MATCH :match_expr
+                  AND COALESCE(json_extract(n.props, '$.status'), '') != 'archived'
         """
         if scope_clause:
             sql += f" AND {scope_clause}"
@@ -745,7 +746,7 @@ class SqliteGraphStore:
             # that survive sanitization) — return empty rather than
             # propagating, matching how Neo4j silently returns no matches
             # for a bad Lucene string.
-            logger.debug("FTS5 query failed for %r (sanitized to %r): %s", query, match_expr, e)
+            logger.debug("FTS5 query failed: %s", e)
             return []
         results: list[dict[str, Any]] = []
         for r in cur.fetchall():

@@ -543,7 +543,12 @@ class Neo4jAsyncStore:
         the scope-visibility rule (see :mod:`engrama.core.scope`).
         """
         scope_clause, scope_params = scope_filter_cypher(scope, "node")
-        where_sql = f"WHERE {scope_clause} " if scope_clause else ""
+        # Archived nodes are the "trash" — excluded from search (a forgotten
+        # node must not resurface). Mirrors the graph-search/decay filters.
+        where_parts = ["(node.status IS NULL OR node.status <> 'archived')"]
+        if scope_clause:
+            where_parts.append(scope_clause)
+        where_sql = "WHERE " + " AND ".join(where_parts) + " "
         cypher = (
             'CALL db.index.fulltext.queryNodes("memory_search", $query) '
             "YIELD node, score "
