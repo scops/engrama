@@ -80,6 +80,15 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Fixed
 
+- **`engrama_search` no longer crashes on Lucene syntax characters in the
+  query.** A query containing characters special to the Lucene classic parser —
+  e.g. `/` in `"CI/CD pipeline ..."` — made the Neo4j fulltext index raise
+  `Neo.ClientError.Procedure.ProcedureCallFailed` (`TokenMgrError`: the `/` was
+  read as the start of an unterminated regex literal). The query string is now
+  escaped (`escape_lucene_query`) before reaching `db.index.fulltext.queryNodes`
+  in both the sync and async Neo4j stores, so every term is matched literally
+  (`CI/CD` still tokenises into `ci` + `cd`). Boolean operators `&&` / `||`
+  can no longer form either.
 - **Relation merge no longer drops edges to nodes that exist (#93).** Endpoints
   are now matched the same permissive, case-insensitive `COALESCE(name, title)`
   way `lookup_node_label` resolves them, instead of a single statically

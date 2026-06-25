@@ -15,6 +15,7 @@ from neo4j import Record
 from neo4j.graph import Node, Relationship
 from neo4j.time import Date, DateTime, Duration, Time
 
+from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
 from engrama.core.scope import MemoryScope, scope_filter_cypher
@@ -592,7 +593,11 @@ class Neo4jGraphStore:
             "toString(node.updated_at) AS updated_at "
             "ORDER BY score DESC LIMIT $limit"
         )
-        params: dict[str, Any] = {"query": query, "limit": limit, **scope_params}
+        params: dict[str, Any] = {
+            "query": escape_lucene_query(query),
+            "limit": limit,
+            **scope_params,
+        }
         return _records_to_dicts(self._client.run(cypher, params))
 
     def run_cypher(

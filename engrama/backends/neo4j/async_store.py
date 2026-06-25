@@ -21,6 +21,7 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
+from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.backends.neo4j.backend import (
     _SERVER_MANAGED_TIMESTAMPS,
     _TEMPORAL_PROPERTIES,
@@ -547,7 +548,11 @@ class Neo4jAsyncStore:
             "toString(node.updated_at) AS updated_at "
             "ORDER BY score DESC LIMIT $limit"
         )
-        params: dict[str, Any] = {"query": query, "limit": limit, **scope_params}
+        params: dict[str, Any] = {
+            "query": escape_lucene_query(query),
+            "limit": limit,
+            **scope_params,
+        }
         records, _, _ = await self._driver.execute_query(
             cypher,
             parameters_=params,
