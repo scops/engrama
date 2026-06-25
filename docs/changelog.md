@@ -9,6 +9,8 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-06-26
+
 ### Added
 
 - **`engrama_surface_insights` accepts `title` / `query` filters.** `title`
