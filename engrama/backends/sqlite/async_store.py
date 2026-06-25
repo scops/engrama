@@ -345,8 +345,16 @@ class SqliteAsyncStore:
         self,
         limit: int = 10,
         scope: MemoryScope | None = None,
+        title: str | None = None,
     ) -> list[dict[str, Any]]:
-        return await self._run(self._sync.get_pending_insights, limit, scope)
+        return await self._run(self._sync.get_pending_insights, limit, scope, title)
+
+    async def get_pending_insight_vectors(
+        self,
+        limit: int = 10,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.get_pending_insight_vectors, limit, scope)
 
     async def get_insight_by_title(
         self,

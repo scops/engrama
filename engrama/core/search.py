@@ -398,6 +398,11 @@ class HybridSearchEngine:
             mode="fulltext_only" if not self._vector_enabled else "hybrid"
         )
 
+        # The query embedding from the most recent (a)search, or None when the
+        # vector channel didn't run. Lets callers reuse it (e.g. the MCP
+        # proactive-insight gate) instead of re-embedding the same query.
+        self.last_query_vector: list[float] | None = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -465,6 +470,9 @@ class HybridSearchEngine:
         """
         alpha = self.config.alpha
         vector_reason = ""
+        # Reset; populated below so callers (e.g. the MCP proactive-insight
+        # gate) can reuse the query embedding instead of re-embedding it.
+        self.last_query_vector = None
 
         # --- Vector branch ---
         v_results: list[dict[str, Any]] = []
@@ -472,6 +480,7 @@ class HybridSearchEngine:
             try:
                 query_vec = await self.embedder.aembed(query)
                 if query_vec:
+                    self.last_query_vector = query_vec
                     v_results = await self.vector.search_similar(
                         query_vec,
                         limit=self.config.vector_k,

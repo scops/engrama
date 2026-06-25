@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -387,6 +388,85 @@ _proactive_state: dict[str, int | bool] = {
     "enabled": True,
 }
 
+# --- Proactive insight-hint relevance gate (search → pending Insights) -------
+# The search's pending-insight hint reads the SAME queue as
+# engrama_surface_insights (status='pending', scoped) — never a separate
+# fulltext signal — and surfaces a pending Insight only when it is BOTH
+# semantically related to the query (pure cosine of the reused query embedding
+# vs the insight embedding ≥ τ) AND non-speculative (confidence ≥ κ). The
+# payload carries the matched engrama_id(s) so the agent can surface those
+# specific Insights rather than dumping the whole backlog.
+_INSIGHT_HINT_TAU_DEFAULT = 0.6  # cosine floor; override with ENGRAMA_INSIGHT_HINT_TAU
+_INSIGHT_HINT_KAPPA_DEFAULT = 0.6  # confidence floor; override with ENGRAMA_INSIGHT_HINT_KAPPA
+_INSIGHT_HINT_POOL = 25  # how many pending Insights to cosine-score per search
+
+
+def _env_float_default(name: str, default: float) -> float:
+    """Read a float env knob, falling back to ``default`` on unset/invalid."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """Pure cosine similarity. Returns 0.0 for empty / mismatched / zero-norm."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+async def _related_pending_insights(
+    store: Any,
+    scope: MemoryScope,
+    query_vec: list[float] | None,
+) -> list[dict[str, Any]]:
+    """Pending Insights related to the query, gated by cosine ≥ τ and
+    confidence ≥ κ. Reuses ``query_vec`` (no re-embedding). Reads the real
+    pending queue via ``get_pending_insight_vectors`` and short-circuits on an
+    empty queue or a missing query vector.
+    """
+    if not query_vec:
+        return []
+    pending = await store.get_pending_insight_vectors(limit=_INSIGHT_HINT_POOL, scope=scope)
+    if not pending:
+        return []
+    tau = _insight_hint_tau()
+    kappa = _insight_hint_kappa()
+    matched: list[dict[str, Any]] = []
+    for p in pending:
+        cos = _cosine(query_vec, p.get("embedding") or [])
+        confidence = p.get("confidence")
+        if cos >= tau and (confidence if confidence is not None else 0.0) >= kappa:
+            matched.append(
+                {
+                    "engrama_id": p.get("engrama_id"),
+                    "title": p.get("title"),
+                    "body": p.get("body"),
+                    "confidence": confidence,
+                    "score": round(cos, 4),
+                }
+            )
+    matched.sort(key=lambda r: r["score"], reverse=True)
+    return matched
+
+
+def _insight_hint_tau() -> float:
+    return _env_float_default("ENGRAMA_INSIGHT_HINT_TAU", _INSIGHT_HINT_TAU_DEFAULT)
+
+
+def _insight_hint_kappa() -> float:
+    return _env_float_default("ENGRAMA_INSIGHT_HINT_KAPPA", _INSIGHT_HINT_KAPPA_DEFAULT)
+
 
 # ---------------------------------------------------------------------------
 # Pydantic input models
@@ -581,6 +661,18 @@ class SurfaceInput(BaseModel):
     limit: int = Field(
         default=10,
         description="Maximum number of pending Insights to return.",
+    )
+    title: str | None = Field(
+        default=None,
+        description="Optional: return only the pending Insight with this exact title.",
+    )
+    query: str | None = Field(
+        default=None,
+        description=(
+            "Optional: return only pending Insights semantically related to this "
+            "query (same cosine gate as the search proactive hint). Ignored if "
+            "``title`` is given."
+        ),
     )
 
 
@@ -1081,7 +1173,11 @@ def create_engrama_mcp(
                     return f"No results found for '{params.query}'."
 
                 # --- Proactivity: check for pending Insights ---
-                response = await _build_search_response(results, params.query, store, scope)
+                # Reuse the query embedding the hybrid run just computed — the
+                # gate is pure cosine over the pending queue, no re-embedding.
+                response = await _build_search_response(
+                    results, params.query, store, scope, query_vec=hybrid.last_query_vector
+                )
                 # Surface the actual execution mode so the caller can
                 # tell a healthy hybrid run from a silent fallback when
                 # the embeddings provider is unreachable (issue #17).
@@ -1118,28 +1214,31 @@ def create_engrama_mcp(
         query: str,
         store: Any,
         scope: MemoryScope,
+        query_vec: list[float] | None = None,
     ) -> dict[str, Any]:
-        """Build the search response with optional proactivity hints."""
-        # --- Proactivity: check for pending Insights related to search ---
+        """Build the search response with optional proactivity hints.
+
+        The pending-Insight hint reads the real pending queue (the same one
+        ``engrama_surface_insights`` serves) and gates each entry by cosine
+        relevance to the query (reusing ``query_vec``) and confidence — see
+        :func:`_related_pending_insights`. ``query_vec=None`` (fulltext-only /
+        degraded) skips the hint entirely.
+        """
         related_insights: list[dict[str, Any]] = []
-        if _proactive_state.get("enabled", True):
+        if _proactive_state.get("enabled", True) and query_vec:
             try:
-                insight_results = await store.fulltext_search(query, limit=3, scope=scope)
-                # Filter for pending Insights
-                related_insights = [
-                    {k: v for k, v in r.items() if k in ("title", "body", "confidence", "score")}
-                    for r in insight_results
-                    if r.get("type") == "Insight"
-                ]
-            except Exception:
-                pass
+                related_insights = await _related_pending_insights(store, scope, query_vec)
+            except Exception as e:
+                logger.warning("Proactive insight gate failed: %s", e)
 
         response: dict[str, Any] = {"results": results}
         if related_insights:
             response["pending_insights"] = related_insights
             response["proactive_hint"] = (
-                "There are pending Insights related to your search. "
-                "Consider presenting them to the user with engrama_surface_insights."
+                "Pending Insights related to your search were found. Present them with "
+                "engrama_surface_insights — pass title=<the insight title> (or "
+                "query=<this search query>) to surface these specific ones rather than "
+                "the whole queue."
             )
         return response
 
@@ -2904,16 +3003,55 @@ def create_engrama_mcp(
             return json.dumps({"status": "error", "error": str(e)})
 
         try:
-            results = await store.get_pending_insights(limit=params.limit, scope=scope)
-            insights = [
-                {
-                    "title": r["title"],
-                    "body": r["body"],
-                    "confidence": r["confidence"],
-                    "source_query": r["source_query"],
-                }
-                for r in results
-            ]
+            if params.title:
+                # Exact-title filter — surface one specific pending Insight.
+                rows = await store.get_pending_insights(
+                    limit=params.limit, scope=scope, title=params.title
+                )
+                insights = [
+                    {
+                        "engrama_id": r.get("engrama_id"),
+                        "title": r.get("title"),
+                        "body": r.get("body"),
+                        "confidence": r.get("confidence"),
+                        "source_query": r.get("source_query"),
+                    }
+                    for r in rows
+                ]
+            elif params.query:
+                # Relevance filter — same cosine gate as the search hint, so the
+                # agent can surface exactly the Insights a search flagged.
+                state = ctx.request_context.lifespan_context
+                embedder = state.get("embedder")
+                query_vec = None
+                if embedder is not None and getattr(embedder, "dimensions", 0) > 0:
+                    try:
+                        query_vec = await embedder.aembed(params.query)
+                    except Exception as e:
+                        logger.warning("Surface query embed failed: %s", e)
+                matched = await _related_pending_insights(store, scope, query_vec)
+                insights = [
+                    {
+                        "engrama_id": r.get("engrama_id"),
+                        "title": r.get("title"),
+                        "body": r.get("body"),
+                        "confidence": r.get("confidence"),
+                        "score": r.get("score"),
+                    }
+                    for r in matched[: params.limit]
+                ]
+            else:
+                rows = await store.get_pending_insights(limit=params.limit, scope=scope)
+                insights = [
+                    {
+                        "engrama_id": r.get("engrama_id"),
+                        "title": r.get("title"),
+                        "body": r.get("body"),
+                        "confidence": r.get("confidence"),
+                        "source_query": r.get("source_query"),
+                    }
+                    for r in rows
+                ]
         except Exception as e:
             logger.warning("Could not fetch pending insights: %s", e)
             insights = []

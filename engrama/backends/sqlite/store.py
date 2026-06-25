@@ -17,6 +17,7 @@ import json
 import logging
 import re
 import sqlite3
+import struct
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -1013,15 +1014,20 @@ class SqliteGraphStore:
         self,
         limit: int = 10,
         scope: MemoryScope | None = None,
+        title: str | None = None,
     ) -> list[dict[str, Any]]:
         """Pending Insights within ``scope``, ordered by confidence DESC then
         ``created_at`` DESC.
+
+        ``title`` optionally restricts to a single pending Insight by title.
+        Returns ``engrama_id`` so callers can reference a specific Insight.
 
         Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty list.
         """
         scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
         sql = """
-            SELECT key_value AS title,
+            SELECT json_extract(props, '$.engrama_id')   AS engrama_id,
+                   key_value AS title,
                    json_extract(props, '$.body')         AS body,
                    json_extract(props, '$.confidence')   AS confidence,
                    json_extract(props, '$.source_query') AS source_query,
@@ -1031,12 +1037,60 @@ class SqliteGraphStore:
               AND json_extract(props, '$.status') = 'pending'
         """
         params: dict[str, Any] = {"limit": limit}
+        if title is not None:
+            sql += "      AND key_value = :title\n"
+            params["title"] = title
         if scope_clause:
             sql += f"      AND {scope_clause}\n"
             params.update(scope_params)
         sql += "            ORDER BY confidence DESC, created_at DESC LIMIT :limit"
         cur = self._conn.execute(sql, params)
         return [dict(r) for r in cur.fetchall()]
+
+    def get_pending_insight_vectors(
+        self,
+        limit: int = 10,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Pending Insights **with their embedding** (joined from
+        ``node_embeddings``), for the proactive-search relevance gate. Same
+        ``status='pending'`` + ``scope`` filter as :meth:`get_pending_insights`
+        (single source of truth); skips insights with no stored vector.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty list.
+        """
+        scope_clause, scope_params = scope_filter_sql(scope, "n", json_column="props")
+        sql = """
+            SELECT json_extract(n.props, '$.engrama_id')   AS engrama_id,
+                   n.key_value                             AS title,
+                   json_extract(n.props, '$.body')         AS body,
+                   json_extract(n.props, '$.confidence')   AS confidence,
+                   v.embedding                             AS embedding
+            FROM nodes n
+            JOIN node_embeddings v ON v.node_id = n.id
+            WHERE n.label = 'Insight'
+              AND json_extract(n.props, '$.status') = 'pending'
+        """
+        params: dict[str, Any] = {"limit": limit}
+        if scope_clause:
+            sql += f"      AND {scope_clause}\n"
+            params.update(scope_params)
+        sql += "            ORDER BY confidence DESC LIMIT :limit"
+        out: list[dict[str, Any]] = []
+        for r in self._conn.execute(sql, params).fetchall():
+            blob = r["embedding"]
+            # vec0 stores little-endian float32; infer dim from blob length.
+            vec = list(struct.unpack(f"<{len(blob) // 4}f", blob)) if blob else []
+            out.append(
+                {
+                    "engrama_id": r["engrama_id"],
+                    "title": r["title"],
+                    "body": r["body"],
+                    "confidence": r["confidence"],
+                    "embedding": vec,
+                }
+            )
+        return out
 
     def update_insight_status(self, title: str, new_status: str) -> bool:
         # scope-exempt: write path — the MCP `engrama_approve_insight` and SDK
