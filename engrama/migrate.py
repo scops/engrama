@@ -780,6 +780,16 @@ def _gdpr_forget_sqlite(
     # by scope explicitly so an org-shared edge of this identity goes too.
     if node_ids:
         vector_store.delete_vectors([str(n) for n in node_ids])
+        # ``nodes_fts`` is a content-storing FTS5 table (not external-content),
+        # so the erased subject's indexed PII (name/title/description/notes/…)
+        # survives a ``DELETE FROM nodes`` unless we remove its rows too. Every
+        # other hard-delete path does this; GDPR erasure must as well, or the
+        # data is not actually forgotten (Art. 17). See backends/sqlite/store.py.
+        placeholders = ",".join("?" * len(node_ids))
+        conn.execute(
+            f"DELETE FROM nodes_fts WHERE rowid IN ({placeholders})",
+            [int(n) for n in node_ids],
+        )
     conn.execute("DELETE FROM edges WHERE org_id = ? AND user_id = ?", scope)
     conn.execute(f"DELETE FROM nodes WHERE {_SQL_SCOPE_NODES}", scope)
     conn.commit()

@@ -108,6 +108,16 @@ def _embedding_count(conn, node_ids: list[int]) -> int:
     ).fetchone()["n"]
 
 
+def _fts_count(conn, node_ids: list[int]) -> int:
+    if not node_ids:
+        return 0
+    placeholders = ",".join("?" * len(node_ids))
+    return conn.execute(
+        f"SELECT COUNT(*) AS n FROM nodes_fts WHERE rowid IN ({placeholders})",
+        node_ids,
+    ).fetchone()["n"]
+
+
 def test_requires_exactly_one_mode(populated) -> None:
     eng, vstore = populated
     with pytest.raises(ValueError):
@@ -166,6 +176,26 @@ def test_apply_is_idempotent(populated) -> None:
     assert second["deleted_nodes_by_label"] == {}
     assert second["deleted_relations"] == 0
     assert second["deleted_embeddings"] == 0
+
+
+def test_apply_purges_fulltext_index_rows(populated) -> None:
+    """Erasure must also remove the subject's rows from the content-storing FTS5
+    table — otherwise the indexed PII (name/title/description/…) survives on disk
+    after a 'permanent' delete, violating Art. 17. The bystander stays indexed.
+    """
+    eng, vstore = populated
+    conn = eng._store._conn
+    target_ids = _node_ids_for_scope(conn, _TARGET)
+    bystander_ids = _node_ids_for_scope(conn, _BYSTANDER)
+
+    # Precondition: the target's text is indexed before erasure.
+    assert _fts_count(conn, target_ids) == 2
+
+    gdpr_forget(eng._store, vstore, **_TARGET, apply=True)
+
+    # The erased subject leaves no searchable text behind; bystander intact.
+    assert _fts_count(conn, target_ids) == 0
+    assert _fts_count(conn, bystander_ids) == 2
 
 
 # --------------------------------------------------------------------------
