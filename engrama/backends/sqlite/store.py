@@ -733,6 +733,7 @@ class SqliteGraphStore:
                 FROM nodes_fts
                 JOIN nodes n ON n.id = nodes_fts.rowid
                 WHERE nodes_fts MATCH :match_expr
+                  AND COALESCE(json_extract(n.props, '$.status'), '') != 'archived'
         """
         if scope_clause:
             sql += f" AND {scope_clause}"
