@@ -128,7 +128,7 @@ Expected output: `backend=sqlite, ok=true, ...`
 
 Three ways:
 
-**A) From Claude Desktop** — see [MCP integration](#mcp-integration-claude-desktop) below.
+**A) From Claude Desktop or Codex** — see [MCP integration](#mcp-integration) below.
 
 **B) From Python:**
 
@@ -356,11 +356,13 @@ context. For shorter inputs and tighter latency, use
 
 ---
 
-## MCP integration (Claude Desktop)
+## MCP integration
 
 Engrama acts as an abstraction layer between the AI agent and the
-storage backend. Claude Desktop connects to the Engrama MCP server — it
+storage backend. The MCP client connects to the Engrama MCP server — it
 never sees database credentials, connection strings, or raw queries.
+
+### Claude Desktop
 
 **1. Find your Claude Desktop config file:**
 
@@ -402,6 +404,43 @@ you cloned the repo. On macOS/Linux use forward slashes (e.g.
 the server reads them from `.env` when running against Neo4j.
 
 **3. Restart Claude Desktop** completely (quit and reopen).
+
+### Codex
+
+Codex supports local MCP servers over `stdio`, so you can register
+Engrama straight from the CLI:
+
+```bash
+codex mcp add engrama -- uv run --directory C:\Proyectos\engrama --extra mcp engrama-mcp --backend sqlite
+```
+
+For Neo4j, swap `--backend sqlite` for `--backend neo4j` and add the
+extra too:
+
+```bash
+codex mcp add engrama -- uv run --directory C:\Proyectos\engrama --extra mcp --extra neo4j engrama-mcp --backend neo4j
+```
+
+Then confirm it registered:
+
+```bash
+codex mcp list
+```
+
+As with Claude Desktop, change `C:\Proyectos\engrama` to the actual path
+where you cloned the repo.
+
+### ChatGPT Desktop
+
+ChatGPT does **not** use this local `stdio` configuration directly.
+OpenAI's current docs describe ChatGPT's custom MCP connectors as
+**remote** MCP servers imported from `Settings -> Connectors`, over
+HTTP/SSE rather than a local command.
+
+That means `engrama-mcp` fits Claude Desktop and Codex well, but **not
+yet** as a direct ChatGPT Desktop integration. To use Engrama from
+ChatGPT you would expose a remote MCP endpoint and package it as a
+custom ChatGPT connector.
 
 You should now see the fourteen Engrama tools:
 

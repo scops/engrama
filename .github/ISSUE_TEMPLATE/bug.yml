@@ -54,8 +54,8 @@ body:
       label: Steps to reproduce
       description: Minimal commands or code that trigger the bug. Smaller is better.
       placeholder: |
-        1. `engrama init`
-        2. `engrama remember "..."`
+        1. `engrama init --profile developer`
+        2. `engrama search "..."`
         3. Observed: ...
     validations:
       required: true
