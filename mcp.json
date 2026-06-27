@@ -1,0 +1,566 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "engrama",
+  "displayName": "Engrama",
+  "version": "0.15.0",
+  "description": "Graph-based long-term memory for AI agents. Engrama stores entities, observations and relationships as a knowledge graph and lets agents traverse it to reconstruct context on demand. SQLite by default (zero external services); Neo4j optional for multi-process production.",
+  "license": "Apache-2.0",
+  "homepage": "https://scops.github.io/engrama/",
+  "repository": "https://github.com/scops/engrama",
+  "issues": "https://github.com/scops/engrama/issues",
+  "keywords": [
+    "ai",
+    "agents",
+    "memory",
+    "knowledge-graph",
+    "sqlite",
+    "neo4j",
+    "mcp",
+    "graph"
+  ],
+  "runtime": "python",
+  "requiresPython": ">=3.11",
+  "install": {
+    "pip": "pip install \"engrama[mcp]\"",
+    "uv": "uv add \"engrama[mcp]\""
+  },
+  "transports": [
+    "stdio",
+    "streamable-http"
+  ],
+  "mcpServers": {
+    "engrama": {
+      "command": "engrama-mcp",
+      "args": [],
+      "env": {
+        "GRAPH_BACKEND": "sqlite",
+        "ENGRAMA_DB_PATH": "~/.engrama/engrama.db"
+      }
+    }
+  },
+  "configuration": {
+    "GRAPH_BACKEND": {
+      "description": "Storage backend: 'sqlite' (default, zero-dep) or 'neo4j'.",
+      "default": "sqlite",
+      "required": false
+    },
+    "ENGRAMA_DB_PATH": {
+      "description": "SQLite database file path (sqlite backend).",
+      "default": "~/.engrama/engrama.db",
+      "required": false
+    },
+    "NEO4J_URI": {
+      "description": "Bolt URI of the Neo4j server (neo4j backend), e.g. bolt://localhost:7687.",
+      "required": false,
+      "secret": false
+    },
+    "NEO4J_USERNAME": {
+      "description": "Neo4j username (neo4j backend).",
+      "required": false,
+      "secret": false
+    },
+    "NEO4J_PASSWORD": {
+      "description": "Neo4j password (neo4j backend). Provide via environment/secret store, never commit.",
+      "required": false,
+      "secret": true
+    },
+    "VAULT_PATH": {
+      "description": "Absolute path to Engrama's Obsidian vault; enables the sync/ingest tools when set.",
+      "required": false
+    },
+    "ENGRAMA_REQUIRE_IDENTITY": {
+      "description": "Fail-closed multi-tenant mode: reject requests with no X-Engrama-Org-Id / X-Engrama-User-Id headers instead of pooling them into the standalone identity.",
+      "default": "false",
+      "required": false
+    }
+  },
+  "tools": [
+    {
+      "name": "engrama_status",
+      "title": "Engrama Status",
+      "description": "Return a snapshot of the running Engrama MCP server's configuration.",
+      "annotations": {
+        "title": "Engrama Status",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_search",
+      "title": "Search Memory Graph",
+      "description": "Search the memory graph.  Use this at the START of every session\nto load context relevant to the current topic, and whenever you need\nto check whether a node already exists before creating it.",
+      "annotations": {
+        "title": "Search Memory Graph",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "Lucene-syntax search string (e.g. 'neo4j', 'Python framework').",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum results to return.",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "SearchInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_remember",
+      "title": "Remember (Merge Node)",
+      "description": "Store a piece of knowledge as a node in the memory graph.",
+      "annotations": {
+        "title": "Remember (Merge Node)",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {
+          "label": {
+            "description": "Node label — one of: CTF, Client, Concept, Course, Dataset, Decision, Domain, Exercise, Experiment, Gear, Insight, Location, Material, Model, Person, Photo, Pipeline, Problem, Project, Species, Target, Technique, Technology, Tool, Vulnerability.",
+            "title": "Label",
+            "type": "string"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Node properties. Must include 'name' (or 'title' for Decision/Problem). For rich retrieval, include enrichment fields:\n  - 'summary': 2–3 sentence overview — what this is, why it matters\n  - 'details': comprehensive context — techniques, decisions, approaches, alternatives, key examples. The richer this field, the more useful the memory becomes.\n  - 'tags': freeform list for filtering, e.g. [\"active-directory\", \"credential-access\", \"windows\"]\n  - 'source': how this knowledge was captured (\"conversation\", \"ingest\", \"manual\", \"sync\")\n  - 'status': current state (\"active\", \"resolved\", \"superseded\")\nExample of a GOOD node:\n{\"name\": \"kerberoasting-lab\", \"summary\": \"Hands-on lab demonstrating Kerberoasting against AD service accounts using Rubeus and Hashcat, with detection via Event 4769.\", \"details\": \"Students request TGS tickets for SPNs with Rubeus kerberoast, crack offline with Hashcat. Covers RC4 vs AES crackability, detection via Event 4769 anomalies. Defense: gMSA, AES-only policy, honey tokens.\", \"tags\": [\"active-directory\", \"credential-access\", \"lab\"], \"source\": \"conversation\"}\nExample of a BAD (too thin) node: {\"name\": \"kerberoasting-lab\", \"description\": \"Lab about kerberoasting\"}",
+            "title": "Properties"
+          },
+          "relations": {
+            "additionalProperties": {
+              "items": {},
+              "type": "array"
+            },
+            "description": "Optional relations to create in the same call. Format: {\"REL_TYPE\": [\"target_name\", ...]}. Example: {\"USES\": [\"BDK\"], \"IN_DOMAIN\": [\"teaching\"], \"FOR\": [\"Accenture\"]}. Targets are matched by name; a missing target is created as a stub. By default the stub's label is inferred from the relation type, which is lossy. To pin it, pass an object instead of a string: {\"RELATED_TO\": [{\"name\": \"BDK\", \"label\": \"Tool\"}]}.",
+            "title": "Relations",
+            "type": "object"
+          }
+        },
+        "required": [
+          "label",
+          "properties"
+        ],
+        "title": "RememberInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_relate",
+      "title": "Relate (Merge Relationship)",
+      "description": "Connect two nodes with a typed relationship.  Always call this\nright after engrama_remember to wire the new node into the graph.\nAlso use it to record newly discovered connections between existing\nnodes.  Both endpoints must already exist (create them first with\nengrama_remember if needed).",
+      "annotations": {
+        "title": "Relate (Merge Relationship)",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {
+          "from_name": {
+            "description": "Name of the source node.",
+            "minLength": 1,
+            "title": "From Name",
+            "type": "string"
+          },
+          "from_label": {
+            "description": "Label of the source node — one of: CTF, Client, Concept, Course, Dataset, Decision, Domain, Exercise, Experiment, Gear, Insight, Location, Material, Model, Person, Photo, Pipeline, Problem, Project, Species, Target, Technique, Technology, Tool, Vulnerability.",
+            "title": "From Label",
+            "type": "string"
+          },
+          "rel_type": {
+            "description": "Relationship type — one of: APPLIES, BELONGS_TO, CAUSED_BY, COMPOSED_OF, CONTRADICTS, COVERS, DEPENDS_ON, DOCUMENTS, EVALUATES, EXECUTED_WITH, EXPLOITS, FEATURES, FEEDS, FOR, HAS, HAS_MATERIAL, IMPLEMENTS, INCLUDES, INFORMED_BY, INHABITS, INSTANCE_OF, INVOLVES, IN_DOMAIN, LINKS_TO, ORIGIN_OF, PERFORMS, PRACTICES, PREREQUISITE_OF, RELATED_TO, REPLACES, REQUIRES, RUNS, SERVES, SHOT_WITH, SIMILAR_TO, SOLVED_BY, SUBSET_OF, TAKEN_AT, TARGETS, TEACHES, TRAINS_ON, USES.",
+            "title": "Rel Type",
+            "type": "string"
+          },
+          "to_name": {
+            "description": "Name of the target node.",
+            "minLength": 1,
+            "title": "To Name",
+            "type": "string"
+          },
+          "to_label": {
+            "description": "Label of the target node — one of: CTF, Client, Concept, Course, Dataset, Decision, Domain, Exercise, Experiment, Gear, Insight, Location, Material, Model, Person, Photo, Pipeline, Problem, Project, Species, Target, Technique, Technology, Tool, Vulnerability.",
+            "title": "To Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_name",
+          "from_label",
+          "rel_type",
+          "to_name",
+          "to_label"
+        ],
+        "title": "RelateInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_context",
+      "title": "Get Context (Neighbourhood)",
+      "description": "Retrieve a node and its neighbourhood up to N hops.  Use this to\nbuild rich context before answering a question — e.g. fetch the\nuser's Person node to see their projects, or a Technology node to\nsee what it connects to.  Works even for isolated nodes (returns the\nnode with an empty neighbours list).",
+      "annotations": {
+        "title": "Get Context (Neighbourhood)",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "description": "Name of the starting node.",
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "label": {
+            "description": "Label of the starting node — one of: CTF, Client, Concept, Course, Dataset, Decision, Domain, Exercise, Experiment, Gear, Insight, Location, Material, Model, Person, Photo, Pipeline, Problem, Project, Species, Target, Technique, Technology, Tool, Vulnerability.",
+            "title": "Label",
+            "type": "string"
+          },
+          "hops": {
+            "default": 1,
+            "description": "Maximum relationship depth to traverse.",
+            "maximum": 3,
+            "minimum": 1,
+            "title": "Hops",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "ContextInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_sync_note",
+      "title": "Sync Single Note to Graph",
+      "description": "Sync a single note from Engrama's internal Obsidian vault to the graph.",
+      "annotations": {
+        "title": "Sync Single Note to Graph",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "description": "Vault-relative path to the note, e.g. '10-projects/engrama.md'.",
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "When true, do not write to the graph or inject `engrama_id` into the note's frontmatter. Return the same JSON shape as a real sync, with a `would_*` view of what the operation would have done. Useful to preview a sync against a different vault before committing.",
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SyncNoteInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_sync_vault",
+      "title": "Sync Entire Vault to Graph",
+      "description": "Scan Engrama's internal Obsidian vault and reconcile all notes.",
+      "annotations": {
+        "title": "Sync Entire Vault to Graph",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {
+          "folder": {
+            "default": "",
+            "description": "Optional folder to restrict the scan (vault-relative). Empty string scans the entire vault.",
+            "title": "Folder",
+            "type": "string"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "When true, do not write to the graph or inject `engrama_id` into any note's frontmatter. Return the same JSON shape as a real sync, with counts of what *would* be created/updated/skipped and the list of files that would receive an `engrama_id` injection. Useful to preview the impact before committing to a full scan.",
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "SyncVaultInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_ingest",
+      "title": "Ingest Content",
+      "description": "Read a document, conversation, or text and return its content with\nentity extraction guidance.  After calling this tool, use the returned\ncontent and extraction prompt to identify entities and relationships,\nthen call ``engrama_remember`` with inline relations for each entity.",
+      "annotations": {
+        "title": "Ingest Content",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {
+          "source": {
+            "description": "Content to ingest. Either a vault-relative path to a note (e.g. '10-projects/websocket-debugging.md') or raw text content.",
+            "title": "Source",
+            "type": "string"
+          },
+          "source_type": {
+            "default": "note",
+            "description": "Type of source: 'note' (vault path — will be read), 'text' (raw text content), or 'conversation' (conversation transcript).",
+            "title": "Source Type",
+            "type": "string"
+          },
+          "context_hint": {
+            "default": "",
+            "description": "Optional hint about the context (e.g. project name, domain, course). Helps guide entity extraction.",
+            "title": "Context Hint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "IngestInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_reflect",
+      "title": "Reflect (Adaptive Pattern Detection)",
+      "description": "Detect cross-entity patterns in the memory graph.  Call this\nperiodically (e.g. at the end of a session or when the user asks\nfor insights) to discover solution transfers between projects,\nshared technologies, training opportunities, technique transfers,\nconcept clusters, stale knowledge, and under-connected nodes.",
+      "annotations": {
+        "title": "Reflect (Adaptive Pattern Detection)",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_surface_insights",
+      "title": "Surface Pending Insights",
+      "description": "Retrieve pending Insights for human review.  Call this after\nengrama_reflect, or periodically, to show the user patterns the\ngraph has detected.  Present each Insight and ask the user to\napprove or dismiss it — never act on an Insight without explicit\napproval.",
+      "annotations": {
+        "title": "Surface Pending Insights",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of pending Insights to return.",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: return only the pending Insight with this exact title.",
+            "title": "Title"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: return only pending Insights semantically related to this query (same cosine gate as the search proactive hint). Ignored if ``title`` is given.",
+            "title": "Query"
+          }
+        },
+        "title": "SurfaceInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_approve_insight",
+      "title": "Approve or Dismiss Insight",
+      "description": "Approve or dismiss a pending Insight after human review.",
+      "annotations": {
+        "title": "Approve or Dismiss Insight",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "description": "Exact title of the Insight.",
+            "title": "Title",
+            "type": "string"
+          },
+          "action": {
+            "default": "approve",
+            "description": "'approve' or 'dismiss'.",
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "ApproveInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_write_insight_to_vault",
+      "title": "Write Approved Insight to Note",
+      "description": "Append an approved Insight as a section in an Obsidian note.",
+      "annotations": {
+        "title": "Write Approved Insight to Note",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "description": "Exact title of the approved Insight.",
+            "title": "Title",
+            "type": "string"
+          },
+          "target_note": {
+            "description": "Relative path to the Obsidian note to append to.",
+            "title": "Target Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "target_note"
+        ],
+        "title": "WriteInsightInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_reindex",
+      "title": "Reindex Embeddings",
+      "description": "Find and repair nodes that are missing their vector embedding.",
+      "annotations": {
+        "title": "Reindex Embeddings",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "description": "One of 'detect' | 'classify' | 'apply'. Run them in that order.",
+            "title": "Mode",
+            "type": "string"
+          },
+          "dry_run": {
+            "default": true,
+            "description": "Only meaningful for mode='apply'. Default true (simulate). Pass false explicitly to actually re-embed and write.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 100,
+            "description": "Maximum number of vector-less nodes to process in this call.",
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "ReindexInput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "engrama_gdpr_forget",
+      "title": "Erase My Data (GDPR right-to-erasure)",
+      "description": "Permanently erase **the caller's own** memory (GDPR, Spec 001 US-3).",
+      "annotations": {
+        "title": "Erase My Data (GDPR right-to-erasure)",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "dry-run",
+            "description": "'dry-run' (default, safe) reports what would be erased without deleting anything; 'apply' permanently erases the caller's own identity. There is no undo and no server-side backup.",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "GdprForgetInput",
+        "type": "object"
+      }
+    }
+  ]
+}
