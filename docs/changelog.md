@@ -9,6 +9,20 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- **`mcp.json` server manifest** for marketplace / public-build publication.
+  It declares the server metadata, install commands, a Claude Desktop drop-in
+  `mcpServers` block, the configurable environment variables, and the full
+  catalog of all 14 MCP tools with their JSON-Schema `inputSchema` and tool
+  annotations. The version is kept in lock-step with `pyproject.toml`.
+- **`examples/` fleshed out** — a runnable Python SDK quickstart
+  (`examples/python_sdk/quickstart.py`), a LangChain tool-wrapping example, an
+  `examples/README.md` index, and a `claude_desktop/config.dev.json` variant
+  for source checkouts.
+- **README "Security considerations" section** summarising data residency,
+  Neo4j authentication, tenant isolation, GDPR erasure and network exposure.
+
 ## [0.15.0] — 2026-06-26
 
 ### Added

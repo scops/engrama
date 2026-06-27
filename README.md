@@ -146,6 +146,42 @@ engrama verify
 
 ---
 
+## Security considerations
+
+Engrama stores everything an agent learns, so treat the memory graph as
+sensitive data. The full policy lives in
+**[docs/security.md](docs/security.md)**; the essentials:
+
+- **Data residency.** On the default SQLite backend all data lives in a
+  single local file (`~/.engrama/engrama.db` by default) — nothing leaves
+  your machine. It is plain SQLite: keep it off shared filesystems, back
+  it up, and rely on filesystem permissions for at-rest protection. On the
+  Neo4j backend, data resides wherever you host Neo4j; you own that
+  deployment and its region.
+- **Neo4j authentication.** Supply credentials through `.env` /
+  environment variables (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`)
+  — never commit them. The shipped `docker-compose.yml` is for local dev;
+  change the default password and enable TLS before any networked use.
+- **Embedding providers.** Endpoints reached via `OPENAI_BASE_URL` should
+  use HTTPS unless they are on localhost or a trusted network. With
+  `EMBEDDING_PROVIDER=null` no text is sent anywhere; search degrades to
+  fulltext-only.
+- **Tenant isolation.** Since 0.13.0 every node and relation is owned by an
+  `(org_id, user_id)` identity and reads are **fail-closed**. A single
+  install runs as one stable standalone identity; a multi-tenant
+  deployment must inject the identity per request from an authenticating
+  gateway (set `ENGRAMA_REQUIRE_IDENTITY=1` to fail closed on missing
+  headers). See
+  **[docs/security.md](docs/security.md#tenant-isolation-multi-tenant)**.
+- **Right to erasure.** Each identity can permanently erase its own memory
+  via the `engrama_gdpr_forget` tool (GDPR). There is no undo and no
+  server-side backup.
+- **Network exposure.** The MCP server is meant for a local client. The
+  optional Streamable HTTP transport ships **without authentication** —
+  keep it on loopback or behind your own authenticated gateway.
+
+---
+
 ## 📚 Full Documentation
 
 All further details, including **MCP integration (Claude Desktop)**, **Obsidian sync**, **Architecture**, and the complete **API Reference**, are available in the official documentation.
