@@ -61,8 +61,7 @@ In practice the first branch covers ~90% of users.
 ## When to pick SQLite
 
 - **You're getting started.** Zero install friction, no Docker, no JVM.
-  `git clone … && uv sync && uv run engrama init` and you're querying
-  the graph (Engrama is not yet on PyPI; install from source for now).
+  `pip install engrama && engrama init` and you're querying the graph.
 - **Single-agent setups.** One Claude Desktop, one MCP client, one
   long-running script. SQLite handles this perfectly.
 - **CI runs and tests.** No external service to spin up — `pytest` works
@@ -164,7 +163,7 @@ You can, but a single Engrama process binds to one. Different processes
 can target different backends — useful for testing or migrations.
 
 **Does SQLite support all the features Neo4j has?**
-For the public Engrama API (the 12 MCP tools, the SDK, the CLI), yes —
+For the public Engrama API (the 14 MCP tools, the SDK, the CLI), yes —
 they're feature-equivalent and exercised by the same parameterised
 contract suite. The only thing SQLite cannot do is execute raw Cypher
 patterns; it uses pre-translated SQL queries instead. If a future

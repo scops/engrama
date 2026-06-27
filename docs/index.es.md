@@ -19,8 +19,7 @@ conocimiento acumulado.
 Hay dos backends de primera clase:
 
 - **SQLite + `sqlite-vec`** (por defecto desde la 0.9) — un único
-  archivo, sin servicios externos, `git clone` + `uv sync` y a
-  correr (Engrama aún no está en PyPI; instalación desde fuente).
+  archivo, sin servicios externos, `pip install engrama` y a correr.
 - **Neo4j 5.26 LTS** (opcional) — para producción multiproceso, índices
   vectoriales muy grandes o equipos que ya usan Cypher.
 
@@ -541,7 +540,7 @@ coincidencia exacta de palabras clave.
 
 **Cómo activar la búsqueda híbrida:**
 1. Establece `EMBEDDING_PROVIDER` en `.env` (ver
-   [Configuración de embeddings](#configuración-de-embeddings-opcional)).
+   [Configuración de embeddings](#configuracion-de-embeddings-opcional)).
 2. Ejecuta `uv run engrama reindex` para generar embeddings de nodos
    existentes.
 3. Los nodos nuevos reciben embeddings automáticamente al crearse.
@@ -570,7 +569,7 @@ Valores por defecto: `β` (grafo) = 0.15, `γ` (temporal) = 0.1, RRF `k` =
 60, saltos de grafo = 2, decaimiento de cohesión = 0.5. La mezcla lineal
 heredada (con el `graph_boost` por grado) se conserva para revertir con
 un solo flag vía `ENGRAMA_RANKING_LEGACY=1`. Consulta la [referencia de
-configuración](#referencia-de-configuración) para todos los knobs.
+configuración](#referencia-de-configuracion) para todos los knobs.
 
 ---
 
@@ -699,7 +698,6 @@ freelance.
 | `NEO4J_USERNAME` | `neo4j` | Usuario Neo4j |
 | `NEO4J_PASSWORD` | — | Contraseña Neo4j (requerida con `GRAPH_BACKEND=neo4j`) |
 | `NEO4J_DATABASE` | `neo4j` | Nombre de base de datos Neo4j |
-| `ENGRAMA_PROFILE` | `developer` | Perfil para generar el esquema |
 | `VAULT_PATH` | `~/Documents/vault` | Raíz del vault de Obsidian |
 | `EMBEDDING_PROVIDER` | `none` | `none`, `ollama` u `openai` |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Nombre del modelo |

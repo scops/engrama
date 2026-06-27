@@ -28,7 +28,7 @@
 > Goal: use the graph from Claude Desktop via MCP without writing Cypher manually.
 
 - [x] `engrama/adapters/mcp/server.py` — native MCP server via FastMCP + async Neo4j driver
-- [x] Ten MCP tools: search, remember, relate, context, sync_note, sync_vault, reflect, surface_insights, approve_insight, write_insight_to_vault (the set has since grown to twelve — `engrama_ingest` landed in Phase 9 and `engrama_status` in #52; see architecture.md for the current list)
+- [x] Ten MCP tools: search, remember, relate, context, sync_note, sync_vault, reflect, surface_insights, approve_insight, write_insight_to_vault (the set has since grown to fourteen — `engrama_ingest` landed in Phase 9, `engrama_status` in #52, and `engrama_reindex` / `engrama_gdpr_forget` later; see architecture.md for the current list)
 - [x] `examples/claude_desktop/config.json` — ready-to-paste config
 - [x] `examples/claude_desktop/system-prompt.md` — memory system prompt
 - [ ] End-to-end test: Claude Desktop → MCP → Neo4j → response (manual verification done, automated test pending)

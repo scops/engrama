@@ -592,7 +592,7 @@ Native MCP server built with FastMCP and the matching async store. All
 storage logic lives in `*AsyncStore`; the MCP tool handlers handle
 orchestration, validation, vault I/O, and response formatting only.
 
-Thirteen tools:
+Fourteen tools:
 
 - `engrama_status` — read-only introspection: vault path, backend,
   embedder, search mode, version, and `admin_tools` (the not-tenant-isolated
@@ -616,6 +616,8 @@ Thirteen tools:
 - `engrama_surface_insights` — read pending Insights for agent presentation
 - `engrama_approve_insight` — human approves or dismisses an Insight
 - `engrama_write_insight_to_vault` — append approved Insight to Obsidian note
+- `engrama_gdpr_forget` — permanently erase the caller's own memory
+  (GDPR right-to-erasure); `mode='dry-run'` previews, `mode='apply'` deletes
 
 ### `engrama_status` response shape
 
@@ -625,7 +627,7 @@ payload["vault"]:` reliably.
 
 ```json
 {
-  "version": "0.13.0",
+  "version": "0.15.0",
   "backend": {
     "name": "sqlite",
     "ok": true,
@@ -702,7 +704,6 @@ through a conversational interview.
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | — | Neo4j password (required when `GRAPH_BACKEND=neo4j`) |
 | `NEO4J_DATABASE` | `neo4j` | Neo4j database name |
-| `ENGRAMA_PROFILE` | `developer` | Profile name for schema generation |
 | `VAULT_PATH` | `~/Documents/vault` | Obsidian vault root path |
 | `EMBEDDING_PROVIDER` | `none` | `none`, `ollama`, or `openai` |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
@@ -710,8 +711,11 @@ through a conversational interview.
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compat endpoint |
 | `OPENAI_API_KEY` | — | API key (when needed) |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint (legacy provider) |
-| `HYBRID_ALPHA` | `0.6` | Vector vs fulltext weight |
-| `HYBRID_GRAPH_BETA` | `0.15` | Graph topology boost weight |
+| `ENGRAMA_FUSION_MODE` | `rrf` | Relevance base: `rrf` (default) or `linear` (legacy blend) |
+| `ENGRAMA_RRF_K` | `60` | RRF constant `k` — larger flattens the top-rank advantage |
+| `ENGRAMA_GRAPH_RERANK` | `true` | Toggle the graph node-distance rerank stage (rrf mode) |
+| `ENGRAMA_GRAPH_HOPS` | `2` | Max hops for cohesion + anchor distance |
+| `ENGRAMA_RANKING_LEGACY` | `false` | One-flag revert to the legacy linear blend |
 | `ENGRAMA_ORG_ID` | — | Standalone owning org (Spec 001); unset → derived standalone identity |
 | `ENGRAMA_USER_ID` | — | Standalone owning user (Spec 001); unset → derived standalone identity |
 | `ENGRAMA_LOCAL_SUB` | — | Seed for the derived standalone identity when org/user are unset |
