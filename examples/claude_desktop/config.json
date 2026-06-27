@@ -1,13 +1,13 @@
 {
+  "//": "Drop-in Claude Desktop config. Requires `pip install \"engrama[mcp]\"` so the `engrama-mcp` command is on PATH. For a source checkout, use config.dev.json instead.",
   "mcpServers": {
     "engrama": {
-      "command": "uv",
-      "args": [
-        "run",
-        "--directory", "C:\\Proyectos\\engrama",
-        "--extra", "mcp",
-        "engrama-mcp"
-      ]
+      "command": "engrama-mcp",
+      "args": [],
+      "env": {
+        "GRAPH_BACKEND": "sqlite",
+        "ENGRAMA_DB_PATH": "~/.engrama/engrama.db"
+      }
     }
   }
 }

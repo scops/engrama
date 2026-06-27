@@ -1,0 +1,17 @@
+{
+  "//": "Claude Desktop config for a SOURCE checkout (no PyPI install). Replace the --directory path with the absolute path to your engrama clone.",
+  "mcpServers": {
+    "engrama": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/absolute/path/to/engrama",
+        "--extra", "mcp",
+        "engrama-mcp"
+      ],
+      "env": {
+        "GRAPH_BACKEND": "sqlite"
+      }
+    }
+  }
+}
