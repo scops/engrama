@@ -704,7 +704,6 @@ through a conversational interview.
 | `NEO4J_USERNAME` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | — | Neo4j password (required when `GRAPH_BACKEND=neo4j`) |
 | `NEO4J_DATABASE` | `neo4j` | Neo4j database name |
-| `ENGRAMA_PROFILE` | `developer` | Profile name for schema generation |
 | `VAULT_PATH` | `~/Documents/vault` | Obsidian vault root path |
 | `EMBEDDING_PROVIDER` | `none` | `none`, `ollama`, or `openai` |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
@@ -712,8 +711,11 @@ through a conversational interview.
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compat endpoint |
 | `OPENAI_API_KEY` | — | API key (when needed) |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint (legacy provider) |
-| `HYBRID_ALPHA` | `0.6` | Vector vs fulltext weight |
-| `HYBRID_GRAPH_BETA` | `0.15` | Graph topology boost weight |
+| `ENGRAMA_FUSION_MODE` | `rrf` | Relevance base: `rrf` (default) or `linear` (legacy blend) |
+| `ENGRAMA_RRF_K` | `60` | RRF constant `k` — larger flattens the top-rank advantage |
+| `ENGRAMA_GRAPH_RERANK` | `true` | Toggle the graph node-distance rerank stage (rrf mode) |
+| `ENGRAMA_GRAPH_HOPS` | `2` | Max hops for cohesion + anchor distance |
+| `ENGRAMA_RANKING_LEGACY` | `false` | One-flag revert to the legacy linear blend |
 | `ENGRAMA_ORG_ID` | — | Standalone owning org (Spec 001); unset → derived standalone identity |
 | `ENGRAMA_USER_ID` | — | Standalone owning user (Spec 001); unset → derived standalone identity |
 | `ENGRAMA_LOCAL_SUB` | — | Seed for the derived standalone identity when org/user are unset |

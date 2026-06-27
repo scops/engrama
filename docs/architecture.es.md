@@ -729,7 +729,6 @@ genera módulos personalizados mediante una entrevista conversacional.
 | `NEO4J_USERNAME` | `neo4j` | Nombre de usuario de Neo4j |
 | `NEO4J_PASSWORD` | — | Contraseña de Neo4j (requerida cuando `GRAPH_BACKEND=neo4j`) |
 | `NEO4J_DATABASE` | `neo4j` | Nombre de la base de datos Neo4j |
-| `ENGRAMA_PROFILE` | `developer` | Nombre de perfil para la generación del esquema |
 | `VAULT_PATH` | `~/Documents/vault` | Ruta raíz del vault de Obsidian |
 | `EMBEDDING_PROVIDER` | `none` | `none`, `ollama` u `openai` |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Nombre del modelo de embedding |
@@ -737,8 +736,11 @@ genera módulos personalizados mediante una entrevista conversacional.
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Endpoint OpenAI-compatible |
 | `OPENAI_API_KEY` | — | Clave API (cuando sea necesaria) |
 | `OLLAMA_URL` | `http://localhost:11434` | Endpoint de la API de Ollama (proveedor legacy) |
-| `HYBRID_ALPHA` | `0.6` | Peso vectorial vs fulltext |
-| `HYBRID_GRAPH_BETA` | `0.15` | Peso del boost por topología del grafo |
+| `ENGRAMA_FUSION_MODE` | `rrf` | Base de relevancia: `rrf` (por defecto) o `linear` (mezcla legacy) |
+| `ENGRAMA_RRF_K` | `60` | Constante `k` de RRF — mayor aplana la ventaja del primer rango |
+| `ENGRAMA_GRAPH_RERANK` | `true` | Activa la etapa de rerank por distancia en el grafo (modo rrf) |
+| `ENGRAMA_GRAPH_HOPS` | `2` | Saltos máximos para cohesión + distancia al ancla |
+| `ENGRAMA_RANKING_LEGACY` | `false` | Revierte con un flag a la mezcla lineal legacy |
 | `ENGRAMA_ORG_ID` | — | Org propietaria en standalone (Spec 001); sin fijar → identidad standalone derivada |
 | `ENGRAMA_USER_ID` | — | Usuario propietario en standalone (Spec 001); sin fijar → identidad standalone derivada |
 | `ENGRAMA_LOCAL_SUB` | — | Semilla de la identidad standalone derivada cuando org/user no están fijados |

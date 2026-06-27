@@ -698,7 +698,6 @@ freelance.
 | `NEO4J_USERNAME` | `neo4j` | Usuario Neo4j |
 | `NEO4J_PASSWORD` | — | Contraseña Neo4j (requerida con `GRAPH_BACKEND=neo4j`) |
 | `NEO4J_DATABASE` | `neo4j` | Nombre de base de datos Neo4j |
-| `ENGRAMA_PROFILE` | `developer` | Perfil para generar el esquema |
 | `VAULT_PATH` | `~/Documents/vault` | Raíz del vault de Obsidian |
 | `EMBEDDING_PROVIDER` | `none` | `none`, `ollama` u `openai` |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Nombre del modelo |

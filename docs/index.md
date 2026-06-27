@@ -733,7 +733,6 @@ creative.
 | `NEO4J_USERNAME` | `neo4j` | Neo4j user |
 | `NEO4J_PASSWORD` | — | Neo4j password (required when `GRAPH_BACKEND=neo4j`) |
 | `NEO4J_DATABASE` | `neo4j` | Neo4j database name |
-| `ENGRAMA_PROFILE` | `developer` | Profile for schema generation |
 | `VAULT_PATH` | `~/Documents/vault` | Obsidian vault root path |
 | `EMBEDDING_PROVIDER` | `none` | `none`, `ollama`, or `openai` |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Model name |

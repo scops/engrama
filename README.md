@@ -164,7 +164,7 @@ sensitive data. The full policy lives in
   change the default password and enable TLS before any networked use.
 - **Embedding providers.** Endpoints reached via `OPENAI_BASE_URL` should
   use HTTPS unless they are on localhost or a trusted network. With
-  `EMBEDDING_PROVIDER=null` no text is sent anywhere; search degrades to
+  `EMBEDDING_PROVIDER=none` no text is sent anywhere; search degrades to
   fulltext-only.
 - **Tenant isolation.** Since 0.13.0 every node and relation is owned by an
   `(org_id, user_id)` identity and reads are **fail-closed**. A single
