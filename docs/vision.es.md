@@ -10,7 +10,7 @@ Karpathy construyó su segundo cerebro en Markdown y wikis — eso funciona para
 
 **Engrama** es un framework Python plug-and-play que proporciona a cualquier agente de IA una memoria persistente y estructurada respaldada por un grafo de conocimiento. El agente puede recordar, asociar, olvidar y razonar sobre el conocimiento acumulado — exactamente como lo haría un humano con buena memoria.
 
-El grafo funciona sobre **SQLite + sqlite-vec** (por defecto desde la 0.9 — un único archivo, sin servicios externos, `git clone` + `uv sync` y a correr; Engrama aún no está en PyPI) o **Neo4j 5.26 LTS** (opcional para producción multiproceso, índices vectoriales grandes o equipos que ya usan Cypher). Ambos exponen el mismo modelo de datos y las mismas doce herramientas MCP — consulta [backends.md](backends.md) para la guía de elección.
+El grafo funciona sobre **SQLite + sqlite-vec** (por defecto desde la 0.9 — un único archivo, sin servicios externos, `pip install engrama` y a correr) o **Neo4j 5.26 LTS** (opcional para producción multiproceso, índices vectoriales grandes o equipos que ya usan Cypher). Ambos exponen el mismo modelo de datos y las mismas catorce herramientas MCP — consulta [backends.md](backends.md) para la guía de elección.
 
 ## Qué lo diferencia
 

@@ -19,8 +19,7 @@ conocimiento acumulado.
 Hay dos backends de primera clase:
 
 - **SQLite + `sqlite-vec`** (por defecto desde la 0.9) — un único
-  archivo, sin servicios externos, `git clone` + `uv sync` y a
-  correr (Engrama aún no está en PyPI; instalación desde fuente).
+  archivo, sin servicios externos, `pip install engrama` y a correr.
 - **Neo4j 5.26 LTS** (opcional) — para producción multiproceso, índices
   vectoriales muy grandes o equipos que ya usan Cypher.
 

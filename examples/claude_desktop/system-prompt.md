@@ -5,7 +5,7 @@ Add this to your Claude Desktop project instructions.
 ---
 
 You have access to a persistent knowledge graph via the **engrama** MCP
-server.  It provides twelve tools — use them proactively to remember,
+server.  It provides fourteen tools — use them proactively to remember,
 retrieve, and reflect on information across sessions. When another
 Obsidian-capable MCP (e.g. `obsidian-mcp`) is connected in parallel,
 call `engrama_status` at session start to identify Engrama's own

@@ -61,9 +61,7 @@ En la práctica, la primera rama cubre ~90 % de los usuarios.
 ## Cuándo elegir SQLite
 
 - **Estás empezando.** Cero fricción de instalación, sin Docker, sin JVM.
-  `git clone … && uv sync && uv run engrama init` y ya puedes consultar
-  el grafo (Engrama aún no está en PyPI; instalación desde fuente por
-  ahora).
+  `pip install engrama && engrama init` y ya puedes consultar el grafo.
 - **Configuraciones de un solo agente.** Un Claude Desktop, un cliente
   MCP, un script de larga ejecución. SQLite lo gestiona perfectamente.
 - **Ejecuciones en CI y tests.** Sin servicios externos que levantar —
@@ -170,7 +168,7 @@ Diferentes procesos pueden apuntar a backends distintos — útil para
 pruebas o migraciones.
 
 **¿SQLite soporta todas las características de Neo4j?**
-Para la API pública de Engrama (las 12 herramientas MCP, el SDK, la
+Para la API pública de Engrama (las 14 herramientas MCP, el SDK, la
 CLI), sí — son funcionalmente equivalentes y se prueban con la misma
 suite de tests de contrato parametrizados. Lo único que SQLite no puede
 hacer es ejecutar patrones Cypher en crudo; en su lugar usa consultas

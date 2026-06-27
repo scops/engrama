@@ -592,7 +592,7 @@ Native MCP server built with FastMCP and the matching async store. All
 storage logic lives in `*AsyncStore`; the MCP tool handlers handle
 orchestration, validation, vault I/O, and response formatting only.
 
-Thirteen tools:
+Fourteen tools:
 
 - `engrama_status` — read-only introspection: vault path, backend,
   embedder, search mode, version, and `admin_tools` (the not-tenant-isolated
@@ -616,6 +616,8 @@ Thirteen tools:
 - `engrama_surface_insights` — read pending Insights for agent presentation
 - `engrama_approve_insight` — human approves or dismisses an Insight
 - `engrama_write_insight_to_vault` — append approved Insight to Obsidian note
+- `engrama_gdpr_forget` — permanently erase the caller's own memory
+  (GDPR right-to-erasure); `mode='dry-run'` previews, `mode='apply'` deletes
 
 ### `engrama_status` response shape
 
@@ -625,7 +627,7 @@ payload["vault"]:` reliably.
 
 ```json
 {
-  "version": "0.13.0",
+  "version": "0.15.0",
   "backend": {
     "name": "sqlite",
     "ok": true,

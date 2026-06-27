@@ -608,7 +608,7 @@ correspondiente. Toda la lógica de almacenamiento reside en
 `*AsyncStore`; los handlers de herramientas MCP se encargan solo de
 orquestación, validación, E/S del vault y formateo de respuestas.
 
-Trece herramientas:
+Catorce herramientas:
 
 - `engrama_status` — introspección de solo lectura: ruta del vault,
   backend, embedder, modo de búsqueda, versión y `admin_tools` (las
@@ -638,6 +638,9 @@ Trece herramientas:
 - `engrama_approve_insight` — el humano aprueba o descarta un Insight
 - `engrama_write_insight_to_vault` — añadir Insight aprobado a una nota
   de Obsidian
+- `engrama_gdpr_forget` — borrar permanentemente la memoria del propio
+  llamante (derecho de supresión RGPD); `mode='dry-run'` previsualiza,
+  `mode='apply'` elimina
 
 ### Forma de respuesta de `engrama_status`
 
@@ -647,7 +650,7 @@ agente puede hacer `if "path" in payload["vault"]:` de forma fiable.
 
 ```json
 {
-  "version": "0.13.0",
+  "version": "0.15.0",
   "backend": {
     "name": "sqlite",
     "ok": true,

@@ -1,8 +1,9 @@
 """
 Engrama MCP server — high-level memory tools for AI agents.
 
-Exposes eleven tools via the Model Context Protocol:
+Exposes fourteen tools via the Model Context Protocol:
 
+* **engrama_status** — runtime introspection of the running server.
 * **engrama_search** — fulltext search across the memory graph.
 * **engrama_remember** — create or update a node (always MERGE).
 * **engrama_relate** — create a relationship between two nodes.
@@ -14,6 +15,8 @@ Exposes eleven tools via the Model Context Protocol:
 * **engrama_surface_insights** — read pending Insights for agent presentation.
 * **engrama_approve_insight** — human approves or dismisses an Insight.
 * **engrama_write_insight_to_vault** — append approved Insight to Obsidian note.
+* **engrama_reindex** — find and repair nodes missing their vector embedding.
+* **engrama_gdpr_forget** — permanently erase the caller's own memory (GDPR).
 
 All writes use ``MERGE`` with automatic timestamps.  All queries use
 Cypher parameters — never string formatting.
