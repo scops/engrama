@@ -180,7 +180,7 @@ import sqlite_vec
 
 conn = sqlite3.connect(path)
 conn.enable_load_extension(True)
-sqlite_vec.load(conn)         # dep: sqlite-vec en pyproject extras 'sqlite' (default)
+sqlite_vec.load(conn)  # dep: sqlite-vec en pyproject extras 'sqlite' (default)
 conn.enable_load_extension(False)
 ```
 
@@ -209,10 +209,10 @@ Mismas firmas que `Neo4jVectorStore`: `store_vectors`, `search_vectors`, `delete
 
 ```python
 class OpenAICompatibleProvider:
-    dimensions: int             # auto-detectado en primer embed o pasado en config
+    dimensions: int  # auto-detectado en primer embed o pasado en config
     model: str
     base_url: str
-    api_key: str | None         # opcional para endpoints locales
+    api_key: str | None  # opcional para endpoints locales
 
     def embed(self, text: str) -> list[float]: ...
     def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
@@ -234,25 +234,30 @@ Implementación: `httpx` (ya dep opcional en `[embeddings]`) hace POST a `{base_
 
 ```python
 def create_stores(config=None) -> tuple[GraphStore, VectorStore]:
-    backend = _resolve("GRAPH_BACKEND", "sqlite")     # cambia default
-    vector  = _resolve("VECTOR_BACKEND", "sqlite-vec")  # cambia default
+    backend = _resolve("GRAPH_BACKEND", "sqlite")  # cambia default
+    vector = _resolve("VECTOR_BACKEND", "sqlite-vec")  # cambia default
 
     if backend == "sqlite":
         from engrama.backends.sqlite import SqliteGraphStore
+
         path = _resolve("ENGRAMA_DB_PATH", "~/.engrama/engrama.db")
         graph = SqliteGraphStore(path)
     elif backend == "neo4j":
         from engrama.backends.neo4j import Neo4jGraphStore
         from engrama.core.client import EngramaClient
+
         graph = Neo4jGraphStore(EngramaClient(...))
     elif backend == "null":
         from engrama.backends.null import NullGraphStore
+
         graph = NullGraphStore()
-    else: raise ValueError(...)
+    else:
+        raise ValueError(...)
 
     if vector == "sqlite-vec":
         from engrama.backends.sqlite import SqliteVecStore
-        v = SqliteVecStore(graph._conn, dimensions=...)   # comparte conexión
+
+        v = SqliteVecStore(graph._conn, dimensions=...)  # comparte conexión
     elif vector == "neo4j":
         ...
     elif vector in ("none", "null"):
@@ -265,6 +270,7 @@ def create_async_stores(config=None) -> tuple[GraphStore, VectorStore]:
     backend = _resolve("GRAPH_BACKEND", "sqlite")
     if backend == "sqlite":
         from engrama.backends.sqlite import SqliteAsyncStore, SqliteVecAsyncStore
+
         ...
     elif backend == "neo4j":
         # actual create_async_store inline
@@ -326,6 +332,7 @@ Añade fixture parametrizado:
 def graph_store(request, tmp_path):
     if request.param == "sqlite":
         from engrama.backends.sqlite import SqliteGraphStore
+
         return SqliteGraphStore(tmp_path / "test.db")
     elif request.param == "neo4j":
         if not os.getenv("NEO4J_PASSWORD"):
