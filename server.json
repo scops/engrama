@@ -1,0 +1,87 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.scops/engrama",
+  "title": "Engrama",
+  "description": "Graph-based long-term memory for AI agents: entities, observations and relations.",
+  "version": "0.15.0",
+  "websiteUrl": "https://scops.github.io/engrama/",
+  "repository": {
+    "url": "https://github.com/scops/engrama",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/scops/engrama/main/docs/assets/engrama.png",
+      "mimeType": "image/png"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "engrama",
+      "version": "0.15.0",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "engrama[mcp]",
+          "description": "The MCP server lives behind the 'mcp' extra."
+        },
+        {
+          "type": "positional",
+          "value": "engrama-mcp",
+          "valueHint": "engrama-mcp"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GRAPH_BACKEND",
+          "description": "Storage backend: 'sqlite' (default, zero external services) or 'neo4j'.",
+          "default": "sqlite",
+          "choices": ["sqlite", "neo4j"],
+          "isRequired": false
+        },
+        {
+          "name": "ENGRAMA_DB_PATH",
+          "description": "SQLite database file (sqlite backend).",
+          "default": "~/.engrama/engrama.db",
+          "format": "filepath",
+          "isRequired": false
+        },
+        {
+          "name": "NEO4J_URI",
+          "description": "Bolt URI of the Neo4j server (neo4j backend), e.g. bolt://localhost:7687.",
+          "isRequired": false
+        },
+        {
+          "name": "NEO4J_USERNAME",
+          "description": "Neo4j username (neo4j backend).",
+          "isRequired": false
+        },
+        {
+          "name": "NEO4J_PASSWORD",
+          "description": "Neo4j password (neo4j backend).",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "VAULT_PATH",
+          "description": "Absolute path to Engrama's Obsidian vault; enables the sync/ingest tools when set.",
+          "format": "filepath",
+          "isRequired": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://engrama.sinensia.com/mcp"
+    }
+  ]
+}

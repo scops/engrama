@@ -1,5 +1,7 @@
 # Engrama
 
+<!-- mcp-name: io.github.scops/engrama -->
+
 > Graph-based long-term memory framework for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/engrama.svg)](https://pypi.org/project/engrama/)
