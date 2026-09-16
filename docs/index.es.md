@@ -196,6 +196,23 @@ camino SQLite.
 
 ---
 
+## Hosted (beta)
+
+Engrama está pensado para autoalojarse: `pip install` y corre en tu máquina, con
+tus datos en un fichero local. Si prefieres no operar ni asegurar una instancia
+remota tú mismo, **[engrama.sinensia.com](https://engrama.sinensia.com/?ref=github)**
+es un despliegue gestionado de este mismo servidor — alojado en la UE, OAuth 2.1
+delante de `/mcp`, aislamiento por identidad y borrado GDPR ya resueltos, y guías
+de configuración para Claude, ChatGPT, Gemini, Cursor, VS Code, Windsurf, Zed y
+Codex.
+
+Durante la beta es por invitación:
+[solicitar acceso](https://engrama.sinensia.com/es/request-invite?ref=github). El
+servidor open source de este repositorio no es una versión recortada: mismas
+tools, mismo modelo de grafo, mismo código.
+
+---
+
 ## Configuración de embeddings (opcional)
 
 Engrama funciona de fábrica solo con búsqueda fulltext. Para **búsqueda

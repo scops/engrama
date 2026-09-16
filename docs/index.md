@@ -220,6 +220,22 @@ identical to the SQLite path.
 
 ---
 
+## Hosted (beta)
+
+Engrama is built to be self-hosted: `pip install`, and it runs on your machine
+with your data in a local file. If you would rather not operate and secure a
+remote instance yourself, **[engrama.sinensia.com](https://engrama.sinensia.com/?ref=github)**
+is a managed deployment of this same server — EU-hosted, OAuth 2.1 in front of
+`/mcp`, per-identity isolation and GDPR erasure already wired, with setup guides
+for Claude, ChatGPT, Gemini, Cursor, VS Code, Windsurf, Zed and Codex.
+
+It is invitation-only during the beta:
+[request access](https://engrama.sinensia.com/request-invite?ref=github). The
+open-source server in this repository is not a cut-down edition of it — same
+tools, same graph model, same code.
+
+---
+
 ## Embedding setup (optional)
 
 Engrama works out of the box with fulltext search only. For **semantic
