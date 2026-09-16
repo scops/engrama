@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "engrama",
   "displayName": "Engrama",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Graph-based long-term memory for AI agents. Engrama stores entities, observations and relationships as a knowledge graph and lets agents traverse it to reconstruct context on demand. SQLite by default (zero external services); Neo4j optional for multi-process production.",
   "license": "Apache-2.0",
   "homepage": "https://scops.github.io/engrama/",

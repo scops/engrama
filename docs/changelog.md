@@ -7,7 +7,7 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [Unreleased]
+## [0.16.0] — 2026-09-16
 
 ### Added
 
@@ -22,6 +22,21 @@ Versioning: [Semantic Versioning](https://semver.org/)
   for source checkouts.
 - **README "Security considerations" section** summarising data residency,
   Neo4j authentication, tenant isolation, GDPR erasure and network exposure.
+- **`server.json` registry entry** so Engrama is discoverable from the MCP
+  Registry and the directories it feeds. It declares both installation paths
+  in one record — the PyPI package (`uvx --from engrama[mcp] engrama-mcp`) and
+  the hosted streamable-HTTP remote — and the README carries the `mcp-name`
+  marker the registry uses to verify package ownership.
+
+### Docs
+
+- **"Hosted (beta)" section** in the README and the documentation landing page
+  (EN/ES), describing the managed deployment of this same server for operators
+  who would rather not run and secure a remote instance themselves.
+- **[DDR-005](./ddr-005.md) — opt-in authentication for the Streamable HTTP
+  transport** (status: Proposed). Records the design for an OAuth 2.1
+  resource-server mode and a static service-token mode, both off by default,
+  and the rule that identity headers stop being trusted whenever either is on.
 
 ## [0.15.0] — 2026-06-26
 
