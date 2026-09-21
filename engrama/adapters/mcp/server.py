@@ -48,7 +48,7 @@ from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
 from engrama.core.identity import resolve_local_sub
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
 from engrama.core.scope import MemoryScope
-from engrama.core.security import Provenance, Sanitiser
+from engrama.core.security import Provenance, Sanitiser, sanitize_node_for_output
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -1727,7 +1727,7 @@ def create_engrama_mcp(
         result_data: dict[str, Any] = {
             "status": "ok",
             "label": label,
-            "node": node,
+            "node": sanitize_node_for_output(node),
             "vault_path": vault_path,
             "engrama_id": engrama_id,
             "relations_created": relations_created,
@@ -2031,6 +2031,12 @@ def create_engrama_mcp(
         if data is None:
             return f"No node found: (:{params.label} {{name: '{params.name}'}})."
 
+        # Sanitise here rather than trusting each backend's own stripping —
+        # a backend that keeps the vector on the node must not leak it.
+        data["node"] = sanitize_node_for_output(data.get("node"))
+        for nb in data.get("neighbours", []):
+            nb["properties"] = sanitize_node_for_output(nb.get("properties"))
+
         return json.dumps(data, default=str, indent=2)
 
     # -- Tool: engrama_sync_note ---
@@ -2220,7 +2226,7 @@ def create_engrama_mcp(
                 "name": merge_value,
                 "engrama_id": engrama_id,
                 "created": created,
-                "node": node,
+                "node": sanitize_node_for_output(node),
             },
             default=str,
             indent=2,

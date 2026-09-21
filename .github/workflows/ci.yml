@@ -159,6 +159,7 @@ jobs:
             tests/test_openai_compat_embedder.py \
             tests/test_cli.py \
             tests/test_mcp_entrypoint.py \
+            tests/test_mcp_output_no_embedding.py \
             tests/test_export_import.py
 
   test-neo4j:
@@ -264,6 +265,7 @@ jobs:
             tests/test_skills.py \
             tests/test_phase4_skills.py \
             tests/test_obsidian_sync.py \
+            tests/test_mcp_output_no_embedding.py \
             tests/test_export_import_cross_backend.py
 
   audit-deps:
