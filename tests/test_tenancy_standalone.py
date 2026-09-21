@@ -38,7 +38,7 @@ def _make_server(db: Path):
 
 
 async def _call(server, tool: str, args: dict | None = None):
-    from fastmcp import Client
+    from mcp.client import Client
 
     payload: dict = {} if args is None else {"params": args}
     async with Client(server) as client:

@@ -35,7 +35,7 @@ def _server(db: Path):
 
 
 async def _call(server, tool: str, args: dict) -> dict:
-    from fastmcp import Client
+    from mcp.client import Client
 
     async with Client(server) as client:
         result = await client.call_tool(tool, {"params": args})

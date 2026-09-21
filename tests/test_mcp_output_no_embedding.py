@@ -147,7 +147,7 @@ def neo4j_shaped(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_remember_update_does_not_return_embedding(tmp_path: Path, neo4j_shaped) -> None:
-    from fastmcp import Client
+    from mcp.client import Client
 
     server = create_engrama_mcp(
         backend="sqlite", config={"ENGRAMA_DB_PATH": str(tmp_path / "e.db")}, vault_path=None
@@ -170,7 +170,7 @@ async def test_remember_update_does_not_return_embedding(tmp_path: Path, neo4j_s
 
 
 async def test_sync_note_update_does_not_return_embedding(tmp_path: Path, neo4j_shaped) -> None:
-    from fastmcp import Client
+    from mcp.client import Client
 
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -194,7 +194,7 @@ async def test_sync_note_update_does_not_return_embedding(tmp_path: Path, neo4j_
 async def test_context_does_not_return_embedding(tmp_path: Path, neo4j_shaped) -> None:
     """Root and neighbours are sanitised at the MCP boundary, not left to
     whatever the backend happens to strip."""
-    from fastmcp import Client
+    from mcp.client import Client
 
     server = create_engrama_mcp(
         backend="sqlite", config={"ENGRAMA_DB_PATH": str(tmp_path / "e.db")}, vault_path=None
@@ -276,7 +276,7 @@ def live_server(request: pytest.FixtureRequest, tmp_path: Path):
 
 
 async def test_live_backend_tools_never_return_embedding(live_server) -> None:
-    from fastmcp import Client
+    from mcp.client import Client
 
     server, prefix = live_server
     root, other = f"{prefix}-root", f"{prefix}-other"

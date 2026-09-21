@@ -136,7 +136,7 @@ la lista de parámetros de la suite de contratos.
 
 ## Adaptador MCP
 
-El adaptador en `engrama/adapters/mcp/` es un servidor FastMCP nativo
+El adaptador en `engrama/adapters/mcp/` es un `MCPServer` nativo (SDK de MCP v2)
 que habla con el async store que seleccione la factoría. Los handlers de
 las herramientas MCP no contienen Cypher ni SQL — toda la lógica de
 almacenamiento reside en el `*AsyncStore` correspondiente. Mantened esa

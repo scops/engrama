@@ -7,8 +7,8 @@ El servidor MCP de Engrama habla dos transportes:
 | **stdio** (por defecto) | Clientes de escritorio locales que lanzan el servidor como subproceso (la configuración estándar de Claude Desktop). | `ENGRAMA_TRANSPORT=stdio` (o sin definir). |
 | **Streamable HTTP** | Ejecutar Engrama como un servidor HTTP local de larga duración al que te conectas por red. | `ENGRAMA_TRANSPORT=http`. |
 
-El transporte HTTP se apoya en el FastMCP embebido del SDK de MCP
-(`mcp.server.fastmcp`) — sin dependencia extra. El valor por defecto
+El transporte HTTP se apoya en el `MCPServer` del SDK de MCP
+(`mcp.server.mcpserver`, SDK v2) — sin dependencia extra. El valor por defecto
 sigue siendo `stdio`, así que las configuraciones de Claude Desktop
 existentes quedan intactas.
 
@@ -110,9 +110,9 @@ curl -i http://127.0.0.1:8000/health
 
 Intencionadamente **no** está protegido por la comprobación de Origin
 (las sondas no envían cabecera `Origin`). Mantiene una pequeña conexión
-cacheada propia — consulta [Modo de sesión](#session-mode) para entender
-por qué las rutas personalizadas no pueden reutilizar el store de la
-sesión MCP.
+cacheada propia — consulta [Versiones del protocolo y sesiones](#session-mode)
+para entender por qué las rutas personalizadas no pueden reutilizar el
+store del servidor MCP.
 
 ### `/.well-known/oauth-protected-resource`
 
@@ -172,30 +172,41 @@ curl -i -H "Accept: application/json, text/event-stream" \
   http://127.0.0.1:8000/mcp
 ```
 
-## Modo de sesión (stateful) { #session-mode }
+## Versiones del protocolo y sesiones { #session-mode }
 
-El servidor corre **stateful** (`stateless_http=False`, el valor por
-defecto del SDK). En `initialize` el servidor devuelve una cabecera
-`Mcp-Session-Id`; el cliente la reutiliza en cada POST posterior, y el
-lifespan del servidor — que abre el store del grafo, el vault y el
-embedder — corre **una vez por sesión** en lugar de una vez por petición.
+El servidor habla las dos eras del protocolo MCP en el mismo endpoint
+`/mcp` y elige por petición — no hay nada que configurar:
 
-Esto lo exigen los clientes MCP conversacionales (claude.ai, Claude
-Desktop). Con `stateless_http=True` el SDK no asigna session id y
-re-ejecuta el lifespan en cada POST (reinicializando Neo4j/Ollama/vault
-cada vez); esos clientes ven morir la sesión tras cada petición y **no
-consiguen registrar los tools**. El modo stateless solo merece la pena
-para despliegues escalados horizontalmente, de tipo fan-out, respaldados
-por un event store compartido — no el caso local/servidor único de aquí.
-Los tools de Engrama son llamadas petición/respuesta planas (sin
-**sampling** ni **elicitation** de MCP), así que una sesión persistente no
-cuesta nada funcionalmente.
+| Protocolo del cliente | Handshake | Sesión |
+|-----------------------|-----------|--------|
+| **`2026-07-28`** | Ninguno. Cada petición lleva su versión de protocolo, la info del cliente y sus capacidades en `_meta`; `server/discover` es opcional. | Ninguna — la revisión eliminó `Mcp-Session-Id`. |
+| **`2025-11-25`** y anteriores | `initialize` / `notifications/initialized`. | Ninguna por defecto (ver abajo). |
 
-Una consecuencia del diseño del SDK: **las rutas personalizadas
-(`/health`) nunca ven el contexto de lifespan de la sesión MCP** (pertenece
-al servidor MCP, no a la app ASGI), por lo que `/health` mantiene su propia
-conexión de backend cacheada y creada de forma lazy en vez de acceder al
-estado de la petición MCP.
+**Sin sesión por defecto.** Los clientes de la era del handshake también
+se atienden sin estado (`stateless_http=True`): `initialize` no devuelve
+`Mcp-Session-Id` y cada petición es independiente, así que cualquier
+réplica puede responder cualquier petición y un reinicio no deja nada que
+el cliente tenga que recuperar. Los tools de Engrama son llamadas
+petición/respuesta planas — sin **sampling**, **elicitation** ni push del
+servidor — así que nada necesita un canal de larga duración. Quien embeba
+`create_engrama_mcp()` directamente puede pasar `stateless_http=False` para
+volver a dar una sesión por cliente a los clientes de la era del
+handshake; los clientes `2026-07-28` siguen sin sesión en cualquier caso.
+
+**La identidad del tenant es por petición.** Las cabeceras
+`X-Engrama-Org-Id` / `X-Engrama-User-Id` que inyecta un gateway se leen en
+cada petición (Spec 001), así que el aislamiento no depende de una sesión.
+
+**Lifespan.** El lifespan del servidor — que abre el store del grafo, el
+vault y el embedder — corre **una vez al arrancar** y lo comparten todas
+las peticiones. Un backend caído al arrancar no detiene el servidor:
+`/health` responde 503 y los tools devuelven error hasta que vuelve.
+
+Las rutas personalizadas (`/health`) son rutas Starlette normales que
+corren fuera de cualquier petición MCP, así que nunca ven el contexto de
+lifespan del servidor. Por eso `/health` mantiene su propia conexión de
+backend cacheada y creada de forma lazy en vez de acceder al estado de la
+petición MCP.
 
 ## Conectar clientes
 
@@ -243,7 +254,7 @@ la fase de auth dependiendo de tu build.
 |---|-------|-----------------|
 | Modelo de proceso | Lanzado como subproceso por el cliente. | Servidor de larga duración que arrancas y al que te conectas. |
 | Ciclo de vida | Un proceso por sesión de cliente. | Un proceso, muchas peticiones. |
-| Lifespan del store | Abierto una vez, reutilizado en la sesión. | Abierto una vez por sesión (stateful). |
+| Lifespan del store | Abierto una vez, reutilizado en la sesión. | Abierto una vez al arrancar, compartido por todas las peticiones. |
 | Exposición de red | Ninguna (pipes). | Enlaza un puerto TCP; Origin/Host validados. |
 | Sonda de salud | N/A. | `GET /health`. |
 | Auth | N/A (confianza local). | Todavía ninguna — solo loopback + comprobación de Origin. |

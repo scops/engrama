@@ -8,7 +8,7 @@ the fix didn't reach that path — agents that sent
 ``{"label": "Experiment", "properties": {"name": ...}}`` were silently
 creating rows keyed by ``name`` and diverging from SDK writes.
 
-These tests exercise the handler in-process via ``fastmcp.Client``
+These tests exercise the handler in-process via ``mcp.client.Client``
 against the SQLite backend and pin the canonicalisation at the MCP
 boundary.
 """
@@ -41,7 +41,7 @@ def _hermetic_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
 
 
 async def _call(server, tool: str, args: dict | None = None) -> dict:
-    from fastmcp import Client
+    from mcp.client import Client
 
     payload: dict = {} if args is None else {"params": args}
     async with Client(server) as client:
@@ -167,7 +167,7 @@ async def test_remember_missing_key_returns_label_specific_error(tmp_path: Path)
 async def _call_raw(server, tool: str, args: dict) -> str:
     """Return the raw tool response text (the handler emits a string error,
     not JSON, when the validation fails)."""
-    from fastmcp import Client
+    from mcp.client import Client
 
     async with Client(server) as client:
         result = await client.call_tool(tool, {"params": args})

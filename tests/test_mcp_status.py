@@ -1,6 +1,6 @@
 """Tests for the ``engrama_status`` MCP introspection tool (#52 Phase C).
 
-Drives the FastMCP server in-process via the ``fastmcp.Client`` against
+Drives the MCP server in-process via the ``mcp.client.Client`` against
 the SQLite backend, so the suite needs no external services. Asserts
 the response shape, vault path identification (the contract that lets
 agents disambiguate Engrama's vault from an external ``obsidian-mcp``
@@ -46,11 +46,11 @@ def vault(tmp_path: Path) -> Path:
 
 async def _call_status(server) -> dict:
     """Invoke ``engrama_status`` in-process and parse the JSON payload."""
-    from fastmcp import Client
+    from mcp.client import Client
 
     async with Client(server) as client:
         result = await client.call_tool("engrama_status", {})
-        # FastMCP wraps the tool's string return as a TextContent block.
+        # MCPServer wraps the tool's string return as a TextContent block.
         text = result.content[0].text  # type: ignore[union-attr]
         return json.loads(text)
 

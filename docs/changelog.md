@@ -7,6 +7,31 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **MCP protocol `2026-07-28` (sessionless).** The MCP server moves to the
+  MCP Python SDK v2 (`mcp>=2.2,<3`; `FastMCP` is now `MCPServer`) and speaks
+  both protocol eras on the same endpoint. `2026-07-28` clients send
+  self-contained requests: no `initialize` handshake and no `Mcp-Session-Id`.
+  `2025-11-25` clients keep their handshake. Tenant scope still comes from
+  the `X-Engrama-*` headers on every request, on both eras.
+- **Streamable HTTP is stateless by default.** `create_engrama_mcp()` now
+  defaults to `stateless_http=True`, so handshake-era clients get no
+  `Mcp-Session-Id` either and any replica can serve any request. Pass
+  `stateless_http=False` to keep per-client sessions for those clients.
+  Clients that held a session must reconnect after the upgrade.
+- **The server lifespan runs once at startup** (SDK v2) instead of once per
+  session. A backend that is down at boot no longer stops the server:
+  `/health` answers 503 and tools return errors until the backend is back.
+- `create_engrama_mcp()` returns an `EngramaMCPServer` that keeps its HTTP
+  settings (path, session mode, Origin/Host allow-lists), so
+  `run(transport="streamable-http")` and `streamable_http_app()` still take
+  no arguments. The server now reports Engrama's version in `serverInfo`.
+- The `[mcp]` extra no longer installs `fastmcp`. The tests use the SDK's
+  own in-process `mcp.client.Client`, and the MCP test suite now runs in CI.
+
 ## [0.16.1] — 2026-09-21
 
 ### Fixed

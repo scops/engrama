@@ -14,13 +14,11 @@ over **Streamable HTTP** (``ENGRAMA_TRANSPORT=http``) so that
   next phase (OAuth 2.1 against an external issuer) will light up by
   setting ``ENGRAMA_AUTH_ISSUER`` — no code change required.
 
-**Stateless note.** The HTTP server runs with ``stateless_http=True``.
-In that mode the SDK creates a fresh transport per request and re-enters
-the FastMCP ``lifespan`` on every MCP call, so custom routes registered
-here never see the per-request ``lifespan_context``. ``/health`` therefore
-owns a small lazily-created, cached store of its own (see
-:func:`_build_health_handler`) instead of reaching into the MCP request
-context.
+**Lifespan note.** Custom routes are plain Starlette routes: they run
+outside any MCP request, so they never see the server's
+``lifespan_context``. ``/health`` therefore owns a small lazily-created,
+cached store of its own (see :func:`_build_health_handler`) instead of
+reaching into the MCP request context.
 """
 
 from __future__ import annotations
@@ -163,9 +161,9 @@ def register_http_routes(
     port: int,
     mcp_path: str = "/mcp",
 ) -> None:
-    """Register the HTTP-only custom routes on the FastMCP instance.
+    """Register the HTTP-only custom routes on the MCP server instance.
 
-    These are added to FastMCP's custom-route list and are served by the
+    These are added to the server's custom-route list and are served by the
     Streamable HTTP Starlette app. They are *not* wrapped by the
     DNS-rebinding middleware (which only guards the MCP endpoint), so a
     probe to ``/health`` with no ``Origin`` header succeeds. Registering

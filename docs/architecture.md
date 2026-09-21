@@ -9,9 +9,9 @@
 |---|---|---|---|
 | Default backend | SQLite + `sqlite-vec` | 3.40+ / 0.1+ | Zero-dep portable storage (DDR-004) |
 | Optional backend | Neo4j Community | 5.26.24 LTS | Multi-process production, large vector indexes |
-| Language | Python | ≥ 3.11 | Agent ecosystem, FastMCP compatibility |
+| Language | Python | ≥ 3.11 | Agent ecosystem, official MCP SDK |
 | Dependency mgmt | uv | latest | Modern standard, fast |
-| MCP adapter | FastMCP + async stores | native | Protocol-based stores, zero Cypher in tools |
+| MCP adapter | MCP SDK v2 `MCPServer` + async stores | native | Protocol-based stores, zero Cypher in tools |
 | Obsidian adapter | local stdio | — | Document ↔ graph sync |
 | Embeddings | OpenAI-compat HTTP | — | Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina (DDR-004) |
 | Async HTTP | httpx | ≥ 0.27 | Non-blocking embedding calls in MCP server |
@@ -44,7 +44,7 @@ block-beta
 
   block:adapters["Layer 1 · Adapters"]
     columns 5
-    MCP["🔌 MCP Server\n(FastMCP)"]
+    MCP["🔌 MCP Server\n(MCPServer)"]
     Obsidian["📓 Obsidian\nSync"]
     LangChain["🦜 LangChain"]
     REST["🌐 REST API"]
@@ -265,7 +265,7 @@ engrama/
 │   │   └── forget.py        # decay, archiving, TTL
 │   │
 │   ├── adapters/
-│   │   ├── mcp/             # FastMCP server (zero Cypher in tool handlers)
+│   │   ├── mcp/             # MCPServer (zero Cypher in tool handlers)
 │   │   ├── obsidian/        # ★ vault ↔ graph bidirectional sync (DDR-002)
 │   │   └── sdk/             # Engrama Python SDK (context manager)
 │   │
@@ -588,7 +588,7 @@ agent-driven, not opaque.
 
 ## MCP adapter
 
-Native MCP server built with FastMCP and the matching async store. All
+Native MCP server built on the MCP SDK's `MCPServer` and the matching async store. All
 storage logic lives in `*AsyncStore`; the MCP tool handlers handle
 orchestration, validation, vault I/O, and response formatting only.
 

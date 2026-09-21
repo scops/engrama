@@ -7,8 +7,8 @@ Engrama's MCP server speaks two transports:
 | **stdio** (default) | Local desktop clients that launch the server as a subprocess (Claude Desktop's standard config). | `ENGRAMA_TRANSPORT=stdio` (or unset). |
 | **Streamable HTTP** | Running Engrama as a long-lived local HTTP server you connect to over the network. | `ENGRAMA_TRANSPORT=http`. |
 
-The HTTP transport is built on the MCP SDK's bundled FastMCP
-(`mcp.server.fastmcp`) — no extra dependency. The default stays `stdio`
+The HTTP transport is built on the MCP SDK's `MCPServer`
+(`mcp.server.mcpserver`, SDK v2) — no extra dependency. The default stays `stdio`
 so existing Claude Desktop setups are untouched.
 
 !!! danger "Bind to loopback only — there is no authentication yet"
@@ -104,8 +104,8 @@ curl -i http://127.0.0.1:8000/health
 
 It is intentionally **not** guarded by the Origin check (probes send no
 `Origin` header). It owns a small cached connection of its own — see
-[Session mode](#session-mode) for why custom routes can't reuse the
-MCP session store.
+[Protocol versions and sessions](#session-mode) for why custom routes
+can't reuse the MCP server's store.
 
 ### `/.well-known/oauth-protected-resource`
 
@@ -165,28 +165,39 @@ curl -i -H "Accept: application/json, text/event-stream" \
   http://127.0.0.1:8000/mcp
 ```
 
-## Session mode (stateful) { #session-mode }
+## Protocol versions and sessions { #session-mode }
 
-The server runs **stateful** (`stateless_http=False`, the SDK default).
-On `initialize` the server returns an `Mcp-Session-Id` header; the client
-reuses it on every following POST, and the server lifespan — opening the
-graph store, vault and embedder — runs **once per session** rather than
-once per request.
+The server speaks both eras of the MCP protocol on the same `/mcp`
+endpoint and picks per request — there is nothing to configure:
 
-This is required by conversational MCP clients (claude.ai, Claude
-Desktop). Under `stateless_http=True` the SDK assigns no session id and
-re-enters the lifespan on every POST (re-initialising Neo4j/Ollama/vault
-each time); those clients see the session die after each request and
-**fail to register the tools**. Stateless is only worthwhile for
-horizontally-scaled, fan-out deployments backed by a shared event store —
-not the local/single-server case here. Engrama's tools are plain
-request/response calls (no MCP **sampling** or **elicitation**), so a
-sticky session costs nothing functionally.
+| Client protocol | Handshake | Session |
+|-----------------|-----------|---------|
+| **`2026-07-28`** | None. Each request carries its protocol version, client info and capabilities in `_meta`; `server/discover` is optional. | None — the revision removed `Mcp-Session-Id`. |
+| **`2025-11-25`** and earlier | `initialize` / `notifications/initialized`. | None by default (see below). |
 
-A consequence of the SDK's design: **custom routes (`/health`) never see
-the MCP session lifespan context** (it belongs to the MCP server, not the
-ASGI app), which is why `/health` maintains its own lazily-created, cached
-backend connection rather than reaching into the MCP request state.
+**Sessionless by default.** Handshake-era clients are also served
+statelessly (`stateless_http=True`): `initialize` returns no
+`Mcp-Session-Id` and every request stands on its own, so any replica can
+answer any request and a restart drops nothing a client has to recover.
+Engrama's tools are plain request/response calls — no MCP **sampling**,
+**elicitation** or server push — so nothing needs a long-lived channel.
+Embedders that call `create_engrama_mcp()` directly can pass
+`stateless_http=False` to give handshake-era clients a per-client session
+again; `2026-07-28` clients stay sessionless either way.
+
+**Tenant identity is per request.** The `X-Engrama-Org-Id` /
+`X-Engrama-User-Id` headers a gateway injects are read on every request
+(Spec 001), so isolation does not depend on a session.
+
+**Lifespan.** The server lifespan — opening the graph store, vault and
+embedder — runs **once at startup** and is shared by every request. A
+backend that is down at boot does not stop the server: `/health` answers
+503 and tools return errors until it comes back.
+
+Custom routes (`/health`) are plain Starlette routes that run outside any
+MCP request, so they never see the server's lifespan context. That is why
+`/health` maintains its own lazily-created, cached backend connection
+rather than reaching into the MCP request state.
 
 ## Connecting clients
 
@@ -234,7 +245,7 @@ phase depending on your build.
 |---|-------|-----------------|
 | Process model | Launched as a subprocess by the client. | Long-lived server you start and connect to. |
 | Lifecycle | One process per client session. | One process, many requests. |
-| Store lifespan | Opened once, reused for the session. | Opened once per session (stateful). |
+| Store lifespan | Opened once, reused for the session. | Opened once at startup, shared by all requests. |
 | Network exposure | None (pipes). | Binds a TCP port; Origin/Host validated. |
 | Health probe | N/A. | `GET /health`. |
 | Auth | N/A (local trust). | None yet — loopback + Origin check only. |

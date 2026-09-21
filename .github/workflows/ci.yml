@@ -160,7 +160,25 @@ jobs:
             tests/test_cli.py \
             tests/test_mcp_entrypoint.py \
             tests/test_mcp_output_no_embedding.py \
-            tests/test_export_import.py
+            tests/test_export_import.py \
+            tests/test_mcp_http.py \
+            tests/test_mcp_status.py \
+            tests/test_mcp_error_redaction.py \
+            tests/test_mcp_gdpr_forget.py \
+            tests/test_mcp_logging_scope.py \
+            tests/test_mcp_remember_fixes.py \
+            tests/test_mcp_remember_merge_key.py \
+            tests/test_mcp_search_ranking.py \
+            tests/test_mcp_sync_dry_run.py \
+            tests/test_tenancy_standalone.py \
+            tests/test_tenancy_write_identity.py \
+            tests/test_scope_resolver.py \
+            tests/test_provenance.py \
+            tests/test_sanitiser.py \
+            tests/test_reindex_tool.py \
+            tests/test_proactive_insight_gate.py \
+            tests/test_inline_relations_validation.py \
+            tests/test_cold_start_embedding_repro.py
 
   test-neo4j:
     name: Tests (Neo4j integration)
