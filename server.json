@@ -3,7 +3,7 @@
   "name": "io.github.scops/engrama",
   "title": "Engrama",
   "description": "Graph-based long-term memory for AI agents: entities, observations and relations.",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "websiteUrl": "https://scops.github.io/engrama/",
   "repository": {
     "url": "https://github.com/scops/engrama",
@@ -20,7 +20,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "engrama",
-      "version": "0.16.0",
+      "version": "0.16.1",
       "runtimeHint": "uvx",
       "runtimeArguments": [
         {
