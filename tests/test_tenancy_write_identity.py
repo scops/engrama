@@ -187,7 +187,7 @@ class TestRelationCarriesScope:
 #
 # We monkeypatch :func:`engrama.adapters.mcp.server.resolve_scope` to raise
 # :class:`ScopeUnresolved` and invoke each write tool via
-# :class:`fastmcp.Client` against an in-process MCP server. Every tool must
+# :class:`mcp.client.Client` against an in-process MCP server. Every tool must
 # convert the exception into a ``{"status": "error", ...}`` payload and
 # leave the graph untouched.
 
@@ -263,11 +263,11 @@ async def test_mcp_write_tool_rejects_unresolved_identity(
     args: dict,
     touch_assert,
 ) -> None:
-    """End-to-end through ``fastmcp.Client``: when the resolver raises
+    """End-to-end through ``mcp.client.Client``: when the resolver raises
     ``ScopeUnresolved``, the tool must surface ``status:"error"`` and the
     graph must remain untouched.
     """
-    from fastmcp import Client
+    from mcp.client import Client
 
     from engrama.adapters.mcp import server as srv_module
     from engrama.adapters.mcp.server import ScopeUnresolved, create_engrama_mcp

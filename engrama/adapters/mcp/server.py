@@ -21,9 +21,9 @@ Exposes fourteen tools via the Model Context Protocol:
 All writes use ``MERGE`` with automatic timestamps.  All queries use
 Cypher parameters — never string formatting.
 
-The server uses an **async** Neo4j driver managed through FastMCP's
-lifespan hook, so the connection is shared across tool calls and
-properly closed on shutdown.
+The server uses an **async** Neo4j driver managed through the MCP SDK's
+``MCPServer`` lifespan hook, so the connection is shared across tool calls
+and properly closed on shutdown.
 
 This refactored version uses ``Neo4jAsyncStore`` exclusively — all inline
 Cypher has been moved to the async_store backend module.
@@ -40,10 +40,11 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
+from engrama import __version__
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
 from engrama.core.identity import resolve_local_sub
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
@@ -754,6 +755,32 @@ class GdprForgetInput(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class EngramaMCPServer(MCPServer):
+    """``MCPServer`` that remembers the Streamable HTTP settings it was built with.
+
+    MCP SDK v2 takes transport options (path, session mode, DNS-rebinding
+    settings, bind address) at ``run()`` / ``streamable_http_app()`` time
+    instead of in the constructor. :func:`create_engrama_mcp` bakes them in
+    here so callers — the ``engrama-mcp`` CLI and embedders such as a gateway
+    that serves ``streamable_http_app()`` itself — keep calling both with no
+    arguments. Explicit keyword arguments still override the baked values.
+    """
+
+    def __init__(self, *args: Any, http_settings: dict[str, Any], **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # ``port`` is only meaningful to run(); the app factory has no port.
+        self._http_settings = dict(http_settings)
+
+    def _app_settings(self) -> dict[str, Any]:
+        return {k: v for k, v in self._http_settings.items() if k != "port"}
+
+    def streamable_http_app(self, **overrides: Any):  # type: ignore[override]
+        return super().streamable_http_app(**{**self._app_settings(), **overrides})
+
+    async def run_streamable_http_async(self, **overrides: Any) -> None:  # type: ignore[override]
+        await super().run_streamable_http_async(**{**self._http_settings, **overrides})
+
+
 def create_engrama_mcp(
     backend: str | None = None,
     config: dict[str, Any] | None = None,
@@ -762,10 +789,10 @@ def create_engrama_mcp(
     host: str = "127.0.0.1",
     port: int = 8000,
     mcp_path: str = "/mcp",
-    stateless_http: bool = False,
+    stateless_http: bool = True,
     allowed_origins: list[str] | None = None,
     auth_issuer: str | None = None,
-) -> FastMCP:
+) -> EngramaMCPServer:
     """Create and return a configured Engrama MCP server.
 
     Parameters:
@@ -783,17 +810,15 @@ def create_engrama_mcp(
         port: TCP port for the Streamable HTTP transport. Ignored under
             stdio.
         mcp_path: URL path for the MCP endpoint (default ``/mcp``).
-        stateless_http: Run the HTTP transport statelessly (default
-            ``False`` — stateful). Stateful is required by conversational
-            MCP clients (claude.ai / Claude Desktop): ``initialize``
-            returns an ``Mcp-Session-Id`` the client reuses, and the
-            server lifespan runs **once per session** instead of once per
-            request. Under ``stateless_http=True`` the SDK assigns no
-            session id and re-enters the lifespan (re-opening the store,
-            vault and embedder) on every POST, which those clients treat
-            as a dead session and fail to register tools. Stateless is
-            only useful for horizontally-scaled, fan-out request patterns
-            with a shared event store — not our case. Ignored under stdio.
+        stateless_http: Session mode for clients on the handshake-era
+            protocol (``2025-11-25`` and earlier). Default ``True``: their
+            ``initialize`` gets no ``Mcp-Session-Id`` and every request
+            stands alone, so any replica can serve it. ``False`` keeps the
+            legacy per-client session (sticky routing, sessions lost on
+            restart). Clients on ``2026-07-28`` are sessionless either way —
+            that revision has no handshake or session. The lifespan (store,
+            vault, embedder) is entered once at server startup in both
+            modes. Ignored under stdio.
         allowed_origins: Origin header allow-list for DNS-rebinding
             protection. Defaults to loopback only. Ignored under stdio.
         auth_issuer: OAuth issuer URL advertised by the
@@ -801,7 +826,8 @@ def create_engrama_mcp(
             the stub returns 404 (no auth configured).
 
     Returns:
-        A :class:`FastMCP` instance ready to run.
+        An :class:`EngramaMCPServer` ready to ``run()`` or to serve via
+        ``streamable_http_app()``, both with the HTTP settings above.
     """
     from mcp.server.transport_security import TransportSecuritySettings
 
@@ -816,7 +842,7 @@ def create_engrama_mcp(
         cfg["GRAPH_BACKEND"] = backend
 
     @asynccontextmanager
-    async def lifespan(server: FastMCP):  # noqa: ARG001
+    async def lifespan(server: MCPServer):  # noqa: ARG001
         # Initialise Obsidian adapter (optional — sync tools disabled if no vault)
         resolved_vault = vault_path or os.environ.get("VAULT_PATH")
         obsidian: ObsidianAdapter | None = None
@@ -863,8 +889,15 @@ def create_engrama_mcp(
                         await async_store.ensure_schema()
                     except Exception as e:
                         logger.warning("Schema bootstrap failed (non-fatal): %s", e)
-                health = await async_store.health_check()
-                logger.info("Engrama MCP backend ready: %s", health)
+                # The SDK enters this lifespan once, at server startup, so a
+                # raise here would abort the whole process. A backend that is
+                # down at boot is reported instead: /health answers 503 and
+                # tools return errors until it comes back.
+                try:
+                    health = await async_store.health_check()
+                    logger.info("Engrama MCP backend ready: %s", health)
+                except Exception as e:
+                    logger.warning("Backend health check failed at startup (non-fatal): %s", e)
             # Standalone single-user identity (Spec 001, FR-7). A gateway's
             # X-Engrama-* headers override this per request; with no headers
             # we resolve one stable sub and persist it next to the DB.
@@ -902,14 +935,17 @@ def create_engrama_mcp(
         ),
     )
 
-    mcp = FastMCP(
+    mcp = EngramaMCPServer(
         "engrama_mcp",
+        version=__version__,
         lifespan=lifespan,
-        host=host,
-        port=port,
-        streamable_http_path=mcp_path,
-        stateless_http=stateless_http,
-        transport_security=transport_security,
+        http_settings={
+            "host": host,
+            "port": port,
+            "streamable_http_path": mcp_path,
+            "stateless_http": stateless_http,
+            "transport_security": transport_security,
+        },
     )
 
     # Register the HTTP-only custom routes (/health, OAuth metadata stub).

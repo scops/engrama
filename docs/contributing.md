@@ -132,7 +132,7 @@ add it to the contract suite parameter list.
 
 ## MCP adapter
 
-The adapter in `engrama/adapters/mcp/` is a native FastMCP server that
+The adapter in `engrama/adapters/mcp/` is a native `MCPServer` (MCP SDK v2) that
 talks to whichever async store the factory selects. The MCP tool
 handlers contain zero Cypher / SQL — all storage logic is in the matching
 `*AsyncStore`. Keep it that way.

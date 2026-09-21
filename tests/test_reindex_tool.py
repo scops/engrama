@@ -42,7 +42,7 @@ def _hermetic(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def _call(server, tool: str, args: dict) -> dict:
-    from fastmcp import Client
+    from mcp.client import Client
 
     async with Client(server) as client:
         result = await client.call_tool(tool, {"params": args})
@@ -117,7 +117,7 @@ async def test_reindex_invalid_mode(tmp_path: Path) -> None:
     server = create_engrama_mcp(
         backend="sqlite", config={"ENGRAMA_DB_PATH": str(tmp_path / "engrama.db")}, vault_path=None
     )
-    from fastmcp import Client
+    from mcp.client import Client
 
     async with Client(server) as client:
         result = await client.call_tool("engrama_reindex", {"params": {"mode": "bogus"}})

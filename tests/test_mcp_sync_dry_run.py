@@ -1,6 +1,6 @@
 """Tests for ``dry_run`` on ``engrama_sync_vault`` / ``engrama_sync_note`` (#52 Phase D).
 
-Drives the FastMCP server in-process via ``fastmcp.Client`` against the
+Drives the MCP server in-process via ``mcp.client.Client`` against the
 SQLite backend. Each test owns a fresh vault + DB so the dry-run /
 real-run pairs can be compared without cross-test interference.
 
@@ -53,11 +53,11 @@ def vault(tmp_path: Path) -> Path:
 
 
 async def _call(server, tool: str, args: dict | None = None) -> dict:
-    """Call a FastMCP tool in-process. Tool handlers in ``server.py``
+    """Call an MCP tool in-process. Tool handlers in ``server.py``
     take a single Pydantic-model parameter named ``params``, so call
     arguments are nested under that key; for parameterless tools
     (``engrama_status``) pass ``None``."""
-    from fastmcp import Client
+    from mcp.client import Client
 
     payload: dict = {} if args is None else {"params": args}
     async with Client(server) as client:

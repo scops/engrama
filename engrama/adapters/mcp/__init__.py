@@ -38,13 +38,13 @@ def main() -> None:
     """CLI entry point registered as ``engrama-mcp`` in pyproject.toml."""
     try:
         # Deferred to keep `import engrama` lightweight on base installs.
-        # The mcp + fastmcp packages live in the `[mcp]` extra; if they're
-        # missing we surface a clear install hint instead of a raw
-        # ImportError traceback.
+        # The mcp package lives in the `[mcp]` extra; if it's missing we
+        # surface a clear install hint instead of a raw ImportError
+        # traceback.
         from .server import create_engrama_mcp
     except ImportError as e:
         missing = getattr(e, "name", "") or ""
-        if missing == "mcp" or missing.startswith("mcp.") or missing.startswith("fastmcp"):
+        if missing == "mcp" or missing.startswith("mcp."):
             print(_MCP_EXTRA_HINT, file=sys.stderr)
             sys.exit(1)
         raise
@@ -155,15 +155,12 @@ def main() -> None:
     )
 
     if args.transport == "http":
-        # Streamable HTTP via the MCP SDK's FastMCP. We run the FastMCP
-        # app directly (run() -> streamable_http_app()) and never wrap it
-        # in a Starlette(routes=[Mount(...)]): mounting the FastMCP app as
-        # a sub-app traps its lifespan inside the request scope, so the
-        # backend (Neo4j/Ollama/vault) re-initialises on every POST. Run
-        # it as the root ASGI app so its lifespan is the process lifespan.
-        # The server is stateful by default (see create_engrama_mcp) so
-        # conversational clients get a persistent Mcp-Session-Id; host,
-        # port, path and session mode are already baked into the instance.
+        # Streamable HTTP via the MCP SDK's MCPServer, run as the root ASGI
+        # app so its lifespan is the process lifespan. It answers both
+        # protocol eras: 2026-07-28 clients are sessionless by design, and
+        # handshake-era clients are served statelessly too (see
+        # create_engrama_mcp). Host, port, path and session mode are
+        # already baked into the instance.
         mcp.run(transport="streamable-http")
     else:
         mcp.run()

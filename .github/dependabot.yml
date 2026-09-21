@@ -38,11 +38,10 @@ updates:
       # are visible and reviewable in isolation. Achieved by NOT including
       # security-updates in any group.
     ignore:
-      # fastmcp v3 introduces breaking changes that fail our MCP test
-      # suite (verified on PR #10, closed without merge). Stop Dependabot
-      # from re-proposing major bumps until we deliberately migrate.
-      # Patch and minor updates within v2 are still welcome.
-      - dependency-name: "fastmcp"
+      # A new MCP SDK major tracks a new protocol revision and breaks the
+      # server API (v1 -> v2 renamed FastMCP to MCPServer). Migrate it
+      # deliberately; patch and minor updates within v2 are still welcome.
+      - dependency-name: "mcp"
         update-types:
           - "version-update:semver-major"
 

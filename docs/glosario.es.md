@@ -128,14 +128,14 @@ Tiempo de vida de un nodo. `forget_by_ttl(..., days=365)` elimina (o purga) los 
 **Ollama**
 Runtime para correr LLMs y modelos de embeddings localmente, en tu propia máquina. Engrama lo usa opcionalmente para generar embeddings sin depender de APIs externas.
 
-**FastMCP**
-Framework Python para construir servidores MCP con poco código (decoradores `@mcp.tool` sobre funciones). Engrama está construido encima de FastMCP.
+**MCPServer**
+Clase del SDK oficial de MCP para Python (v2; en v1 se llamaba `FastMCP`) que permite construir servidores MCP con poco código (decoradores `@mcp.tool` sobre funciones). Engrama está construido encima de `MCPServer`.
 
 **uv**
 Gestor moderno de paquetes y entornos virtuales para Python, escrito en Rust. Reemplaza a `pip` + `venv` + `pip-tools`. Mucho más rápido. `uv run X` ejecuta un comando dentro del entorno del proyecto sin necesidad de activarlo.
 
 **Extra (de instalación)**
-Grupo opcional de dependencias declarado en `pyproject.toml`. `uv sync` instala solo el núcleo (SQLite); `uv sync --extra neo4j` añade el driver de Neo4j; `uv sync --extra mcp` añade FastMCP. Pueden combinarse: `uv sync --extra neo4j --extra mcp`. Cuando Engrama se publique en PyPI el equivalente será `pip install engrama[neo4j,mcp]`.
+Grupo opcional de dependencias declarado en `pyproject.toml`. `uv sync` instala solo el núcleo (SQLite); `uv sync --extra neo4j` añade el driver de Neo4j; `uv sync --extra mcp` añade el SDK de MCP. Pueden combinarse: `uv sync --extra neo4j --extra mcp`. Cuando Engrama se publique en PyPI el equivalente será `pip install engrama[neo4j,mcp]`.
 
 **DDR (Design Decision Record)**
 Documento corto que registra una decisión arquitectónica importante, su contexto y sus consecuencias. Engrama tiene cuatro: DDR-001 clasificación facetada, DDR-002 sincronización bidireccional vault ↔ grafo, DDR-003 protocolos + embeddings + búsqueda híbrida + razonamiento temporal, DDR-004 almacenamiento portátil (SQLite por defecto).

@@ -9,9 +9,9 @@
 |---|---|---|---|
 | Backend por defecto | SQLite + `sqlite-vec` | 3.40+ / 0.1+ | Almacenamiento portátil sin dependencias (DDR-004) |
 | Backend opcional | Neo4j Community | 5.26.24 LTS | Producción multiproceso, índices vectoriales grandes |
-| Lenguaje | Python | ≥ 3.11 | Ecosistema de agentes, compatibilidad con FastMCP |
+| Lenguaje | Python | ≥ 3.11 | Ecosistema de agentes, SDK oficial de MCP |
 | Gestión de deps. | uv | latest | Estándar moderno, rápido |
-| Adaptador MCP | FastMCP + async stores | nativo | Stores basados en protocolos, cero Cypher en herramientas |
+| Adaptador MCP | `MCPServer` del SDK MCP v2 + async stores | nativo | Stores basados en protocolos, cero Cypher en herramientas |
 | Adaptador Obsidian | stdio local | — | Sincronización documento ↔ grafo |
 | Embeddings | HTTP OpenAI-compat | — | Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina (DDR-004) |
 | HTTP asíncrono | httpx | ≥ 0.27 | Llamadas de embedding no bloqueantes en el servidor MCP |
@@ -44,7 +44,7 @@ block-beta
 
   block:adapters["Layer 1 · Adapters"]
     columns 5
-    MCP["🔌 MCP Server\n(FastMCP)"]
+    MCP["🔌 MCP Server\n(MCPServer)"]
     Obsidian["📓 Obsidian\nSync"]
     LangChain["🦜 LangChain"]
     REST["🌐 REST API"]
@@ -266,7 +266,7 @@ engrama/
 │   │   └── forget.py        # Decaimiento, archivado, TTL
 │   │
 │   ├── adapters/
-│   │   ├── mcp/             # Servidor FastMCP (cero Cypher en los handlers)
+│   │   ├── mcp/             # MCPServer (cero Cypher en los handlers)
 │   │   ├── obsidian/        # ★ Sincronización bidireccional vault ↔ grafo (DDR-002)
 │   │   └── sdk/             # SDK Python de Engrama (context manager)
 │   │
@@ -603,7 +603,7 @@ entidad extraída — dirigido por el agente, no opaco.
 
 ## Adaptador MCP
 
-Servidor MCP nativo construido con FastMCP y el async store
+Servidor MCP nativo construido sobre el `MCPServer` del SDK de MCP y el async store
 correspondiente. Toda la lógica de almacenamiento reside en
 `*AsyncStore`; los handlers de herramientas MCP se encargan solo de
 orquestación, validación, E/S del vault y formateo de respuestas.

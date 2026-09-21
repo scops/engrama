@@ -1,6 +1,6 @@
 """Tests for the ``engrama_gdpr_forget`` MCP tool (Spec 001 US-3 / T031).
 
-Drives the FastMCP server in-process via ``fastmcp.Client`` against the
+Drives the MCP server in-process via ``mcp.client.Client`` against the
 SQLite backend. With no ``X-Engrama-*`` headers the server resolves the
 standalone single-user identity, so a node written by ``engrama_remember``
 and the erasure target share one scope.
@@ -36,7 +36,7 @@ def _hermetic_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def _call(server, tool: str, args: dict | None = None) -> dict:
-    from fastmcp import Client
+    from mcp.client import Client
 
     payload: dict = {} if args is None else {"params": args}
     async with Client(server) as client:
