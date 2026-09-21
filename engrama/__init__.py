@@ -10,7 +10,7 @@ Quick start::
         results = eng.recall("FastAPI", hops=2)
 """
 
-__version__ = "0.16.1"
+__version__ = "0.17.0"
 
 from engrama.adapters.sdk import Engrama  # noqa: F401
 
