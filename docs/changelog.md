@@ -7,6 +7,24 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **MCP tools no longer return a node's vector embedding.** On Neo4j the
+  embedding is an ordinary node property, so `engrama_remember` updating an
+  existing node echoed `node.embedding` back — the whole vector, thousands of
+  tokens the model cannot use. `engrama_sync_note` re-syncing a note had the
+  same leak. Creating a node was unaffected only because the vector is written
+  after the MERGE whose row the response echoes. A single output sanitiser,
+  `sanitize_node_for_output` in `engrama.core.security`, now strips
+  storage-internal fields (`embedding`, plus the SQLite `_id` / `_labels`
+  markers) from every node the MCP tools return — `engrama_remember`,
+  `engrama_sync_note` and `engrama_context` (root and neighbours) — instead of
+  relying on each backend to strip them. The other tools return fixed
+  projections and were already clean; a regression suite pins all of them,
+  parametrised over SQLite and Neo4j.
+
 ## [0.16.0] — 2026-09-16
 
 ### Added

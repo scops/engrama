@@ -7,6 +7,9 @@ This module exposes:
 * :class:`Sanitiser` — strips dangerous content and enforces the
   node/relation schema before any write reaches a store (PR-E2,
   layer 1 of DDR-003 Part 5).
+* :func:`sanitize_node_for_output` — the output-side counterpart: drops
+  storage-internal fields (the vector embedding, backend markers) from a
+  node before an adapter hands it back to a caller.
 
 The trust-aware retrieval piece (layer 3) lands in PR-E3.
 
@@ -225,8 +228,31 @@ class Sanitiser:
         return "".join(c for c in s if c in ("\t", "\n") or not (ord(c) < 0x20 or ord(c) == 0x7F))
 
 
+# Node fields that belong to the storage layer and must never reach a
+# caller. ``embedding`` is the vector: on Neo4j it is an ordinary node
+# property (the vector index reads it there), so any ``RETURN n`` carries
+# it — thousands of tokens the model cannot use, and partly invertible back
+# to the text it encodes. ``_id`` / ``_labels`` are the SQLite sync store's
+# row markers.
+INTERNAL_OUTPUT_KEYS: frozenset[str] = frozenset({"embedding", "_id", "_labels"})
+
+
+def sanitize_node_for_output(node: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a copy of ``node`` without :data:`INTERNAL_OUTPUT_KEYS`.
+
+    The single place that decides what a node may carry out of Engrama.
+    Adapters apply it to every node (root or neighbour) they return, so a
+    backend that stores the vector on the node can never leak it. The
+    input is left untouched; ``None`` yields an empty dict.
+    """
+    if not node:
+        return {}
+    return {k: v for k, v in node.items() if k not in INTERNAL_OUTPUT_KEYS}
+
+
 __all__ = [
     "DEFAULT_TRUST_LEVELS",
+    "INTERNAL_OUTPUT_KEYS",
     "MAX_PROPERTY_VALUE_LEN",
     "Provenance",
     "RESERVED_KEYS",
@@ -234,4 +260,5 @@ __all__ = [
     "RESERVED_SCOPE_KEYS",
     "Sanitiser",
     "default_trust_for",
+    "sanitize_node_for_output",
 ]
