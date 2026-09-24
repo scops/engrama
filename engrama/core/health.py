@@ -21,23 +21,15 @@ Vocabulary used throughout:
 
 from __future__ import annotations
 
-import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from typing import Any
 
+from engrama.core.anchors import ANCHOR_LABELS, unlinked_tag_anchors
+from engrama.core.names import normalise_key
 from engrama.core.stubs import HUB_STUB_MIN_DEGREE
 
-ANCHOR_LABELS: frozenset[str] = frozenset({"Project", "Client", "Course", "Domain"})
 _TOP = 10
-
-
-def normalise_key(value: str) -> str:
-    """Casefold, strip accents, and unify ``-``/``_``/whitespace runs."""
-    decomposed = unicodedata.normalize("NFKD", value)
-    no_accents = "".join(c for c in decomposed if not unicodedata.combining(c))
-    spaced = no_accents.casefold().replace("-", " ").replace("_", " ")
-    return " ".join(spaced.split())
 
 
 def is_system_insight(node: dict[str, Any]) -> bool:
@@ -75,13 +67,37 @@ def _component_summary(ids: set[Any], adjacency: dict[Any, set[Any]]) -> dict[st
     }
 
 
-def _tags(node: dict[str, Any]) -> list[str]:
-    raw = node.get("tags")
-    if isinstance(raw, str):
-        return [raw]
-    if isinstance(raw, list):
-        return [t for t in raw if isinstance(t, str)]
-    return []
+def _structure(
+    nodes: Iterable[dict[str, Any]], edges: Iterable[tuple[Any, Any]]
+) -> tuple[dict[Any, dict[str, Any]], set[Any], dict[Any, set[Any]], Counter[Any]]:
+    """Index a snapshot: ``(by_id, system Insight ids, adjacency, insight links)``.
+
+    Structure is measured between domain nodes only: a system Insight's ABOUT
+    edges annotate the graph, they don't connect it, so they go to
+    ``insight_links`` instead of ``adjacency``.
+    """
+    by_id = {n["id"]: n for n in nodes}
+    system = {i for i, n in by_id.items() if is_system_insight(n)}
+    adjacency: dict[Any, set[Any]] = defaultdict(set)
+    insight_links: Counter[Any] = Counter()
+    for a, b in edges:
+        if a not in by_id or b not in by_id or a == b:
+            continue
+        if a in system or b in system:
+            insight_links[a] += 1
+            insight_links[b] += 1
+            continue
+        adjacency[a].add(b)
+        adjacency[b].add(a)
+    return by_id, system, adjacency, insight_links
+
+
+def tag_anchor_rows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Anchors named by tags on live nodes with no edge to them (reflect's
+    ``tag_without_edge`` detector and the health report share this)."""
+    by_id, system, adjacency, _ = _structure(snapshot["nodes"], snapshot["edges"])
+    live = {i: n for i, n in by_id.items() if i not in system and n.get("status") != "archived"}
+    return unlinked_tag_anchors(live, adjacency)
 
 
 def compute_health(
@@ -95,21 +111,7 @@ def compute_health(
     ``edges`` are ``(id_a, id_b)`` pairs between nodes of the snapshot;
     direction and relation type don't matter here.
     """
-    by_id = {n["id"]: n for n in nodes}
-    system = {i for i, n in by_id.items() if is_system_insight(n)}
-    # Structure is measured between domain nodes only: a system Insight's
-    # ABOUT edges annotate the graph, they don't connect it.
-    adjacency: dict[Any, set[Any]] = defaultdict(set)
-    insight_links: Counter[Any] = Counter()
-    for a, b in edges:
-        if a not in by_id or b not in by_id or a == b:
-            continue
-        if a in system or b in system:
-            insight_links[a] += 1
-            insight_links[b] += 1
-            continue
-        adjacency[a].add(b)
-        adjacency[b].add(a)
+    by_id, system, adjacency, insight_links = _structure(nodes, edges)
 
     def degree(nid: Any) -> int:
         return len(adjacency[nid])
@@ -139,17 +141,7 @@ def compute_health(
     duplicates = sorted((ids for ids in groups.values() if len(ids) > 1), key=len, reverse=True)
 
     # Tags naming an anchor with no edge to it.
-    anchors: dict[str, list[Any]] = defaultdict(list)
-    for i in live:
-        n = by_id[i]
-        if n.get("label") in ANCHOR_LABELS and n.get("key"):
-            anchors[normalise_key(n["key"])].append(i)
-    unlinked: Counter[Any] = Counter()
-    for i in live:
-        for tag in {normalise_key(t) for t in _tags(by_id[i])}:
-            for anchor in anchors.get(tag, ()):
-                if anchor != i and anchor not in adjacency[i]:
-                    unlinked[anchor] += 1
+    tag_rows = unlinked_tag_anchors({i: by_id[i] for i in live}, adjacency)
 
     bridges = sorted(
         (i for i in archived if any(nb in live for nb in adjacency[i])),
@@ -202,8 +194,11 @@ def compute_health(
             "top": [[ref(i) for i in ids] for ids in duplicates[:_TOP]],
         },
         "tags_without_edge": {
-            "nodes": sum(unlinked.values()),
-            "top": [{"anchor": ref(a), "unlinked": c} for a, c in unlinked.most_common(_TOP)],
+            "nodes": sum(len(r["nodes"]) for r in tag_rows),
+            "top": [
+                {"anchor": f"{r['label']}:{r['name']}", "unlinked": len(r["nodes"])}
+                for r in tag_rows[:_TOP]
+            ],
         },
         "archived": {
             "count": len(archived),
@@ -276,5 +271,6 @@ __all__ = [
     "compute_health",
     "format_health",
     "is_system_insight",
-    "normalise_key",
+    "normalise_key",  # re-exported from engrama.core.names
+    "tag_anchor_rows",
 ]

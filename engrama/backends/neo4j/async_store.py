@@ -28,6 +28,7 @@ from engrama.backends.neo4j.backend import (
     _SERVER_MANAGED_TIMESTAMPS,
     _TEMPORAL_PROPERTIES,
 )
+from engrama.core.health import tag_anchor_rows
 from engrama.core.schema import TITLE_KEYED_LABELS
 from engrama.core.scope import (
     MemoryScope,
@@ -1078,6 +1079,36 @@ class Neo4jAsyncStore:
             cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
+
+    async def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        """Scoped nodes and edges for :func:`engrama.core.health.compute_health`
+        (fail-closed on an incomplete scope)."""
+        cypher, params = _reflect_cypher.health_nodes(scope)
+        node_records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
+        )
+        cypher, params = _reflect_cypher.health_edges(scope)
+        edge_records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
+        )
+        return {
+            "nodes": [dict(r) for r in node_records],
+            "edges": [(r["a"], r["b"]) for r in edge_records],
+        }
+
+    async def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
+        """Live anchor nodes in ``scope`` as ``{label, name}``."""
+        cypher, params = _reflect_cypher.anchors(scope)
+        records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
+        )
+        return [dict(r) for r in records]
+
+    async def detect_tags_without_edge(
+        self, scope: MemoryScope | None = None
+    ) -> list[dict[str, Any]]:
+        """Reflect detector: anchors named by tags on nodes not linked to them."""
+        return tag_anchor_rows(await self.health_snapshot(scope))
 
     async def detect_hub_stubs(
         self,

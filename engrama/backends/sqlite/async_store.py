@@ -109,6 +109,20 @@ class SqliteAsyncStore:
         created = n.get("created_at") == n.get("updated_at")
         return {"node": n, "created": created}
 
+    async def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        return await self._run(self._sync.health_snapshot, scope)
+
+    async def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
+        return await self._run(self._sync.list_anchors, scope)
+
+    async def detect_tags_without_edge(
+        self, scope: MemoryScope | None = None
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_tags_without_edge, scope)
+
+    async def detect_hub_stubs(self, scope: MemoryScope | None = None) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_hub_stubs, scope)
+
     async def node_degree(
         self,
         label: str,

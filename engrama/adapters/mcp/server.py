@@ -46,6 +46,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from engrama import __version__
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
+from engrama.core.anchors import (
+    RELATION_EXEMPT_LABELS,
+    node_tags,
+    require_relations,
+    suggest_from_tags,
+    tag_linking_mode,
+)
 from engrama.core.identity import resolve_local_sub
 from engrama.core.reflection import DETECTORS, select
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
@@ -335,6 +342,42 @@ def _with_mcp_provenance(extra: dict[str, Any] | None, scope: MemoryScope) -> di
 
 # Opportunistic re-embeds per healthy write (see _sweep_pending_embeddings).
 _SWEEP_LIMIT = 3
+
+
+async def _tag_anchor_suggestions(
+    store: Any, label: str, key_field: str, name: str, tags: list[str], scope: MemoryScope
+) -> list[dict[str, str]]:
+    """Relations implied by tags that name an in-scope anchor not yet linked."""
+    if not tags:
+        return []
+    try:
+        anchors = await store.list_anchors(scope=scope)
+        if not anchors:
+            return []
+        neighbours = await store.get_neighbours(
+            label, key_field, name, hops=1, limit=500, scope=scope
+        )
+    except Exception as e:  # noqa: BLE001 — suggestions must never break the write
+        logger.warning("Could not compute tag suggestions for a %s node: %s", label, e)
+        return []
+    linked = {(n["label"], n["name"]) for n in neighbours}
+    return suggest_from_tags(label, name, tags, anchors, linked)
+
+
+async def _link_anchor(
+    store: Any, label: str, key_field: str, name: str, s: dict[str, str], scope: MemoryScope
+) -> bool:
+    """Create the edge a tag suggestion describes (``ENGRAMA_TAG_LINKING=auto``)."""
+    a_key = "title" if s["label"] in TITLE_KEYED_LABELS else "name"
+    ends = [(label, key_field, name), (s["label"], a_key, s["name"])]
+    if s["direction"] == "in":
+        ends.reverse()
+    (fl, fk, fv), (tl, tk, tv) = ends
+    try:
+        return bool(await store.merge_relation(fl, fk, fv, s["rel_type"], tl, tk, tv, scope=scope))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not link a %s node to its tagged anchor: %s", label, e)
+        return False
 
 
 async def _hub_stub_hint(
@@ -1428,6 +1471,31 @@ def create_engrama_mcp(
         except ScopeUnresolved as e:
             return _safe_error(e)
 
+        # Opt-in: refuse to leave a non-anchor node with no edge (DDR-006).
+        # Checked before any write so a refused call changes nothing.
+        if (
+            require_relations()
+            and label not in RELATION_EXEMPT_LABELS
+            and not (params.relations or inline_relations)
+            and not await store.node_degree(label, merge_key, merge_value, scope=scope)
+        ):
+            suggestions = await _tag_anchor_suggestions(
+                store, label, merge_key, merge_value, node_tags(props), scope
+            )
+            if not (suggestions and tag_linking_mode() == "auto"):
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": (
+                            "ENGRAMA_REQUIRE_RELATIONS is set: this write would leave the "
+                            f"{label} with no relation. Pass 'relations' (or link it with "
+                            "engrama_relate) so it joins the graph."
+                        ),
+                        "suggested_relations": suggestions,
+                    },
+                    indent=2,
+                )
+
         # --- Vault note creation (BUG-002 / DDR-002) ---
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -1788,6 +1856,27 @@ def create_engrama_mcp(
                         except Exception:
                             pass
 
+        # --- DDR-006: tag anchoring and degree feedback ---
+        suggested_relations: list[dict[str, str]] = []
+        relations_from_tags: list[dict[str, str]] = []
+        tag_mode = tag_linking_mode()
+        if tag_mode != "off":
+            for s in await _tag_anchor_suggestions(
+                store, label, merge_key, merge_value, node_tags(props), scope
+            ):
+                if tag_mode == "auto" and await _link_anchor(
+                    store, label, merge_key, merge_value, s, scope
+                ):
+                    relations_created += 1
+                    relations_from_tags.append(s)
+                else:
+                    suggested_relations.append(s)
+        try:
+            degree = await store.node_degree(label, merge_key, merge_value, scope=scope)
+        except Exception as e:  # noqa: BLE001 — feedback must never break the write
+            logger.warning("Could not read degree for a %s node: %s", label, e)
+            degree = None
+
         # --- Proactivity: increment counter and check threshold ---
         result_data: dict[str, Any] = {
             "status": "ok",
@@ -1837,6 +1926,23 @@ def create_engrama_mcp(
                 f"'did_you_mean' and re-relate with its exact name, or remember it "
                 f"first if it's genuinely new."
             )
+        if degree is not None:
+            result_data["degree"] = degree
+            if degree == 0 and label not in RELATION_EXEMPT_LABELS:
+                result_data["orphan_warning"] = (
+                    f"this {label} has no relations, so the graph can't reach it from "
+                    "anything else. Link it with engrama_relate (or pass 'relations') "
+                    "to the project, concept or domain it belongs to."
+                )
+        if suggested_relations:
+            result_data["suggested_relations"] = suggested_relations
+            result_data["suggested_relations_note"] = (
+                "tags on this node name existing nodes it isn't linked to. Create these "
+                "relations with engrama_relate if they're right (direction 'in' means the "
+                "anchor points at this node)."
+            )
+        if relations_from_tags:
+            result_data["relations_from_tags"] = relations_from_tags
         if enrich_hints:
             result_data["enrich_hints"] = enrich_hints
             names = ", ".join(sorted({h["name"] for h in enrich_hints}))

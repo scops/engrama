@@ -19,6 +19,7 @@ from engrama.backends.neo4j import _reflect_cypher
 from engrama.backends.neo4j._cypher import escape_cypher_identifier, scoped_key_lookup
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.core.client import EngramaClient
+from engrama.core.health import tag_anchor_rows
 from engrama.core.schema import TITLE_KEYED_LABELS
 from engrama.core.scope import (
     MemoryScope,
@@ -582,34 +583,17 @@ class Neo4jGraphStore:
         Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty snapshot.
         Only edges whose two endpoints are visible in ``scope`` are returned.
         """
-        n_clause, params = scope_filter_cypher(scope, "n")
-        nodes = [
-            dict(r)
-            for r in self._client.run(
-                f"MATCH (n) WHERE {n_clause} AND coalesce(n.name, n.title) IS NOT NULL "
-                "RETURN elementId(n) AS id, "
-                "       [l IN labels(n) WHERE l <> 'Embedded'][0] AS label, "
-                "       coalesce(n.name, n.title) AS key, n.status AS status, "
-                "       n.tags AS tags, n.confidence AS confidence, "
-                "       n.source_query AS source_query, "
-                "       coalesce(n.summary, '') <> '' AS has_summary, "
-                "       n.engrama_id IS NOT NULL AS has_engrama_id, "
-                "       n.source IS NOT NULL AS has_source, "
-                "       n.trust_level IS NOT NULL AS has_trust",
-                params,
-            )
-        ]
-        a_clause, _ = scope_filter_cypher(scope, "a")
-        b_clause, _ = scope_filter_cypher(scope, "b")
-        edges = [
-            (r["a"], r["b"])
-            for r in self._client.run(
-                f"MATCH (a)-[]->(b) WHERE {a_clause} AND {b_clause} "
-                "RETURN elementId(a) AS a, elementId(b) AS b",
-                params,
-            )
-        ]
+        nodes = [dict(r) for r in self._client.run(*_reflect_cypher.health_nodes(scope))]
+        edges = [(r["a"], r["b"]) for r in self._client.run(*_reflect_cypher.health_edges(scope))]
         return {"nodes": nodes, "edges": edges}
+
+    def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
+        """Live anchor nodes in ``scope`` as ``{label, name}``."""
+        return [dict(r) for r in self._client.run(*_reflect_cypher.anchors(scope))]
+
+    def detect_tags_without_edge(self, scope: MemoryScope | None = None) -> list[dict[str, Any]]:
+        """Reflect detector: anchors named by tags on nodes not linked to them."""
+        return tag_anchor_rows(self.health_snapshot(scope))
 
     def iter_all_relations(self):
         """Yield every relationship as ``{from_label, from_key, from_value,

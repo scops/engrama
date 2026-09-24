@@ -25,6 +25,7 @@ from typing import Any
 
 import sqlite_vec
 
+from engrama.core.health import tag_anchor_rows
 from engrama.core.reflection import SHARED_TECHNOLOGY_MIN_MEMBERS
 from engrama.core.scope import (
     MemoryScope,
@@ -1810,6 +1811,21 @@ class SqliteGraphStore:
             "AND NOT (m.label = 'Insight' AND json_extract(m.props, '$.source_query') IS NOT NULL)",
             {"id": row["id"]},
         ).fetchone()[0]
+
+    def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
+        """Live anchor nodes (Project/Client/Course/Domain) in ``scope`` as
+        ``{label, name}``; fail-closed on an incomplete scope."""
+        clause, params = scope_filter_sql(scope, "n", json_column="props")
+        sql = (
+            "SELECT n.label AS label, n.key_value AS name FROM nodes n "
+            "WHERE n.label IN ('Project', 'Client', 'Course', 'Domain') "
+            f"AND {clause}{self._live_and(('n',))}"
+        )
+        return [dict(r) for r in self._conn.execute(sql, params)]
+
+    def detect_tags_without_edge(self, scope: MemoryScope | None = None) -> list[dict[str, Any]]:
+        """Reflect detector: anchors named by tags on nodes not linked to them."""
+        return tag_anchor_rows(self.health_snapshot(scope))
 
     def detect_hub_stubs(
         self,

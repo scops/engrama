@@ -261,6 +261,31 @@ def _hub_stubs(records: list[dict[str, Any]]) -> list[InsightDraft]:
     ]
 
 
+def _tags_without_edge(records: list[dict[str, Any]]) -> list[InsightDraft]:
+    from engrama.core.anchors import anchor_relation
+
+    drafts = []
+    for r in records:
+        nodes = r["nodes"]
+        rel = anchor_relation(r["label"])
+        shown = ", ".join(_ref(n) for n in nodes[:_SAMPLE])
+        more = f" and {len(nodes) - _SAMPLE} more" if len(nodes) > _SAMPLE else ""
+        drafts.append(
+            InsightDraft(
+                title=f"Unlinked tag: {r['label']}:{r['name']}",
+                body=(
+                    f'{len(nodes)} nodes are tagged "{r["name"]}" but not linked to the '
+                    f'{r["label"]} "{r["name"]}": {shown}{more}. Linking them '
+                    f"({rel['rel_type']}) lets the graph connect what the tags already say."
+                ),
+                confidence=0.7,
+                source_query="tag_without_edge",
+                about=((r["label"], r["name"]), *_pairs(nodes[:_SAMPLE])),
+            )
+        )
+    return drafts
+
+
 def _under_connected(records: list[dict[str, Any]]) -> list[InsightDraft]:
     if not records:
         return []
@@ -321,6 +346,12 @@ DETECTORS: tuple[Detector, ...] = (
         any_of=(("Project", "Course"),),
     ),
     Detector("hub_stubs", "detect_hub_stubs", _hub_stubs),
+    Detector(
+        "tag_without_edge",
+        "detect_tags_without_edge",
+        _tags_without_edge,
+        any_of=(("Project", "Client", "Course", "Domain"),),
+    ),
     Detector(
         "under_connected",
         "detect_under_connected_nodes",

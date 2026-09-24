@@ -182,8 +182,46 @@ def hub_stubs(scope: MemoryScope | None) -> tuple[str, dict[str, Any]]:
     return cypher, {"min_degree": HUB_STUB_MIN_DEGREE, **params}
 
 
+def anchors(scope: MemoryScope | None) -> tuple[str, dict[str, Any]]:
+    """Live anchor nodes (Project/Client/Course/Domain) as ``{label, name}``."""
+    scope_sql, params = _scope_and(("n",), scope)
+    cypher = (
+        "MATCH (n) WHERE (n:Project OR n:Client OR n:Course OR n:Domain) "
+        f"AND coalesce(n.name, n.title) IS NOT NULL AND {scope_sql} AND {_live_and(('n',))} "
+        f"RETURN {label('n')} AS label, coalesce(n.name, n.title) AS name"
+    )
+    return cypher, params
+
+
+def health_nodes(scope: MemoryScope | None) -> tuple[str, dict[str, Any]]:
+    """Every node in scope, projected onto the fields ``core.health`` needs."""
+    scope_sql, params = _scope_and(("n",), scope)
+    cypher = (
+        f"MATCH (n) WHERE {scope_sql} AND coalesce(n.name, n.title) IS NOT NULL "
+        f"RETURN elementId(n) AS id, {label('n')} AS label, "
+        "       coalesce(n.name, n.title) AS key, n.status AS status, "
+        "       n.tags AS tags, n.confidence AS confidence, "
+        "       n.source_query AS source_query, "
+        "       coalesce(n.summary, '') <> '' AS has_summary, "
+        "       n.engrama_id IS NOT NULL AS has_engrama_id, "
+        "       n.source IS NOT NULL AS has_source, "
+        "       n.trust_level IS NOT NULL AS has_trust"
+    )
+    return cypher, params
+
+
+def health_edges(scope: MemoryScope | None) -> tuple[str, dict[str, Any]]:
+    """Every edge whose two endpoints are visible in scope."""
+    scope_sql, params = _scope_and(("a", "b"), scope)
+    cypher = f"MATCH (a)-[]->(b) WHERE {scope_sql} RETURN elementId(a) AS a, elementId(b) AS b"
+    return cypher, params
+
+
 __all__ = [
+    "anchors",
     "concept_clusters",
+    "health_edges",
+    "health_nodes",
     "hub_stubs",
     "cross_project_solutions",
     "live",
