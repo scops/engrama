@@ -190,7 +190,11 @@ class HybridConfig:
     vector_k: int = 20
     fulltext_k: int = 20
     temporal_gamma: float = 0.1
-    recency_half_life: float = 30.0
+    # Read-time recency (DDR-007): months-long memory, shorter for reflect
+    # Insights, stretched for hubs. Override with ENGRAMA_RECENCY_*.
+    recency_half_life: float = 180.0
+    insight_recency_half_life: float = 30.0
+    recency_degree_factor: bool = True
     trust_delta: float = 0.1
 
     def __post_init__(self) -> None:
@@ -243,6 +247,18 @@ class HybridConfig:
         fanout_cap = _env_int("ENGRAMA_FANOUT_CAP", minimum=1)
         if fanout_cap is not None:
             self.fanout_cap = fanout_cap
+
+        half_life = _env_float("ENGRAMA_RECENCY_HALF_LIFE", minimum=0.0, min_exclusive=True)
+        if half_life is not None:
+            self.recency_half_life = half_life
+        insight_half_life = _env_float(
+            "ENGRAMA_RECENCY_INSIGHT_HALF_LIFE", minimum=0.0, min_exclusive=True
+        )
+        if insight_half_life is not None:
+            self.insight_recency_half_life = insight_half_life
+        degree_factor = _env_bool("ENGRAMA_RECENCY_DEGREE")
+        if degree_factor is not None:
+            self.recency_degree_factor = degree_factor
 
         # Composite one-flag revert (data-model.md, RG-6). Applied LAST so it
         # authoritatively overrides any individual fusion_mode/graph_rerank
@@ -699,7 +715,16 @@ class HybridSearchEngine:
                 # surfaces as ``summary=""`` / ``tags=[]`` in the MCP
                 # response and starves the caller of context.
                 vec_props: dict[str, Any] = {}
-                for k in ("confidence", "updated_at", "summary", "tags", "trust_level"):
+                for k in (
+                    "confidence",
+                    "updated_at",
+                    "last_activity_at",
+                    "degree",
+                    "source_query",
+                    "summary",
+                    "tags",
+                    "trust_level",
+                ):
                     if k in r and r[k] is not None:
                         vec_props[k] = r[k]
                 sr = SearchResult(
@@ -730,7 +755,16 @@ class HybridSearchEngine:
                 # ``details`` is intentionally omitted — use engrama_context
                 # when full context is needed.
                 props: dict[str, Any] = {}
-                for k in ("confidence", "updated_at", "summary", "tags", "trust_level"):
+                for k in (
+                    "confidence",
+                    "updated_at",
+                    "last_activity_at",
+                    "degree",
+                    "source_query",
+                    "summary",
+                    "tags",
+                    "trust_level",
+                ):
                     if k in d:
                         props[k] = d[k]
 
@@ -781,18 +815,20 @@ class HybridSearchEngine:
         # --- Temporal scoring (Phase D) ---
         gamma = self.config.temporal_gamma
         if gamma > 0:
-            from engrama.core.temporal import days_since, temporal_score
+            from engrama.core.temporal import recency
 
             for sr in by_name.values():
-                updated_at = sr.properties.get("updated_at")
-                if updated_at:
+                fresh = recency(
+                    sr.label,
+                    sr.properties,
+                    half_life=self.config.recency_half_life,
+                    insight_half_life=self.config.insight_recency_half_life,
+                    degree_factor=self.config.recency_degree_factor,
+                )
+                if fresh is not None:
                     confidence = sr.properties.get("confidence", 1.0)
-                    days = days_since(updated_at)
-                    sr.temporal_score = temporal_score(
-                        confidence if confidence is not None else 1.0,
-                        days,
-                        recency_half_life=self.config.recency_half_life,
-                    )
+                    belief = confidence if confidence is not None else 1.0
+                    sr.temporal_score = max(0.0, min(1.0, belief * fresh))
                 else:
                     # No freshness info means "unknown", not "fresh as
                     # today" — fall back to a neutral score so a

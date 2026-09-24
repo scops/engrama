@@ -1196,6 +1196,17 @@ def create_engrama_mcp(
             "degraded": False,
             "reason": "" if would_hybrid else "no functional embedder; search is fulltext-only",
         }
+        # Read-time recency parameters (DDR-007): nothing decays in storage.
+        from engrama.core.anchors import ANCHOR_LABELS
+        from engrama.core.search import HybridConfig
+
+        ranking = HybridConfig()
+        search_info["recency"] = {
+            "half_life_days": ranking.recency_half_life,
+            "insight_half_life_days": ranking.insight_recency_half_life,
+            "degree_factor": ranking.recency_degree_factor,
+            "exempt_labels": sorted(ANCHOR_LABELS),
+        }
 
         response: dict[str, Any] = {
             "version": engrama_version,

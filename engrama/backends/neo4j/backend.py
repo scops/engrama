@@ -40,7 +40,7 @@ _NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 # that string is written verbatim it clobbers the ``datetime()`` and the
 # property becomes STRING-typed, breaking ``duration.between(...)`` in
 # decay / ``query_at_date``. Enforce the invariant here. See #76.
-_SERVER_MANAGED_TIMESTAMPS = frozenset({"created_at", "updated_at"})
+_SERVER_MANAGED_TIMESTAMPS = frozenset({"created_at", "updated_at", "last_activity_at"})
 
 # Domain temporal properties a caller MAY set explicitly. When supplied
 # (notably by the importer, where they arrive as ISO strings) they must
@@ -179,9 +179,11 @@ class Neo4jGraphStore:
             "n.updated_at = datetime()",
             "n.valid_from = $valid_from",
             "n.confidence = $confidence_val",
+            "n.last_activity_at = datetime()",
         ]
         set_clauses_match: list[str] = [
             "n.updated_at = datetime()",
+            "n.last_activity_at = datetime()",
         ]
         if clears_stub(properties):
             # Enriching a stub promotes it (DDR-006).
@@ -497,6 +499,8 @@ class Neo4jGraphStore:
             f"WITH a, b LIMIT 1 "
             f"MERGE (a)-[r:{rel_type}]->(b) "
             f"{set_clause}"
+            # Linking is activity on both endpoints (DDR-007).
+            "SET a.last_activity_at = datetime(), b.last_activity_at = datetime() "
             "RETURN type(r) AS rel_type"
         )
         return _records_to_dicts(self._client.run(query, params))
@@ -553,8 +557,10 @@ class Neo4jGraphStore:
         owner: MemoryScope | None,
         created_at: str | None,
         updated_at: str | None,
+        last_activity_at: str | None = None,
     ) -> bool:
-        """Importer-only: put back the original ``created_at`` / ``updated_at``.
+        """Importer-only: put back the original ``created_at`` / ``updated_at``
+        (and ``last_activity_at``).
 
         ``merge_node`` never takes these from a caller (#76), so an import
         would otherwise date every node to the day it ran (DDR-007). This is
@@ -567,12 +573,14 @@ class Neo4jGraphStore:
         records = self._client.run(
             f"MATCH (n:{label} {{{key_field}: $key_value}}) WHERE {owner_clause} "
             "SET n.created_at = coalesce(datetime($created_at), n.created_at), "
-            "    n.updated_at = coalesce(datetime($updated_at), n.updated_at) "
+            "    n.updated_at = coalesce(datetime($updated_at), n.updated_at), "
+            "    n.last_activity_at = coalesce(datetime($last_activity_at), n.last_activity_at) "
             "RETURN count(n) AS n",
             {
                 "key_value": key_value,
                 "created_at": created_at,
                 "updated_at": updated_at,
+                "last_activity_at": last_activity_at,
                 **owner_params,
             },
         )
@@ -736,7 +744,11 @@ class Neo4jGraphStore:
             "node.tags AS tags, "
             "node.confidence AS confidence, "
             "node.trust_level AS trust_level, "
-            "toString(node.updated_at) AS updated_at "
+            "toString(node.updated_at) AS updated_at, "
+            "toString(node.last_activity_at) AS last_activity_at, "
+            "node.source_query AS source_query, "
+            "size([(node)--(m) WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) "
+            "AS degree "
             "ORDER BY score DESC LIMIT $limit"
         )
         params: dict[str, Any] = {

@@ -539,7 +539,11 @@ class SqliteAsyncStore:
                 "summary": r.get("summary", ""),
                 "tags": r.get("tags"),
                 "confidence": r.get("confidence"),
+                "trust_level": r.get("trust_level"),
                 "updated_at": r.get("updated_at"),
+                "last_activity_at": r.get("last_activity_at"),
+                "source_query": r.get("source_query"),
+                "degree": r.get("degree"),
             }
             for r in rows
         ]

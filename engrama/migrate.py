@@ -140,6 +140,7 @@ def import_graph(
                 # it never trusts caller timestamps (#76).
                 created_at = _iso(props.get("created_at"))
                 updated_at = _iso(props.get("updated_at"))
+                last_activity_at = _iso(props.get("last_activity_at"))
                 owner = node_owner(props)
                 graph_store.merge_node(
                     rec["label"],
@@ -149,8 +150,15 @@ def import_graph(
                 )
                 # Put the originals back so an import keeps the graph's history.
                 restore = getattr(graph_store, "restore_timestamps", None)
-                if restore is not None and (created_at or updated_at):
-                    restore(rec["label"], rec["key_value"], owner, created_at, updated_at)
+                if restore is not None and (created_at or updated_at or last_activity_at):
+                    restore(
+                        rec["label"],
+                        rec["key_value"],
+                        owner,
+                        created_at,
+                        updated_at,
+                        last_activity_at=last_activity_at,
+                    )
                 counts["nodes"] += 1
             elif rtype == "relation":
                 # Resolve endpoints in the scope that wrote the edge (names are

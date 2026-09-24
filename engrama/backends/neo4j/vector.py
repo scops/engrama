@@ -143,7 +143,12 @@ class Neo4jVectorStore:
             "primary_label AS label, "
             "COALESCE(node.name, node.title) AS name, "
             "score, "
-            "node.trust_level AS trust_level "
+            "node.trust_level AS trust_level, "
+            "toString(node.updated_at) AS updated_at, "
+            "toString(node.last_activity_at) AS last_activity_at, "
+            "node.source_query AS source_query, "
+            "size([(node)--(m) WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) "
+            "AS degree "
             "ORDER BY score DESC "
             "LIMIT $limit"
         )

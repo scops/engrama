@@ -96,6 +96,39 @@ def temporal_score(
     return max(0.0, min(1.0, confidence * recency))
 
 
+def recency(
+    label: str,
+    props: dict,
+    *,
+    half_life: float,
+    insight_half_life: float,
+    degree_factor: bool = True,
+) -> float | None:
+    """Read-time recency in ``(0, 1]`` (DDR-007), or ``None`` when unknown.
+
+    Measured from ``last_activity_at`` (writes *and* new edges on the node),
+    falling back to ``updated_at``. Anchor labels (Project, Client, Course,
+    Domain) are exempt and score 1. Reflect-generated Insights use their own,
+    shorter half-life. With ``degree_factor``, the half-life of a hub is
+    stretched by ``1 + log2(1 + degree)`` so well-connected nodes fade slowly.
+    """
+    from engrama.core.anchors import ANCHOR_LABELS
+
+    if label in ANCHOR_LABELS:
+        return 1.0
+    stamp = props.get("last_activity_at") or props.get("updated_at")
+    if not stamp:
+        return None
+    days = days_since(stamp)
+    if days <= 0:
+        return 1.0
+    hl = insight_half_life if label == "Insight" and props.get("source_query") else half_life
+    degree = props.get("degree") or 0
+    if degree_factor and degree > 0:
+        hl *= 1 + math.log2(1 + degree)
+    return 2 ** (-days / hl)
+
+
 def days_since(dt: datetime | str | None) -> float:
     """Return fractional days between *dt* and now (UTC).
 

@@ -234,6 +234,15 @@ class SqliteVecStore:
                        json_extract(n.props, '$.tags')          AS tags,
                        json_extract(n.props, '$.confidence')    AS confidence,
                        json_extract(n.props, '$.trust_level')   AS trust_level,
+                       json_extract(n.props, '$.last_activity_at') AS last_activity_at,
+                       json_extract(n.props, '$.source_query')  AS source_query,
+                       (SELECT COUNT(*) FROM edges e
+                          JOIN nodes m ON m.id = CASE WHEN e.from_id = n.id
+                                                     THEN e.to_id ELSE e.from_id END
+                         WHERE (e.from_id = n.id OR e.to_id = n.id)
+                           AND NOT (m.label = 'Insight'
+                                    AND json_extract(m.props, '$.source_query') IS NOT NULL)
+                       )                                        AS degree,
                        n.updated_at                             AS updated_at
                 FROM {self._index_name} v
                 JOIN nodes n ON n.id = v.node_id
@@ -272,6 +281,9 @@ class SqliteVecStore:
                     "confidence": r["confidence"],
                     "trust_level": r["trust_level"],
                     "updated_at": r["updated_at"],
+                    "last_activity_at": r["last_activity_at"],
+                    "source_query": r["source_query"],
+                    "degree": r["degree"],
                 }
             )
         return results

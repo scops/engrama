@@ -141,9 +141,11 @@ class Neo4jAsyncStore:
         set_create: list[str] = [
             "n.created_at = datetime()",
             "n.updated_at = datetime()",
+            "n.last_activity_at = datetime()",
         ]
         set_match: list[str] = [
             "n.updated_at = datetime()",
+            "n.last_activity_at = datetime()",
         ]
         if clears_stub(properties):
             # Enriching a stub promotes it (DDR-006).
@@ -420,6 +422,8 @@ class Neo4jAsyncStore:
             f"WITH a, b LIMIT 1 "
             f"MERGE (a)-[r:{rel_type}]->(b) "
             f"{set_clause}"
+            # Linking is activity on both endpoints (DDR-007).
+            "SET a.last_activity_at = datetime(), b.last_activity_at = datetime() "
             f"RETURN type(r) AS rel_type, "
             f"COALESCE(a.name, a.title) AS from_name, "
             f"COALESCE(b.name, b.title) AS to_name, "
@@ -639,7 +643,11 @@ class Neo4jAsyncStore:
             "node.tags AS tags, "
             "node.confidence AS confidence, "
             "node.trust_level AS trust_level, "
-            "toString(node.updated_at) AS updated_at "
+            "toString(node.updated_at) AS updated_at, "
+            "toString(node.last_activity_at) AS last_activity_at, "
+            "node.source_query AS source_query, "
+            "size([(node)--(m) WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) "
+            "AS degree "
             "ORDER BY score DESC LIMIT $limit"
         )
         params: dict[str, Any] = {
@@ -1298,7 +1306,11 @@ class Neo4jAsyncStore:
                 "node.tags AS tags, "
                 "node.confidence AS confidence, "
                 "node.trust_level AS trust_level, "
-                "toString(node.updated_at) AS updated_at "
+                "toString(node.updated_at) AS updated_at, "
+                "toString(node.last_activity_at) AS last_activity_at, "
+                "node.source_query AS source_query, "
+                "size([(node)--(m) WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) "
+                "AS degree "
                 "ORDER BY score DESC LIMIT $limit"
             )
             params: dict[str, Any] = {

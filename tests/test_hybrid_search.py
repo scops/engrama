@@ -375,7 +375,7 @@ class TestTemporalMissingUpdatedAt:
             graph, _SyncNullVectorStore(), _NullEmbedder(), config=self._config()
         )
         results = engine.search("a", limit=5)
-        # 365-day-old node with half-life 30d → recency ≈ 2**(-12) ≈ 0.0002.
+        # 365-day-old node with the default half-life (180d) → recency ≈ 0.25.
         assert results[0].temporal_score < DEFAULT_TEMPORAL_SCORE
 
     def test_stale_hit_outranked_by_unknown_hit_no_more(self):
@@ -403,7 +403,8 @@ class TestTemporalMissingUpdatedAt:
         assert results[0].temporal_score == DEFAULT_TEMPORAL_SCORE
         # The old node still appears, just with a much lower temporal
         # contribution — proving the unknown isn't getting max boost.
-        assert results[1].temporal_score < 0.01
+        # (Default half-life is 180 days (DDR-007): 2**(-365/180) ≈ 0.25.)
+        assert results[1].temporal_score < 0.3
 
 
 # ---------------------------------------------------------------------------

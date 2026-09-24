@@ -287,6 +287,7 @@ class SqliteGraphStore:
         # taken from the caller (#76, parity with the Neo4j store).
         properties.pop("created_at", None)
         properties.pop("updated_at", None)
+        properties.pop("last_activity_at", None)
 
         owner_clause, owner_params = owner_filter_sql(node_owner(properties), "nodes")
         cur = self._conn.execute(
@@ -308,6 +309,7 @@ class SqliteGraphStore:
             # Stable node identity (#6): mint a UUID unless the caller adopted
             # one (e.g. an existing Obsidian note's id). Mirrors the Neo4j store.
             full.setdefault("engrama_id", str(uuid.uuid4()))
+            full["last_activity_at"] = now
             cur = self._conn.execute(
                 "INSERT INTO nodes(label, key_field, key_value, props, "
                 "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -336,6 +338,7 @@ class SqliteGraphStore:
                 merged["engrama_id"] = existing["engrama_id"]
             elif not merged.get("engrama_id"):
                 merged["engrama_id"] = str(uuid.uuid4())
+            merged["last_activity_at"] = now
             self._conn.execute(
                 "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
                 (json.dumps(merged), now, node_id),
@@ -545,8 +548,10 @@ class SqliteGraphStore:
         owner: MemoryScope | None,
         created_at: str | None,
         updated_at: str | None,
+        last_activity_at: str | None = None,
     ) -> bool:
-        """Importer-only: put back the original ``created_at`` / ``updated_at``.
+        """Importer-only: put back the original ``created_at`` / ``updated_at``
+        (and ``last_activity_at``).
 
         ``merge_node`` never takes these from a caller (#76), so an import
         would otherwise date every node to the day it ran (DDR-007). This is
@@ -558,13 +563,16 @@ class SqliteGraphStore:
         owner_clause, owner_params = owner_filter_sql(owner, "nodes")
         cur = self._conn.execute(
             "UPDATE nodes SET created_at = COALESCE(:created_at, created_at), "
-            "updated_at = COALESCE(:updated_at, updated_at) "
+            "updated_at = COALESCE(:updated_at, updated_at), "
+            "props = CASE WHEN :last_activity_at IS NULL THEN props "
+            "ELSE json_set(props, '$.last_activity_at', :last_activity_at) END "
             f"WHERE label = :label AND key_value = :key_value AND {owner_clause}",
             {
                 "label": label,
                 "key_value": key_value,
                 "created_at": created_at,
                 "updated_at": updated_at,
+                "last_activity_at": last_activity_at,
                 **owner_params,
             },
         )
@@ -642,6 +650,11 @@ class SqliteGraphStore:
             "    org_id = COALESCE(excluded.org_id, edges.org_id), "
             "    user_id = COALESCE(excluded.user_id, edges.user_id)",
             (from_row["id"], rel_type, to_row["id"], now, org_id, user_id),
+        )
+        # Linking is activity on both endpoints (DDR-007).
+        self._conn.execute(
+            "UPDATE nodes SET props = json_set(props, '$.last_activity_at', ?) WHERE id IN (?, ?)",
+            (now, from_row["id"], to_row["id"]),
         )
         self._conn.commit()
         return [{"rel_type": rel_type}]
@@ -930,6 +943,15 @@ class SqliteGraphStore:
                        json_extract(n.props, '$.tags')          AS tags,
                        json_extract(n.props, '$.confidence')    AS confidence,
                        json_extract(n.props, '$.trust_level')   AS trust_level,
+                       json_extract(n.props, '$.last_activity_at') AS last_activity_at,
+                       json_extract(n.props, '$.source_query')  AS source_query,
+                       (SELECT COUNT(*) FROM edges e
+                          JOIN nodes m ON m.id = CASE WHEN e.from_id = n.id
+                                                     THEN e.to_id ELSE e.from_id END
+                         WHERE (e.from_id = n.id OR e.to_id = n.id)
+                           AND NOT (m.label = 'Insight'
+                                    AND json_extract(m.props, '$.source_query') IS NOT NULL)
+                       )                                        AS degree,
                        n.updated_at                             AS updated_at
                 FROM nodes_fts
                 JOIN nodes n ON n.id = nodes_fts.rowid
@@ -967,6 +989,9 @@ class SqliteGraphStore:
                     "confidence": r["confidence"],
                     "trust_level": r["trust_level"],
                     "updated_at": r["updated_at"],
+                    "last_activity_at": r["last_activity_at"],
+                    "source_query": r["source_query"],
+                    "degree": r["degree"],
                 }
             )
         return results
