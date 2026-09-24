@@ -134,6 +134,20 @@ class SqliteVecStore:
         )
         return True
 
+    def get_vectors(self, node_ids: list[str]) -> dict[str, list[float]]:
+        """Stored embeddings keyed by node id (as a string)."""
+        # scope-exempt: resolves vectors for ids the caller already obtained
+        # from a scoped search; no node rows are read.
+        if self._dimensions == 0 or not self._index_ready or not node_ids:
+            return {}
+        ids = [int(i) for i in node_ids]
+        marks = ", ".join("?" for _ in ids)
+        fmt = f"<{self._dimensions}f"
+        rows = self._conn.execute(
+            f"SELECT node_id, embedding FROM {self._index_name} WHERE node_id IN ({marks})", ids
+        )
+        return {str(r[0]): list(struct.unpack(fmt, r[1])) for r in rows}
+
     def delete_vectors(self, node_ids: list[str]) -> int:
         if self._dimensions == 0 or not node_ids or not self._index_ready:
             return 0

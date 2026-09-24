@@ -27,6 +27,7 @@ import sqlite_vec
 
 from engrama.core.health import tag_anchor_rows
 from engrama.core.reflection import SHARED_TECHNOLOGY_MIN_MEMBERS
+from engrama.core.resolve import name_fragments
 from engrama.core.scope import (
     MemoryScope,
     node_owner,
@@ -1811,6 +1812,38 @@ class SqliteGraphStore:
             "AND NOT (m.label = 'Insight' AND json_extract(m.props, '$.source_query') IS NOT NULL)",
             {"id": row["id"]},
         ).fetchone()[0]
+
+    def name_candidates(
+        self,
+        name: str,
+        scope: MemoryScope | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """In-scope nodes whose name shares a fragment with ``name``
+        (see :func:`engrama.core.resolve.name_fragments`), exact names and
+        similar lengths first, as ``{label, name, status}``. Reflect-generated
+        Insights are never candidates. Fail-closed on an incomplete scope.
+        """
+        frags = name_fragments(name)
+        if not frags:
+            return []
+        clause, params = scope_filter_sql(scope, "n", json_column="props")
+        likes = []
+        for i, frag in enumerate(frags):
+            escaped = frag.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            params[f"frag{i}"] = f"%{escaped}%"
+            likes.append(f"LOWER(n.key_value) LIKE :frag{i} ESCAPE '!'")
+        sql = (
+            "SELECT n.label AS label, n.key_value AS name, "
+            "json_extract(n.props, '$.status') AS status FROM nodes n "
+            f"WHERE ({' OR '.join(likes)}) AND {clause} "
+            "AND NOT (n.label = 'Insight' "
+            "AND json_extract(n.props, '$.source_query') IS NOT NULL) "
+            "ORDER BY LOWER(n.key_value) = LOWER(:name) DESC, "
+            "ABS(LENGTH(n.key_value) - LENGTH(:name)), n.key_value LIMIT :limit"
+        )
+        params.update({"name": name, "limit": limit})
+        return [dict(r) for r in self._conn.execute(sql, params)]
 
     def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
         """Live anchor nodes (Project/Client/Course/Domain) in ``scope`` as

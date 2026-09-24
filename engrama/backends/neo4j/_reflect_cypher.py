@@ -182,6 +182,24 @@ def hub_stubs(scope: MemoryScope | None) -> tuple[str, dict[str, Any]]:
     return cypher, {"min_degree": HUB_STUB_MIN_DEGREE, **params}
 
 
+def name_candidates(
+    name: str, fragments: list[str], scope: MemoryScope | None, limit: int
+) -> tuple[str, dict[str, Any]]:
+    """In-scope nodes whose lowercased name contains one of ``fragments``,
+    exact names and similar lengths first (entity resolution, DDR-006)."""
+    scope_sql, params = _scope_and(("n",), scope)
+    cypher = (
+        "MATCH (n) WHERE coalesce(n.name, n.title) IS NOT NULL "
+        f"AND {scope_sql} AND NOT (n:Insight AND n.source_query IS NOT NULL) "
+        "WITH n, coalesce(n.name, n.title) AS key "
+        "WHERE any(f IN $fragments WHERE toLower(key) CONTAINS f) "
+        f"RETURN {label('n')} AS label, key AS name, n.status AS status "
+        "ORDER BY toLower(key) = toLower($name) DESC, "
+        "abs(size(key) - size($name)), key LIMIT $limit"
+    )
+    return cypher, {"name": name, "fragments": fragments, "limit": limit, **params}
+
+
 def anchors(scope: MemoryScope | None) -> tuple[str, dict[str, Any]]:
     """Live anchor nodes (Project/Client/Course/Domain) as ``{label, name}``."""
     scope_sql, params = _scope_and(("n",), scope)
@@ -219,6 +237,7 @@ def health_edges(scope: MemoryScope | None) -> tuple[str, dict[str, Any]]:
 
 __all__ = [
     "anchors",
+    "name_candidates",
     "concept_clusters",
     "health_edges",
     "health_nodes",

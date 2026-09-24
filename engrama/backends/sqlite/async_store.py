@@ -109,6 +109,16 @@ class SqliteAsyncStore:
         created = n.get("created_at") == n.get("updated_at")
         return {"node": n, "created": created}
 
+    async def name_candidates(
+        self, name: str, scope: MemoryScope | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.name_candidates, name, scope, limit)
+
+    async def get_vectors(self, node_ids: list[str]) -> dict[str, list[float]]:
+        """Stored embeddings for ``node_ids`` (ids as returned by
+        :meth:`search_similar`); ids without a vector are omitted."""
+        return await self._run(self._vector.get_vectors, node_ids)
+
     async def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
         return await self._run(self._sync.health_snapshot, scope)
 

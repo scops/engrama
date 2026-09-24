@@ -20,6 +20,7 @@ from engrama.backends.neo4j._cypher import escape_cypher_identifier, scoped_key_
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.core.client import EngramaClient
 from engrama.core.health import tag_anchor_rows
+from engrama.core.resolve import name_fragments
 from engrama.core.schema import TITLE_KEYED_LABELS
 from engrama.core.scope import (
     MemoryScope,
@@ -586,6 +587,18 @@ class Neo4jGraphStore:
         nodes = [dict(r) for r in self._client.run(*_reflect_cypher.health_nodes(scope))]
         edges = [(r["a"], r["b"]) for r in self._client.run(*_reflect_cypher.health_edges(scope))]
         return {"nodes": nodes, "edges": edges}
+
+    def name_candidates(
+        self, name: str, scope: MemoryScope | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """In-scope nodes sharing a name fragment with ``name`` (DDR-006)."""
+        frags = name_fragments(name)
+        if not frags:
+            return []
+        return [
+            dict(r)
+            for r in self._client.run(*_reflect_cypher.name_candidates(name, frags, scope, limit))
+        ]
 
     def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
         """Live anchor nodes in ``scope`` as ``{label, name}``."""

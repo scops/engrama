@@ -29,6 +29,7 @@ from engrama.backends.neo4j.backend import (
     _TEMPORAL_PROPERTIES,
 )
 from engrama.core.health import tag_anchor_rows
+from engrama.core.resolve import name_fragments
 from engrama.core.schema import TITLE_KEYED_LABELS
 from engrama.core.scope import (
     MemoryScope,
@@ -1095,6 +1096,33 @@ class Neo4jAsyncStore:
             "nodes": [dict(r) for r in node_records],
             "edges": [(r["a"], r["b"]) for r in edge_records],
         }
+
+    async def name_candidates(
+        self, name: str, scope: MemoryScope | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """In-scope nodes sharing a name fragment with ``name`` (DDR-006)."""
+        frags = name_fragments(name)
+        if not frags:
+            return []
+        cypher, params = _reflect_cypher.name_candidates(name, frags, scope, limit)
+        records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
+        )
+        return [dict(r) for r in records]
+
+    async def get_vectors(self, node_ids: list[str]) -> dict[str, list[float]]:
+        """Stored embeddings keyed by ``elementId`` (ids from :meth:`search_similar`)."""
+        # scope-exempt: resolves vectors for ids the caller already obtained
+        # from a scoped search.
+        if not node_ids:
+            return {}
+        records, _, _ = await self._driver.execute_query(
+            "MATCH (n) WHERE elementId(n) IN $ids AND n.embedding IS NOT NULL "
+            "RETURN elementId(n) AS id, n.embedding AS embedding",
+            parameters_={"ids": list(node_ids)},
+            database_=self._database,
+        )
+        return {r["id"]: list(r["embedding"]) for r in records}
 
     async def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
         """Live anchor nodes in ``scope`` as ``{label, name}``."""
