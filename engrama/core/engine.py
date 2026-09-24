@@ -214,7 +214,9 @@ class EngramaEngine:
             try:
                 store_by_key = getattr(self._vector_store, "store_vector_by_key", None)
                 if store_by_key:
-                    store_by_key(label, merge_key, merge_value, embedding)
+                    # Names are only unique per owner: pin the vector to the
+                    # node this scope just wrote.
+                    store_by_key(label, merge_key, merge_value, embedding, owner=effective_scope)
             except Exception as e:
                 logger.warning("Vector store failed for a %s node: %s", label, e)
 

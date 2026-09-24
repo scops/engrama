@@ -26,6 +26,7 @@ use their own explicit, CI-allowlisted queries and never call these helpers.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -232,6 +233,72 @@ def scope_filter_cypher(
     return clause, params
 
 
+def owner_filter_sql(
+    owner: MemoryScope | None,
+    table_alias: str,
+    *,
+    json_column: str = "props",
+) -> tuple[str, dict[str, Any]]:
+    """Build a SQLite WHERE fragment matching nodes owned by exactly ``owner``.
+
+    The write-side counterpart of :func:`scope_filter_sql`: a key-addressed
+    write (merge, re-embed) targets the writer's *own* node, not an
+    org-shared ``__entity__`` node or another owner's same-named node. The
+    expressions mirror the ``idx_nodes_identity`` unique index, so ``owner``
+    ``None`` (identity-less) matches ``('', '')`` exactly as the index stores it.
+    """
+    _check_identifier(table_alias, "table_alias")
+    _check_identifier(json_column, "json_column")
+    col = f"{table_alias}.{json_column}"
+    clause = (
+        f"(COALESCE(json_extract({col}, '$.org_id'), '') = :owner_org_id "
+        f"AND COALESCE(json_extract({col}, '$.user_id'), '') = :owner_user_id)"
+    )
+    if owner is None:
+        return clause, {"owner_org_id": "", "owner_user_id": ""}
+    return clause, {"owner_org_id": owner.org_id or "", "owner_user_id": owner.user_id or ""}
+
+
+def owner_filter_cypher(owner: MemoryScope | None, node_var: str) -> tuple[str, dict[str, Any]]:
+    """Cypher counterpart of :func:`owner_filter_sql` (``$name`` placeholders).
+
+    A missing dimension (``owner`` ``None``, or a partial owner) must be
+    absent on the node too, mirroring the SQLite ``''`` bucket.
+    """
+    _check_identifier(node_var, "node_var")
+    parts: list[str] = []
+    params: dict[str, Any] = {}
+    for dim in _FILTER_DIMENSIONS:
+        value = getattr(owner, dim) if owner is not None else None
+        if value:
+            parts.append(f"{node_var}.{dim} = $owner_{dim}")
+            params[f"owner_{dim}"] = value
+        else:
+            parts.append(f"{node_var}.{dim} IS NULL")
+    return "(" + " AND ".join(parts) + ")", params
+
+
+def node_owner(properties: Mapping[str, Any]) -> MemoryScope | None:
+    """Return the owning ``(org_id, user_id)`` carried by a node's properties.
+
+    A node's owner is part of its identity: the merge key is
+    ``(label, name|title, org_id, user_id)``, so two owners writing the same
+    name get two nodes. Key-addressed writes use this to target exactly the
+    writer's own node.
+
+    Both dimensions absent → ``None``: an identity-less (legacy / admin) node.
+    A partial owner (only one dimension, e.g. a pre-Spec-001 row) is returned
+    as-is. Matching is exact per dimension, so neither form can ever reach a
+    node owned by a complete identity; the engine and MCP boundaries reject
+    such writes before they get here anyway.
+    """
+    org_id = properties.get("org_id") or None
+    user_id = properties.get("user_id") or None
+    if org_id is None and user_id is None:
+        return None
+    return MemoryScope(org_id=org_id, user_id=user_id)
+
+
 def node_visible(scope: MemoryScope | None, org_id: Any, user_id: Any) -> bool:
     """Return ``True`` iff a node with the given provenance is visible at ``scope``.
 
@@ -254,7 +321,10 @@ __all__ = [
     "ENTITY_SENTINEL",
     "MemoryScope",
     "ScopeIncomplete",
+    "node_owner",
     "node_visible",
+    "owner_filter_cypher",
+    "owner_filter_sql",
     "scope_filter_cypher",
     "scope_filter_sql",
 ]

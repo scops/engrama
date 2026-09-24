@@ -114,12 +114,14 @@ class SqliteAsyncStore:
         label: str,
         key_field: str,
         key_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
         return await self._run(
             self._sync.get_node,
             label,
             key_field,
             key_value,
+            scope,
         )
 
     async def delete_node(
@@ -367,22 +369,26 @@ class SqliteAsyncStore:
         self,
         title: str,
         new_status: str,
+        scope: MemoryScope | None = None,
     ) -> bool:
         return await self._run(
             self._sync.update_insight_status,
             title,
             new_status,
+            scope,
         )
 
     async def mark_insight_synced(
         self,
         title: str,
         obsidian_path: str,
+        scope: MemoryScope | None = None,
     ) -> bool:
         return await self._run(
             self._sync.mark_insight_synced,
             title,
             obsidian_path,
+            scope,
         )
 
     async def find_insight_by_source_query(
@@ -454,6 +460,7 @@ class SqliteAsyncStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: MemoryScope | None = None,
     ) -> bool:
         return await self._run(
             self._vector.store_vector_by_key,
@@ -461,6 +468,7 @@ class SqliteAsyncStore:
             key_field,
             key_value,
             embedding,
+            owner,
         )
 
     async def list_unembedded_nodes(

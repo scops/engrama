@@ -15,11 +15,16 @@ from neo4j import Record
 from neo4j.graph import Node, Relationship
 from neo4j.time import Date, DateTime, Duration, Time
 
-from engrama.backends.neo4j._cypher import escape_cypher_identifier
+from engrama.backends.neo4j._cypher import escape_cypher_identifier, scoped_key_lookup
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.core.client import EngramaClient
 from engrama.core.schema import TITLE_KEYED_LABELS
-from engrama.core.scope import MemoryScope, scope_filter_cypher
+from engrama.core.scope import (
+    MemoryScope,
+    node_owner,
+    owner_filter_cypher,
+    scope_filter_cypher,
+)
 
 _NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 
@@ -136,6 +141,11 @@ class Neo4jGraphStore:
           "revived" node (conflict detection).  Callers may set it
           explicitly via *properties*.
 
+        The node is keyed on ``(label, key, owner)`` where the owner is the
+        ``org_id``/``user_id`` in ``properties`` (see
+        :func:`~engrama.core.scope.node_owner`), so two owners writing the
+        same name get two separate nodes.
+
         Parameters:
             label: The Neo4j node label (e.g. ``"Project"``).
             key_field: The merge key property (``"name"`` or ``"title"``).
@@ -148,6 +158,8 @@ class Neo4jGraphStore:
         Returns:
             A list with one dict shaped ``{"n": {"_id", "_labels", **props}}``.
         """
+        owner = node_owner(properties)
+
         # Extract temporal fields from properties (if supplied)
         valid_from = properties.pop("valid_from", None)
         confidence = properties.pop("confidence", None)
@@ -205,12 +217,31 @@ class Neo4jGraphStore:
         on_create = ", ".join(set_clauses_create)
         on_match = ", ".join(set_clauses_match)
 
-        query = (
-            f"MERGE (n:{label} {{{key_field}: $merge_value}}) "
-            f"ON CREATE SET {on_create} "
-            f"ON MATCH SET {on_match} "
-            "RETURN n"
-        )
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
+        if owner is not None and owner.org_id and owner.user_id:
+            # The owner is part of the MERGE pattern, so the scoped
+            # uniqueness constraint (name, org_id, user_id) backs it.
+            params.update(owner_params)
+            query = (
+                f"MERGE (n:{label} {{{key_field}: $merge_value, "
+                "org_id: $owner_org_id, user_id: $owner_user_id}) "
+                f"ON CREATE SET {on_create} "
+                f"ON MATCH SET {on_match} "
+                "RETURN n"
+            )
+        else:
+            # Identity-less or partial (legacy/admin) owner: MERGE can't
+            # express "property absent", so resolve the exact node first.
+            existing = self._client.run(
+                f"MATCH (n:{label} {{{key_field}: $merge_value}}) WHERE {owner_clause} "
+                "RETURN elementId(n) AS eid LIMIT 1",
+                {"merge_value": key_value, **owner_params},
+            )
+            if existing:
+                params["eid"] = existing[0]["eid"]
+                query = f"MATCH (n) WHERE elementId(n) = $eid SET {on_match} RETURN n"
+            else:
+                query = f"CREATE (n:{label} {{{key_field}: $merge_value}}) SET {on_create} RETURN n"
 
         return _records_to_dicts(self._client.run(query, params))
 
@@ -219,10 +250,15 @@ class Neo4jGraphStore:
         label: str,
         key_field: str,
         key_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        """Retrieve a single node by its unique key."""
-        query = f"MATCH (n:{label} {{{key_field}: $key_value}}) RETURN n"
-        records = self._client.run(query, {"key_value": key_value})
+        """Retrieve a single node by ``(label, key)``.
+
+        Names are only unique per owner, so a tenant read passes ``scope``
+        (visible nodes only, own first); ``None`` is the unscoped admin lookup.
+        """
+        query, params = scoped_key_lookup(label, key_field, scope)
+        records = self._client.run(query + " RETURN n", {"key_value": key_value, **params})
         if records:
             return dict(records[0]["n"])
         return None
@@ -699,11 +735,14 @@ class Neo4jGraphStore:
         name: str,
         *,
         purge: bool = False,
+        owner: MemoryScope | None = None,
     ) -> dict[str, Any]:
-        """Archive (or DETACH DELETE) a node by ``(label, name|title)``.
+        """Archive (or DETACH DELETE) a node by ``(label, name|title, owner)``.
 
         The merge-key (``name`` vs ``title``) is selected from
-        :data:`TITLE_KEYED_LABELS`.
+        :data:`TITLE_KEYED_LABELS`. Names are only unique per owner, so
+        ``owner`` pins the caller's own node. ``None`` targets the
+        identity-less node.
 
         Returns a dict with:
 
@@ -712,24 +751,26 @@ class Neo4jGraphStore:
           ``0`` when archiving.
         """
         merge_key = "title" if label in TITLE_KEYED_LABELS else "name"
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
+        params = {"name": name, **owner_params}
 
         if purge:
             query = (
-                f"MATCH (n:{label} {{{merge_key}: $name}}) "
+                f"MATCH (n:{label} {{{merge_key}: $name}}) WHERE {owner_clause} "
                 "DETACH DELETE n "
                 "RETURN count(*) AS deleted"
             )
-            records = self._client.run(query, {"name": name})
+            records = self._client.run(query, params)
             deleted = records[0]["deleted"] if records else 0
             return {"matched": deleted > 0, "deleted": deleted}
 
         query = (
-            f"MATCH (n:{label} {{{merge_key}: $name}}) "
+            f"MATCH (n:{label} {{{merge_key}: $name}}) WHERE {owner_clause} "
             "SET n.status = 'archived', n.archived_at = datetime(), "
             "    n.updated_at = datetime() "
             "RETURN n"
         )
-        records = self._client.run(query, {"name": name})
+        records = self._client.run(query, params)
         return {"matched": len(records) > 0, "deleted": 0}
 
     def archive_nodes_older_than(
@@ -796,13 +837,19 @@ class Neo4jGraphStore:
         )
         return [dict(r) for r in records]
 
-    def update_insight_status(self, title: str, new_status: str) -> bool:
+    def update_insight_status(
+        self, title: str, new_status: str, scope: MemoryScope | None = None
+    ) -> bool:
         """Set ``status`` and the matching timestamp (``approved_at`` /
         ``dismissed_at``) on an Insight node.
+
+        Titles are templated and only unique per owner, so with ``scope``
+        exactly one Insight visible in it is updated (own first).
         """
         ts_field = "approved_at" if new_status == "approved" else "dismissed_at"
+        match, params = scoped_key_lookup("Insight", "title", scope, var="i")
         query = (
-            "MATCH (i:Insight {title: $title}) "
+            f"{match} "
             f"SET i.status = $new_status, "
             f"    i.{ts_field} = datetime(), "
             "    i.updated_at = datetime() "
@@ -810,7 +857,7 @@ class Neo4jGraphStore:
         )
         records = self._client.run(
             query,
-            {"title": title, "new_status": new_status},
+            {"key_value": title, "new_status": new_status, **params},
         )
         return len(records) > 0
 
@@ -839,17 +886,21 @@ class Neo4jGraphStore:
             return dict(records[0])
         return None
 
-    def mark_insight_synced(self, title: str, obsidian_path: str) -> bool:
+    def mark_insight_synced(
+        self, title: str, obsidian_path: str, scope: MemoryScope | None = None
+    ) -> bool:
         """Set ``obsidian_path`` + ``synced_at`` + ``updated_at`` on an
-        Insight node.  Returns ``True`` if the Insight existed.
+        Insight node (scoped like :meth:`update_insight_status`).  Returns
+        ``True`` if the Insight existed.
         """
+        match, params = scoped_key_lookup("Insight", "title", scope, var="i")
         records = self._client.run(
-            "MATCH (i:Insight {title: $title}) "
+            f"{match} "
             "SET i.obsidian_path = $path, "
             "    i.synced_at = datetime(), "
             "    i.updated_at = datetime() "
             "RETURN i.title AS title",
-            {"title": title, "path": obsidian_path},
+            {"key_value": title, "path": obsidian_path, **params},
         )
         return len(records) > 0
 

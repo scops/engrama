@@ -53,6 +53,11 @@ class _ScopedAsyncStoreProxy:
         properties = {**_SCOPE_PROPS, **properties}
         return await self._inner.merge_node(label, key_field, key_value, properties, embedding)
 
+    async def store_embedding(self, label, key_field, key_value, embedding, owner=None):
+        return await self._inner.store_embedding(
+            label, key_field, key_value, embedding, owner=owner or self._scope
+        )
+
     async def merge_relation(
         self, from_label, from_key, from_value, rel_type, to_label, to_key, to_value, scope=None
     ):

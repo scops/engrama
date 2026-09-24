@@ -178,7 +178,8 @@ jobs:
             tests/test_reindex_tool.py \
             tests/test_proactive_insight_gate.py \
             tests/test_inline_relations_validation.py \
-            tests/test_cold_start_embedding_repro.py
+            tests/test_cold_start_embedding_repro.py \
+            tests/test_tenancy_same_name.py
 
   test-neo4j:
     name: Tests (Neo4j integration)
@@ -284,7 +285,8 @@ jobs:
             tests/test_phase4_skills.py \
             tests/test_obsidian_sync.py \
             tests/test_mcp_output_no_embedding.py \
-            tests/test_export_import_cross_backend.py
+            tests/test_export_import_cross_backend.py \
+            tests/test_tenancy_same_name.py
 
   audit-deps:
     name: Audit dependencies (pip-audit)

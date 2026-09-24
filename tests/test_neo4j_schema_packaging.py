@@ -38,11 +38,27 @@ def test_schema_is_idempotent_and_non_destructive() -> None:
     programmatically."""
     stmts = _statements()
     assert stmts, "schema.cypher parsed to zero statements"
+    joined = "\n".join(stmts)
     for s in stmts:
         upper = s.upper()
+        if upper.startswith("DROP CONSTRAINT "):
+            # The only DROPs allowed retire a legacy name-only key constraint,
+            # idempotently, and only where its owner-scoped successor exists.
+            name = s.split()[2]
+            assert upper.endswith(" IF EXISTS"), f"non-idempotent DROP: {s[:60]}"
+            assert f"CREATE CONSTRAINT {name}_owner IF NOT EXISTS" in joined, s[:60]
+            continue
         assert "DROP" not in upper, f"destructive DROP in runtime schema: {s[:60]}"
         assert "SHOW" not in upper, f"interactive SHOW in runtime schema: {s[:60]}"
         assert "IF NOT EXISTS" in upper, f"non-idempotent statement: {s[:60]}"
+
+
+def test_key_constraints_are_owner_scoped() -> None:
+    """Node keys are unique per owner, so two owners can hold the same name."""
+    stmts = [s for s in _statements() if s.upper().startswith("CREATE CONSTRAINT")]
+    assert stmts
+    for s in stmts:
+        assert ", n.org_id, n.user_id) IS UNIQUE" in s, f"key constraint not owner-scoped: {s}"
 
 
 def test_fulltext_index_covers_origin_and_source() -> None:

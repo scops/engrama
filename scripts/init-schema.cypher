@@ -6,81 +6,158 @@
 //   docker exec -i engrama-neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD < scripts/init-schema.cypher
 
 // === CONSTRAINTS ===
+// Node keys are unique per owner (org_id, user_id); the legacy name-only
+// constraints are dropped first. See engrama/backends/neo4j/schema.cypher.
 
-CREATE CONSTRAINT project_name IF NOT EXISTS
-  FOR (n:Project) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT project_name IF EXISTS;
+CREATE CONSTRAINT project_name_owner IF NOT EXISTS
+  FOR (n:Project) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX project_name_key IF NOT EXISTS
+  FOR (n:Project) ON (n.name);
 
-CREATE CONSTRAINT concept_name IF NOT EXISTS
-  FOR (n:Concept) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT concept_name IF EXISTS;
+CREATE CONSTRAINT concept_name_owner IF NOT EXISTS
+  FOR (n:Concept) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX concept_name_key IF NOT EXISTS
+  FOR (n:Concept) ON (n.name);
 
-CREATE CONSTRAINT decision_title IF NOT EXISTS
-  FOR (n:Decision) REQUIRE n.title IS UNIQUE;
+DROP CONSTRAINT decision_title IF EXISTS;
+CREATE CONSTRAINT decision_title_owner IF NOT EXISTS
+  FOR (n:Decision) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX decision_title_key IF NOT EXISTS
+  FOR (n:Decision) ON (n.title);
 
-CREATE CONSTRAINT problem_title IF NOT EXISTS
-  FOR (n:Problem) REQUIRE n.title IS UNIQUE;
+DROP CONSTRAINT problem_title IF EXISTS;
+CREATE CONSTRAINT problem_title_owner IF NOT EXISTS
+  FOR (n:Problem) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX problem_title_key IF NOT EXISTS
+  FOR (n:Problem) ON (n.title);
 
-CREATE CONSTRAINT technology_name IF NOT EXISTS
-  FOR (n:Technology) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT technology_name IF EXISTS;
+CREATE CONSTRAINT technology_name_owner IF NOT EXISTS
+  FOR (n:Technology) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX technology_name_key IF NOT EXISTS
+  FOR (n:Technology) ON (n.name);
 
-CREATE CONSTRAINT person_name IF NOT EXISTS
-  FOR (n:Person) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT person_name IF EXISTS;
+CREATE CONSTRAINT person_name_owner IF NOT EXISTS
+  FOR (n:Person) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX person_name_key IF NOT EXISTS
+  FOR (n:Person) ON (n.name);
 
-CREATE CONSTRAINT domain_name IF NOT EXISTS
-  FOR (n:Domain) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT domain_name IF EXISTS;
+CREATE CONSTRAINT domain_name_owner IF NOT EXISTS
+  FOR (n:Domain) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX domain_name_key IF NOT EXISTS
+  FOR (n:Domain) ON (n.name);
 
-CREATE CONSTRAINT client_name IF NOT EXISTS
-  FOR (n:Client) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT client_name IF EXISTS;
+CREATE CONSTRAINT client_name_owner IF NOT EXISTS
+  FOR (n:Client) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX client_name_key IF NOT EXISTS
+  FOR (n:Client) ON (n.name);
 
-CREATE CONSTRAINT target_name IF NOT EXISTS
-  FOR (n:Target) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT target_name IF EXISTS;
+CREATE CONSTRAINT target_name_owner IF NOT EXISTS
+  FOR (n:Target) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX target_name_key IF NOT EXISTS
+  FOR (n:Target) ON (n.name);
 
-CREATE CONSTRAINT vulnerability_title IF NOT EXISTS
-  FOR (n:Vulnerability) REQUIRE n.title IS UNIQUE;
+DROP CONSTRAINT vulnerability_title IF EXISTS;
+CREATE CONSTRAINT vulnerability_title_owner IF NOT EXISTS
+  FOR (n:Vulnerability) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX vulnerability_title_key IF NOT EXISTS
+  FOR (n:Vulnerability) ON (n.title);
 
-CREATE CONSTRAINT technique_name IF NOT EXISTS
-  FOR (n:Technique) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT technique_name IF EXISTS;
+CREATE CONSTRAINT technique_name_owner IF NOT EXISTS
+  FOR (n:Technique) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX technique_name_key IF NOT EXISTS
+  FOR (n:Technique) ON (n.name);
 
-CREATE CONSTRAINT tool_name IF NOT EXISTS
-  FOR (n:Tool) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT tool_name IF EXISTS;
+CREATE CONSTRAINT tool_name_owner IF NOT EXISTS
+  FOR (n:Tool) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX tool_name_key IF NOT EXISTS
+  FOR (n:Tool) ON (n.name);
 
-CREATE CONSTRAINT ctf_name IF NOT EXISTS
-  FOR (n:CTF) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT ctf_name IF EXISTS;
+CREATE CONSTRAINT ctf_name_owner IF NOT EXISTS
+  FOR (n:CTF) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX ctf_name_key IF NOT EXISTS
+  FOR (n:CTF) ON (n.name);
 
-CREATE CONSTRAINT course_name IF NOT EXISTS
-  FOR (n:Course) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT course_name IF EXISTS;
+CREATE CONSTRAINT course_name_owner IF NOT EXISTS
+  FOR (n:Course) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX course_name_key IF NOT EXISTS
+  FOR (n:Course) ON (n.name);
 
-CREATE CONSTRAINT exercise_title IF NOT EXISTS
-  FOR (n:Exercise) REQUIRE n.title IS UNIQUE;
+DROP CONSTRAINT exercise_title IF EXISTS;
+CREATE CONSTRAINT exercise_title_owner IF NOT EXISTS
+  FOR (n:Exercise) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX exercise_title_key IF NOT EXISTS
+  FOR (n:Exercise) ON (n.title);
 
-CREATE CONSTRAINT material_name IF NOT EXISTS
-  FOR (n:Material) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT material_name IF EXISTS;
+CREATE CONSTRAINT material_name_owner IF NOT EXISTS
+  FOR (n:Material) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX material_name_key IF NOT EXISTS
+  FOR (n:Material) ON (n.name);
 
-CREATE CONSTRAINT photo_title IF NOT EXISTS
-  FOR (n:Photo) REQUIRE n.title IS UNIQUE;
+DROP CONSTRAINT photo_title IF EXISTS;
+CREATE CONSTRAINT photo_title_owner IF NOT EXISTS
+  FOR (n:Photo) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX photo_title_key IF NOT EXISTS
+  FOR (n:Photo) ON (n.title);
 
-CREATE CONSTRAINT location_name IF NOT EXISTS
-  FOR (n:Location) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT location_name IF EXISTS;
+CREATE CONSTRAINT location_name_owner IF NOT EXISTS
+  FOR (n:Location) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX location_name_key IF NOT EXISTS
+  FOR (n:Location) ON (n.name);
 
-CREATE CONSTRAINT species_name IF NOT EXISTS
-  FOR (n:Species) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT species_name IF EXISTS;
+CREATE CONSTRAINT species_name_owner IF NOT EXISTS
+  FOR (n:Species) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX species_name_key IF NOT EXISTS
+  FOR (n:Species) ON (n.name);
 
-CREATE CONSTRAINT gear_name IF NOT EXISTS
-  FOR (n:Gear) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT gear_name IF EXISTS;
+CREATE CONSTRAINT gear_name_owner IF NOT EXISTS
+  FOR (n:Gear) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX gear_name_key IF NOT EXISTS
+  FOR (n:Gear) ON (n.name);
 
-CREATE CONSTRAINT model_name IF NOT EXISTS
-  FOR (n:Model) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT model_name IF EXISTS;
+CREATE CONSTRAINT model_name_owner IF NOT EXISTS
+  FOR (n:Model) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX model_name_key IF NOT EXISTS
+  FOR (n:Model) ON (n.name);
 
-CREATE CONSTRAINT dataset_name IF NOT EXISTS
-  FOR (n:Dataset) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT dataset_name IF EXISTS;
+CREATE CONSTRAINT dataset_name_owner IF NOT EXISTS
+  FOR (n:Dataset) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX dataset_name_key IF NOT EXISTS
+  FOR (n:Dataset) ON (n.name);
 
-CREATE CONSTRAINT experiment_title IF NOT EXISTS
-  FOR (n:Experiment) REQUIRE n.title IS UNIQUE;
+DROP CONSTRAINT experiment_title IF EXISTS;
+CREATE CONSTRAINT experiment_title_owner IF NOT EXISTS
+  FOR (n:Experiment) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX experiment_title_key IF NOT EXISTS
+  FOR (n:Experiment) ON (n.title);
 
-CREATE CONSTRAINT pipeline_name IF NOT EXISTS
-  FOR (n:Pipeline) REQUIRE n.name IS UNIQUE;
+DROP CONSTRAINT pipeline_name IF EXISTS;
+CREATE CONSTRAINT pipeline_name_owner IF NOT EXISTS
+  FOR (n:Pipeline) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX pipeline_name_key IF NOT EXISTS
+  FOR (n:Pipeline) ON (n.name);
 
-CREATE CONSTRAINT insight_title IF NOT EXISTS
-  FOR (n:Insight) REQUIRE n.title IS UNIQUE;
+DROP CONSTRAINT insight_title IF EXISTS;
+CREATE CONSTRAINT insight_title_owner IF NOT EXISTS
+  FOR (n:Insight) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX insight_title_key IF NOT EXISTS
+  FOR (n:Insight) ON (n.title);
 
 // === FULLTEXT INDEX ===
 // DROP + CREATE so that changes to the index definition (e.g. new enrichment

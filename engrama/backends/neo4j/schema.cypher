@@ -7,41 +7,100 @@
 // `engrama init` by hand.
 //
 // Two deliberate differences from scripts/init-schema.cypher:
-//   * Every statement is idempotent and additive — `IF NOT EXISTS`, never DROP.
-//     This runs on EVERY connect, possibly against a populated graph, so it must
-//     never drop and rebuild an index that is in use.
+//   * Every statement is idempotent — `IF NOT EXISTS` / `IF EXISTS`. This runs
+//     on EVERY connect, possibly against a populated graph, so it must never
+//     drop and rebuild an index that is in use. The only DROPs retire the
+//     legacy name-only constraints (see CONSTRAINTS below) and are no-ops
+//     once those are gone.
 //   * No SHOW statements (they are interactive verification, not schema DDL).
 //
 // Keep the label/property coverage in sync with scripts/init-schema.cypher and
 // engrama/core/schema.py when the profile changes.
 
 // === CONSTRAINTS ===
+// A node's identity is (label, key, owner): the key is unique per
+// (org_id, user_id), so two owners writing the same name get two nodes.
+// Older schemas made the key unique on its own. Each label's legacy
+// constraint is dropped here (a no-op once gone) and replaced by the
+// owner-scoped one plus a plain key index for by-name reads. If the DROP
+// cannot run, the legacy constraint stays in force and a same-named write
+// by a second owner is rejected with a constraint error.
 
-CREATE CONSTRAINT project_name IF NOT EXISTS FOR (n:Project) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT concept_name IF NOT EXISTS FOR (n:Concept) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT decision_title IF NOT EXISTS FOR (n:Decision) REQUIRE n.title IS UNIQUE;
-CREATE CONSTRAINT problem_title IF NOT EXISTS FOR (n:Problem) REQUIRE n.title IS UNIQUE;
-CREATE CONSTRAINT technology_name IF NOT EXISTS FOR (n:Technology) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT person_name IF NOT EXISTS FOR (n:Person) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT domain_name IF NOT EXISTS FOR (n:Domain) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT client_name IF NOT EXISTS FOR (n:Client) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT target_name IF NOT EXISTS FOR (n:Target) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT vulnerability_title IF NOT EXISTS FOR (n:Vulnerability) REQUIRE n.title IS UNIQUE;
-CREATE CONSTRAINT technique_name IF NOT EXISTS FOR (n:Technique) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT tool_name IF NOT EXISTS FOR (n:Tool) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT ctf_name IF NOT EXISTS FOR (n:CTF) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT course_name IF NOT EXISTS FOR (n:Course) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT exercise_title IF NOT EXISTS FOR (n:Exercise) REQUIRE n.title IS UNIQUE;
-CREATE CONSTRAINT material_name IF NOT EXISTS FOR (n:Material) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT photo_title IF NOT EXISTS FOR (n:Photo) REQUIRE n.title IS UNIQUE;
-CREATE CONSTRAINT location_name IF NOT EXISTS FOR (n:Location) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT species_name IF NOT EXISTS FOR (n:Species) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT gear_name IF NOT EXISTS FOR (n:Gear) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT model_name IF NOT EXISTS FOR (n:Model) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT dataset_name IF NOT EXISTS FOR (n:Dataset) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT experiment_title IF NOT EXISTS FOR (n:Experiment) REQUIRE n.title IS UNIQUE;
-CREATE CONSTRAINT pipeline_name IF NOT EXISTS FOR (n:Pipeline) REQUIRE n.name IS UNIQUE;
-CREATE CONSTRAINT insight_title IF NOT EXISTS FOR (n:Insight) REQUIRE n.title IS UNIQUE;
+DROP CONSTRAINT project_name IF EXISTS;
+CREATE CONSTRAINT project_name_owner IF NOT EXISTS FOR (n:Project) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX project_name_key IF NOT EXISTS FOR (n:Project) ON (n.name);
+DROP CONSTRAINT concept_name IF EXISTS;
+CREATE CONSTRAINT concept_name_owner IF NOT EXISTS FOR (n:Concept) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX concept_name_key IF NOT EXISTS FOR (n:Concept) ON (n.name);
+DROP CONSTRAINT decision_title IF EXISTS;
+CREATE CONSTRAINT decision_title_owner IF NOT EXISTS FOR (n:Decision) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX decision_title_key IF NOT EXISTS FOR (n:Decision) ON (n.title);
+DROP CONSTRAINT problem_title IF EXISTS;
+CREATE CONSTRAINT problem_title_owner IF NOT EXISTS FOR (n:Problem) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX problem_title_key IF NOT EXISTS FOR (n:Problem) ON (n.title);
+DROP CONSTRAINT technology_name IF EXISTS;
+CREATE CONSTRAINT technology_name_owner IF NOT EXISTS FOR (n:Technology) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX technology_name_key IF NOT EXISTS FOR (n:Technology) ON (n.name);
+DROP CONSTRAINT person_name IF EXISTS;
+CREATE CONSTRAINT person_name_owner IF NOT EXISTS FOR (n:Person) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX person_name_key IF NOT EXISTS FOR (n:Person) ON (n.name);
+DROP CONSTRAINT domain_name IF EXISTS;
+CREATE CONSTRAINT domain_name_owner IF NOT EXISTS FOR (n:Domain) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX domain_name_key IF NOT EXISTS FOR (n:Domain) ON (n.name);
+DROP CONSTRAINT client_name IF EXISTS;
+CREATE CONSTRAINT client_name_owner IF NOT EXISTS FOR (n:Client) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX client_name_key IF NOT EXISTS FOR (n:Client) ON (n.name);
+DROP CONSTRAINT target_name IF EXISTS;
+CREATE CONSTRAINT target_name_owner IF NOT EXISTS FOR (n:Target) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX target_name_key IF NOT EXISTS FOR (n:Target) ON (n.name);
+DROP CONSTRAINT vulnerability_title IF EXISTS;
+CREATE CONSTRAINT vulnerability_title_owner IF NOT EXISTS FOR (n:Vulnerability) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX vulnerability_title_key IF NOT EXISTS FOR (n:Vulnerability) ON (n.title);
+DROP CONSTRAINT technique_name IF EXISTS;
+CREATE CONSTRAINT technique_name_owner IF NOT EXISTS FOR (n:Technique) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX technique_name_key IF NOT EXISTS FOR (n:Technique) ON (n.name);
+DROP CONSTRAINT tool_name IF EXISTS;
+CREATE CONSTRAINT tool_name_owner IF NOT EXISTS FOR (n:Tool) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX tool_name_key IF NOT EXISTS FOR (n:Tool) ON (n.name);
+DROP CONSTRAINT ctf_name IF EXISTS;
+CREATE CONSTRAINT ctf_name_owner IF NOT EXISTS FOR (n:CTF) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX ctf_name_key IF NOT EXISTS FOR (n:CTF) ON (n.name);
+DROP CONSTRAINT course_name IF EXISTS;
+CREATE CONSTRAINT course_name_owner IF NOT EXISTS FOR (n:Course) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX course_name_key IF NOT EXISTS FOR (n:Course) ON (n.name);
+DROP CONSTRAINT exercise_title IF EXISTS;
+CREATE CONSTRAINT exercise_title_owner IF NOT EXISTS FOR (n:Exercise) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX exercise_title_key IF NOT EXISTS FOR (n:Exercise) ON (n.title);
+DROP CONSTRAINT material_name IF EXISTS;
+CREATE CONSTRAINT material_name_owner IF NOT EXISTS FOR (n:Material) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX material_name_key IF NOT EXISTS FOR (n:Material) ON (n.name);
+DROP CONSTRAINT photo_title IF EXISTS;
+CREATE CONSTRAINT photo_title_owner IF NOT EXISTS FOR (n:Photo) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX photo_title_key IF NOT EXISTS FOR (n:Photo) ON (n.title);
+DROP CONSTRAINT location_name IF EXISTS;
+CREATE CONSTRAINT location_name_owner IF NOT EXISTS FOR (n:Location) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX location_name_key IF NOT EXISTS FOR (n:Location) ON (n.name);
+DROP CONSTRAINT species_name IF EXISTS;
+CREATE CONSTRAINT species_name_owner IF NOT EXISTS FOR (n:Species) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX species_name_key IF NOT EXISTS FOR (n:Species) ON (n.name);
+DROP CONSTRAINT gear_name IF EXISTS;
+CREATE CONSTRAINT gear_name_owner IF NOT EXISTS FOR (n:Gear) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX gear_name_key IF NOT EXISTS FOR (n:Gear) ON (n.name);
+DROP CONSTRAINT model_name IF EXISTS;
+CREATE CONSTRAINT model_name_owner IF NOT EXISTS FOR (n:Model) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX model_name_key IF NOT EXISTS FOR (n:Model) ON (n.name);
+DROP CONSTRAINT dataset_name IF EXISTS;
+CREATE CONSTRAINT dataset_name_owner IF NOT EXISTS FOR (n:Dataset) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX dataset_name_key IF NOT EXISTS FOR (n:Dataset) ON (n.name);
+DROP CONSTRAINT experiment_title IF EXISTS;
+CREATE CONSTRAINT experiment_title_owner IF NOT EXISTS FOR (n:Experiment) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX experiment_title_key IF NOT EXISTS FOR (n:Experiment) ON (n.title);
+DROP CONSTRAINT pipeline_name IF EXISTS;
+CREATE CONSTRAINT pipeline_name_owner IF NOT EXISTS FOR (n:Pipeline) REQUIRE (n.name, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX pipeline_name_key IF NOT EXISTS FOR (n:Pipeline) ON (n.name);
+DROP CONSTRAINT insight_title IF EXISTS;
+CREATE CONSTRAINT insight_title_owner IF NOT EXISTS FOR (n:Insight) REQUIRE (n.title, n.org_id, n.user_id) IS UNIQUE;
+CREATE INDEX insight_title_key IF NOT EXISTS FOR (n:Insight) ON (n.title);
 
 // === FULLTEXT INDEX ===
 // `n.origin` is the caller-supplied semantic provenance (distinct from the

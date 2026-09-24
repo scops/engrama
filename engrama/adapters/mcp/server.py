@@ -48,7 +48,7 @@ from engrama import __version__
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
 from engrama.core.identity import resolve_local_sub
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
-from engrama.core.scope import MemoryScope
+from engrama.core.scope import MemoryScope, node_owner
 from engrama.core.security import Provenance, Sanitiser, sanitize_node_for_output
 
 logger = logging.getLogger("engrama_mcp")
@@ -362,7 +362,8 @@ async def _reembed_node(store: Any, embedder: Any, label: str, props: dict[str, 
     embedding = await _embed_text(embedder, text)
     if not embedding:
         return False
-    await store.store_embedding(label, key_field, key_value, embedding)
+    # Names are only unique per owner: pin the vector to this exact node.
+    await store.store_embedding(label, key_field, key_value, embedding, owner=node_owner(props))
     return True
 
 
@@ -2182,7 +2183,7 @@ def create_engrama_mcp(
         # would create or update the row; reports whether ``engrama_id``
         # would be injected based on the note's current frontmatter.
         if params.dry_run:
-            existing = await store.get_node(node_label, merge_key, merge_value)
+            existing = await store.get_node(node_label, merge_key, merge_value, scope=scope)
             return json.dumps(
                 {
                     "status": "ok",
@@ -2225,6 +2226,7 @@ def create_engrama_mcp(
                         merge_key,
                         merge_value,
                         embedding,
+                        owner=scope,
                     )
             except Exception as e:
                 logger.warning("Embed-on-sync failed for a %s node: %s", node_label, e)
@@ -2393,7 +2395,9 @@ def create_engrama_mcp(
                     # update, record which files would gain an engrama_id,
                     # and skip every write.
                     if params.dry_run:
-                        existing = await store.get_node(node_label, merge_key, merge_value)
+                        existing = await store.get_node(
+                            node_label, merge_key, merge_value, scope=scope
+                        )
                         if existing is None:
                             would_create_count += 1
                         else:
@@ -3205,7 +3209,7 @@ def create_engrama_mcp(
             )
 
         try:
-            updated = await store.update_insight_status(params.title, new_status)
+            updated = await store.update_insight_status(params.title, new_status, scope=scope)
             if not updated:
                 return json.dumps(
                     {
@@ -3354,7 +3358,7 @@ def create_engrama_mcp(
 
         # Mark as synced in Neo4j
         try:
-            await store.mark_insight_synced(params.title, params.target_note)
+            await store.mark_insight_synced(params.title, params.target_note, scope=scope)
         except Exception as e:
             logger.warning("Could not mark insight as synced: %s", e)
 

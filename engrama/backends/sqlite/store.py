@@ -25,7 +25,13 @@ from typing import Any
 
 import sqlite_vec
 
-from engrama.core.scope import MemoryScope, node_visible, scope_filter_sql
+from engrama.core.scope import (
+    MemoryScope,
+    node_owner,
+    node_visible,
+    owner_filter_sql,
+    scope_filter_sql,
+)
 
 logger = logging.getLogger("engrama.backends.sqlite")
 
@@ -129,8 +135,8 @@ class SqliteGraphStore:
         self._conn.close()
 
     def _init_schema_from_file(self) -> None:
-        with open(_SCHEMA_PATH, encoding="utf-8") as f:
-            self._conn.executescript(f.read())
+        schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
+        self._conn.executescript(schema_sql)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to a pre-existing
         # table, so pre-Spec-001 DBs need idempotent ALTERs to gain the
         # new ``edges.org_id`` / ``edges.user_id`` columns. SQLite raises
@@ -147,6 +153,67 @@ class SqliteGraphStore:
                     raise
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_scope ON edges(org_id, user_id)")
         self._conn.commit()
+        if self._migrate_node_identity():
+            # The rebuilt table lost its indexes; the schema script is
+            # idempotent and recreates them.
+            self._conn.executescript(schema_sql)
+
+    def _migrate_node_identity(self) -> bool:
+        """Drop the pre-v3 table-level ``UNIQUE(label, key_value)`` on ``nodes``.
+
+        That constraint made a node's identity its name alone. v3 keys nodes
+        on ``(label, key, owner)`` via
+        ``idx_nodes_identity``. SQLite cannot drop a table constraint, so the
+        table is rebuilt (the documented create-copy-drop-rename procedure)
+        keeping every ``id``: edges, FTS rows and vectors all reference it.
+        Returns ``True`` when a rebuild ran. Idempotent: a v3 table has no
+        constraint-backed index and is left alone.
+        """
+        # scope-exempt: schema migration — copies every row verbatim,
+        # regardless of owner, into the rebuilt table.
+        legacy = any(row["origin"] == "u" for row in self._conn.execute("PRAGMA index_list(nodes)"))
+        if not legacy:
+            return False
+        logger.info("Migrating SQLite nodes table to owner-scoped identity (schema v3)")
+        seq_row = self._conn.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'nodes'"
+        ).fetchone()
+        # Foreign keys must be off so DROP TABLE doesn't cascade into edges;
+        # the pragma is a no-op inside a transaction, so set it before BEGIN.
+        self._conn.commit()
+        self._conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            self._conn.execute(
+                "CREATE TABLE nodes_v3 ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, "
+                "key_field TEXT NOT NULL, key_value TEXT NOT NULL, "
+                "props TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, "
+                "updated_at TEXT NOT NULL)"
+            )
+            self._conn.execute(
+                "INSERT INTO nodes_v3 (id, label, key_field, key_value, props, "
+                "created_at, updated_at) SELECT id, label, key_field, key_value, "
+                "props, created_at, updated_at FROM nodes"
+            )
+            self._conn.execute("DROP TABLE nodes")
+            self._conn.execute("ALTER TABLE nodes_v3 RENAME TO nodes")
+            if seq_row is not None:
+                # Keep the AUTOINCREMENT high-water mark so ids of deleted
+                # nodes are never reissued.
+                self._conn.execute(
+                    "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'nodes'",
+                    (seq_row["seq"],),
+                )
+            if self._conn.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                raise sqlite3.IntegrityError("foreign key violation after nodes rebuild")
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        finally:
+            self._conn.execute("PRAGMA foreign_keys = ON")
+        return True
 
     def init_schema(self, schema: Any = None) -> None:
         """No-op: schema is applied at connection time. Kept for protocol parity."""
@@ -184,6 +251,11 @@ class SqliteGraphStore:
         ``confidence`` default on CREATE only; on MATCH they're preserved
         unless the caller supplies new values. ``valid_to``, when present
         on the existing node and not in the update, is cleared (revival).
+
+        The node is keyed on ``(label, key_value, owner)`` where the owner is
+        the ``org_id``/``user_id`` in ``properties`` (see
+        :func:`~engrama.core.scope.node_owner`): a same-named write from
+        another tenant creates its own node instead of merging into this one.
         """
         now = _now_iso()
         properties = dict(properties)  # don't mutate caller
@@ -191,9 +263,11 @@ class SqliteGraphStore:
         properties.pop("_id", None)
         properties.pop("_labels", None)
 
+        owner_clause, owner_params = owner_filter_sql(node_owner(properties), "nodes")
         cur = self._conn.execute(
-            "SELECT id, props, created_at FROM nodes WHERE label = ? AND key_value = ?",
-            (label, key_value),
+            "SELECT id, props, created_at FROM nodes "
+            f"WHERE label = :label AND key_value = :key_value AND {owner_clause}",
+            {"label": label, "key_value": key_value, **owner_params},
         )
         row = cur.fetchone()
 
@@ -259,12 +333,28 @@ class SqliteGraphStore:
         label: str,
         key_field: str,
         key_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        cur = self._conn.execute(
-            "SELECT * FROM nodes WHERE label = ? AND key_value = ?",
-            (label, key_value),
-        )
-        row = cur.fetchone()
+        """Fetch a node by ``(label, key_value)``.
+
+        Names are only unique per owner, so a tenant read passes ``scope``:
+        the lookup is then restricted to nodes visible in it, preferring the
+        caller's own node over an org-shared ``__entity__`` one. ``None``
+        keeps the unscoped admin lookup (first match).
+        """
+        sql = "SELECT * FROM nodes WHERE label = :label AND key_value = :key_value"
+        params: dict[str, Any] = {"label": label, "key_value": key_value}
+        if scope is not None:
+            scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+            sql += f" AND {scope_clause}"
+            if scope_params:  # empty for an incomplete scope → (1 = 0)
+                sql += (
+                    " ORDER BY CASE WHEN json_extract(props, '$.user_id') = :scope_user_id "
+                    "THEN 0 ELSE 1 END"
+                )
+                params.update(scope_params)
+        sql += " LIMIT 1"
+        row = self._conn.execute(sql, params).fetchone()
         if row is None:
             return None
         props = json.loads(row["props"]) if row["props"] else {}
@@ -310,15 +400,20 @@ class SqliteGraphStore:
         name: str,
         *,
         purge: bool = False,
+        owner: MemoryScope | None = None,
     ) -> dict[str, Any]:
-        """Archive (or hard-delete) a node by ``(label, name|title)``.
+        """Archive (or hard-delete) a node by ``(label, name|title, owner)``.
+
+        Names are only unique per owner, so ``owner`` pins the caller's own
+        node. ``None`` targets the identity-less node.
 
         Returns ``{"matched": bool, "deleted": int}`` to mirror the
         Neo4j store's contract — used by the forget skill.
         """
+        owner_clause, owner_params = owner_filter_sql(owner, "nodes")
         cur = self._conn.execute(
-            "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
-            (label, name),
+            f"SELECT id FROM nodes WHERE label = :label AND key_value = :name AND {owner_clause}",
+            {"label": label, "name": name, **owner_params},
         )
         row = cur.fetchone()
         if row is None:
@@ -619,7 +714,7 @@ class SqliteGraphStore:
         node owned by another tenant via a guessed key. A ``None`` scope keeps
         the admin/debug fetch-by-key (no tenant context).
         """
-        node = self.get_node(label, key_field, key_value)
+        node = self.get_node(label, key_field, key_value, scope=scope)
         if node is None:
             return None
         # Cross-tenant guard: a non-None scope must be able to see the root.
@@ -1093,17 +1188,31 @@ class SqliteGraphStore:
             )
         return out
 
-    def update_insight_status(self, title: str, new_status: str) -> bool:
-        # scope-exempt: write path — the MCP `engrama_approve_insight` and SDK
-        # `ProactiveSkill.approve/dismiss` first call `get_insight_by_title`
-        # (scoped, fail-closed) to confirm ownership, then route here only
-        # when the read returned a row. Cross-tenant promotion is therefore
-        # blocked at the prior read.
-        cur = self._conn.execute(
-            "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
-            (title,),
-        )
-        row = cur.fetchone()
+    def _insight_row(self, title: str, scope: MemoryScope | None) -> sqlite3.Row | None:
+        """Resolve the Insight a status/sync write targets.
+
+        Titles are templated (``"Concept cluster: X (N entities)"``) and only
+        unique per owner, so with ``scope`` the row is restricted to the
+        caller's visible Insights, own first. ``None`` keeps the unscoped admin
+        lookup.
+        """
+        sql = "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = :title"
+        params: dict[str, Any] = {"title": title}
+        if scope is not None:
+            scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+            sql += f" AND {scope_clause}"
+            if scope_params:
+                sql += (
+                    " ORDER BY CASE WHEN json_extract(props, '$.user_id') = :scope_user_id "
+                    "THEN 0 ELSE 1 END"
+                )
+                params.update(scope_params)
+        return self._conn.execute(sql + " LIMIT 1", params).fetchone()
+
+    def update_insight_status(
+        self, title: str, new_status: str, scope: MemoryScope | None = None
+    ) -> bool:
+        row = self._insight_row(title, scope)
         if row is None:
             return False
         now = _now_iso()
@@ -1144,16 +1253,10 @@ class SqliteGraphStore:
         row = cur.fetchone()
         return dict(row) if row else None
 
-    def mark_insight_synced(self, title: str, obsidian_path: str) -> bool:
-        # scope-exempt: write path — same shape as `update_insight_status`.
-        # `ProactiveSkill.write_to_vault` first reads the Insight via the
-        # scoped `get_insight_by_title`, so cross-tenant marking is blocked
-        # upstream.
-        cur = self._conn.execute(
-            "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
-            (title,),
-        )
-        row = cur.fetchone()
+    def mark_insight_synced(
+        self, title: str, obsidian_path: str, scope: MemoryScope | None = None
+    ) -> bool:
+        row = self._insight_row(title, scope)
         if row is None:
             return False
         now = _now_iso()

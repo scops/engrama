@@ -14,7 +14,7 @@ import sqlite3
 import struct
 from typing import Any
 
-from engrama.core.scope import MemoryScope, scope_filter_sql
+from engrama.core.scope import MemoryScope, owner_filter_sql, scope_filter_sql
 
 logger = logging.getLogger("engrama.backends.sqlite.vector")
 
@@ -109,20 +109,22 @@ class SqliteVecStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: MemoryScope | None = None,
     ) -> bool:
-        """Engine convenience: look up the node by ``(label, key_value)``
-        and store the embedding against its id.
+        """Engine convenience: look up the node by ``(label, key_value,
+        owner)`` and store the embedding against its id.
+
+        Names are only unique per owner, so ``owner`` (the node's
+        ``org_id``/``user_id``) pins the exact node the caller just wrote;
+        ``None`` targets the identity-less node of that name.
         """
-        # scope-exempt: internal embed-on-write helper. The caller (engine)
-        # has already passed the fail-closed write guard for this same
-        # (label, key_value), so the node we're about to vectorise belongs
-        # to the scope that just wrote it. The lookup just resolves the
-        # nodes.id needed for the vec0 row.
         if self._dimensions == 0:
             return False
+        owner_clause, owner_params = owner_filter_sql(owner, "nodes")
         cur = self._conn.execute(
-            "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
-            (label, key_value),
+            "SELECT id FROM nodes "
+            f"WHERE label = :label AND key_value = :key_value AND {owner_clause}",
+            {"label": label, "key_value": key_value, **owner_params},
         )
         row = cur.fetchone()
         if row is None:

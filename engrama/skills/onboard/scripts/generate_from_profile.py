@@ -277,6 +277,23 @@ def generate_schema(profile: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _key_constraint_lines(label: str, key: str) -> list[str]:
+    """Owner-scoped key constraint for ``label``, replacing the legacy one.
+
+    The key is unique per ``(org_id, user_id)`` so two tenants writing the
+    same name get two nodes; a plain key index keeps by-name reads fast.
+    """
+    name = f"{label.lower()}_{key}"
+    return [
+        f"DROP CONSTRAINT {name} IF EXISTS;",
+        f"CREATE CONSTRAINT {name}_owner IF NOT EXISTS",
+        f"  FOR (n:{label}) REQUIRE (n.{key}, n.org_id, n.user_id) IS UNIQUE;",
+        f"CREATE INDEX {name}_key IF NOT EXISTS",
+        f"  FOR (n:{label}) ON (n.{key});",
+        "",
+    ]
+
+
 def generate_cypher(profile: dict[str, Any]) -> str:
     """Generate the init-schema.cypher content from a profile.
 
@@ -298,6 +315,8 @@ def generate_cypher(profile: dict[str, Any]) -> str:
     )
     lines.append("")
     lines.append("// === CONSTRAINTS ===")
+    lines.append("// Node keys are unique per owner (org_id, user_id); the legacy name-only")
+    lines.append("// constraints are dropped first. See engrama/backends/neo4j/schema.cypher.")
     lines.append("")
 
     all_nodes = profile["nodes"]
@@ -308,16 +327,11 @@ def generate_cypher(profile: dict[str, Any]) -> str:
     for node_def in all_nodes:
         label = node_def["label"]
         key = _merge_key(node_def)
-        constraint_name = f"{label.lower()}_{key}"
-        lines.append(f"CREATE CONSTRAINT {constraint_name} IF NOT EXISTS")
-        lines.append(f"  FOR (n:{label}) REQUIRE n.{key} IS UNIQUE;")
-        lines.append("")
+        lines.extend(_key_constraint_lines(label, key))
 
     # Insight constraint (always present)
     if "Insight" not in [n["label"] for n in all_nodes]:
-        lines.append("CREATE CONSTRAINT insight_title IF NOT EXISTS")
-        lines.append("  FOR (n:Insight) REQUIRE n.title IS UNIQUE;")
-        lines.append("")
+        lines.extend(_key_constraint_lines("Insight", "title"))
 
     # Fulltext index
     lines.append("// === FULLTEXT INDEX ===")

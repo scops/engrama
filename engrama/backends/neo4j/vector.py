@@ -24,7 +24,7 @@ import logging
 from typing import Any
 
 from engrama.core.client import EngramaClient
-from engrama.core.scope import MemoryScope, scope_filter_cypher
+from engrama.core.scope import MemoryScope, owner_filter_cypher, scope_filter_cypher
 
 logger = logging.getLogger("engrama.backends.neo4j.vector")
 
@@ -90,20 +90,25 @@ class Neo4jVectorStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: MemoryScope | None = None,
     ) -> bool:
-        """Store an embedding on a node identified by label + key.
+        """Store an embedding on a node identified by label + key + owner.
 
         This is a convenience method used by the engine's embed-on-write
         path, where we know the label and merge key but not the elementId.
+        Names are only unique per owner, so ``owner`` (the node's
+        ``org_id``/``user_id``) pins the exact node; ``None`` targets the
+        identity-less node of that name.
 
         Returns:
             ``True`` if the node was found and updated.
         """
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
         records = self._client.run(
-            f"MATCH (n:{label} {{{key_field}: $key_value}}) "
+            f"MATCH (n:{label} {{{key_field}: $key_value}}) WHERE {owner_clause} "
             "SET n.embedding = $embedding, n:Embedded "
             "RETURN elementId(n) AS eid",
-            {"key_value": key_value, "embedding": embedding},
+            {"key_value": key_value, "embedding": embedding, **owner_params},
         )
         return len(records) > 0
 

@@ -21,14 +21,19 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
-from engrama.backends.neo4j._cypher import escape_cypher_identifier
+from engrama.backends.neo4j._cypher import escape_cypher_identifier, scoped_key_lookup
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.backends.neo4j.backend import (
     _SERVER_MANAGED_TIMESTAMPS,
     _TEMPORAL_PROPERTIES,
 )
 from engrama.core.schema import TITLE_KEYED_LABELS
-from engrama.core.scope import MemoryScope, scope_filter_cypher
+from engrama.core.scope import (
+    MemoryScope,
+    node_owner,
+    owner_filter_cypher,
+    scope_filter_cypher,
+)
 
 logger = logging.getLogger("engrama.backends.neo4j.async_store")
 
@@ -101,8 +106,15 @@ class Neo4jAsyncStore:
     ) -> dict[str, Any]:
         """Create or update a node.  Always MERGE semantics.
 
+        The node is keyed on ``(label, key, owner)`` where the owner is the
+        ``org_id``/``user_id`` in ``properties`` (see
+        :func:`~engrama.core.scope.node_owner`): two owners writing the same
+        name get two separate nodes.
+
         Returns the node properties including generated fields.
         """
+        owner = node_owner(properties)
+
         # Extract temporal fields from properties (if supplied)
         valid_from = properties.pop("valid_from", None)
         valid_to = properties.pop("valid_to", None)
@@ -188,15 +200,16 @@ class Neo4jAsyncStore:
         # DDR-003 Phase D: detect conflict — node previously had valid_to
         # We check BEFORE the merge so we can warn the caller
         conflict_warning: str | None = None
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
         if valid_to is None:
             pre_check = (
                 f"MATCH (n:{label} {{{key_field}: $merge_value}}) "
-                "WHERE n.valid_to IS NOT NULL "
+                f"WHERE n.valid_to IS NOT NULL AND {owner_clause} "
                 "RETURN n.valid_to AS old_valid_to LIMIT 1"
             )
             pre_records, _, _ = await self._driver.execute_query(
                 pre_check,
-                parameters_={"merge_value": key_value},
+                parameters_={"merge_value": key_value, **owner_params},
                 database_=self._database,
             )
             if pre_records:
@@ -209,14 +222,39 @@ class Neo4jAsyncStore:
                 )
                 logger.info(conflict_warning)
 
-        cypher = (
-            f"MERGE (n:{label} {{{key_field}: $merge_value}}) "
-            f"ON CREATE SET {', '.join(set_create)} "
-            f"ON MATCH SET {', '.join(set_match)} "
-            "RETURN n, "
-            "CASE WHEN n.created_at = n.updated_at "
-            "THEN true ELSE false END AS created"
+        returning = (
+            "RETURN n, CASE WHEN n.created_at = n.updated_at THEN true ELSE false END AS created"
         )
+        if owner is not None and owner.org_id and owner.user_id:
+            # The owner is part of the MERGE pattern, so the scoped
+            # uniqueness constraint (name, org_id, user_id) backs it.
+            params.update(owner_params)
+            cypher = (
+                f"MERGE (n:{label} {{{key_field}: $merge_value, "
+                "org_id: $owner_org_id, user_id: $owner_user_id}) "
+                f"ON CREATE SET {', '.join(set_create)} "
+                f"ON MATCH SET {', '.join(set_match)} "
+                f"{returning}"
+            )
+        else:
+            # Identity-less or partial (legacy/admin) owner: MERGE can't
+            # express "property absent", so resolve the exact node first.
+            existing, _, _ = await self._driver.execute_query(
+                f"MATCH (n:{label} {{{key_field}: $merge_value}}) WHERE {owner_clause} "
+                "RETURN elementId(n) AS eid LIMIT 1",
+                parameters_={"merge_value": key_value, **owner_params},
+                database_=self._database,
+            )
+            if existing:
+                params["eid"] = existing[0]["eid"]
+                cypher = (
+                    f"MATCH (n) WHERE elementId(n) = $eid SET {', '.join(set_match)} {returning}"
+                )
+            else:
+                cypher = (
+                    f"CREATE (n:{label} {{{key_field}: $merge_value}}) "
+                    f"SET {', '.join(set_create)} {returning}"
+                )
 
         records, _, _ = await self._driver.execute_query(
             cypher,
@@ -238,12 +276,19 @@ class Neo4jAsyncStore:
         label: str,
         key_field: str,
         key_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        """Retrieve a single node by its unique key."""
-        cypher = f"MATCH (n:{label} {{{key_field}: $key_value}}) RETURN n"
+        """Retrieve a single node by ``(label, key)``.
+
+        Names are only unique per owner, so a tenant read passes ``scope``:
+        the lookup is restricted to nodes visible in it, preferring the
+        caller's own node over an org-shared ``__entity__`` one. ``None``
+        keeps the unscoped admin lookup (first match).
+        """
+        cypher, params = scoped_key_lookup(label, key_field, scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_={"key_value": key_value},
+            cypher + " RETURN n",
+            parameters_={"key_value": key_value, **params},
             database_=self._database,
         )
         if records:
@@ -854,16 +899,22 @@ class Neo4jAsyncStore:
         self,
         title: str,
         new_status: str,
+        scope: MemoryScope | None = None,
     ) -> bool:
-        """Update an Insight's status and record a timestamp."""
+        """Update an Insight's status and record a timestamp.
+
+        Titles are templated and only unique per owner, so with ``scope``
+        exactly one Insight visible in it is updated (own first).
+        """
         ts_field = "approved_at" if new_status == "approved" else "dismissed_at"
+        match, params = scoped_key_lookup("Insight", "title", scope, var="i")
         records, _, _ = await self._driver.execute_query(
-            "MATCH (i:Insight {title: $title}) "
+            f"{match} "
             f"SET i.status = $new_status, "
             f"    i.{ts_field} = datetime(), "
             "    i.updated_at = datetime() "
             "RETURN i.title AS title",
-            parameters_={"title": title, "new_status": new_status},
+            parameters_={"key_value": title, "new_status": new_status, **params},
             database_=self._database,
         )
         return len(records) > 0
@@ -872,15 +923,18 @@ class Neo4jAsyncStore:
         self,
         title: str,
         obsidian_path: str,
+        scope: MemoryScope | None = None,
     ) -> bool:
-        """Mark an Insight as synced to vault."""
+        """Mark an Insight as synced to vault (scoped like
+        :meth:`update_insight_status`)."""
+        match, params = scoped_key_lookup("Insight", "title", scope, var="i")
         records, _, _ = await self._driver.execute_query(
-            "MATCH (i:Insight {title: $title}) "
+            f"{match} "
             "SET i.obsidian_path = $path, "
             "    i.synced_at = datetime(), "
             "    i.updated_at = datetime() "
             "RETURN i.title AS title",
-            parameters_={"title": title, "path": obsidian_path},
+            parameters_={"key_value": title, "path": obsidian_path, **params},
             database_=self._database,
         )
         return len(records) > 0
@@ -1160,13 +1214,20 @@ class Neo4jAsyncStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: MemoryScope | None = None,
     ) -> bool:
-        """Store an embedding on a node and add the :Embedded label."""
+        """Store an embedding on a node and add the :Embedded label.
+
+        Names are only unique per owner, so ``owner`` (the node's
+        ``org_id``/``user_id``) pins the exact node; ``None`` targets the
+        identity-less node of that name.
+        """
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
         records, _, _ = await self._driver.execute_query(
-            f"MATCH (n:{label} {{{key_field}: $key_value}}) "
+            f"MATCH (n:{label} {{{key_field}: $key_value}}) WHERE {owner_clause} "
             "SET n.embedding = $embedding, n:Embedded "
             "RETURN elementId(n) AS eid",
-            parameters_={"key_value": key_value, "embedding": embedding},
+            parameters_={"key_value": key_value, "embedding": embedding, **owner_params},
             database_=self._database,
         )
         return len(records) > 0

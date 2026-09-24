@@ -166,8 +166,9 @@ class TestForget:
         """Forget archives a node by default."""
         neo4j_session.run(
             "MERGE (t:Technology {name: $name}) SET t.test = true, "
-            "t.status = 'active', t.created_at = datetime(), t.updated_at = datetime()",
-            {"name": "SDK_ForgetMe"},
+            "t.status = 'active', t.org_id = $org_id, t.user_id = $user_id, "
+            "t.created_at = datetime(), t.updated_at = datetime()",
+            {"name": "SDK_ForgetMe", **_SCOPE_CYPHER_PARAMS},
         )
 
         result = eng.forget("Technology", "SDK_ForgetMe")
@@ -178,12 +179,14 @@ class TestForget:
         """Forget with purge deletes permanently."""
         neo4j_session.run(
             "MERGE (t:Technology {name: $name}) SET t.test = true, "
+            "t.org_id = $org_id, t.user_id = $user_id, "
             "t.created_at = datetime(), t.updated_at = datetime()",
-            {"name": "SDK_PurgeMe"},
+            {"name": "SDK_PurgeMe", **_SCOPE_CYPHER_PARAMS},
         )
 
         result = eng.forget("Technology", "SDK_PurgeMe", purge=True)
         assert result["action"] == "deleted"
+        assert result["matched"] is True
 
 
 # ===========================================================================
@@ -230,8 +233,9 @@ class TestReflectAndProactive:
             "SET i.test = true, i.body = 'SDK dismiss test', "
             "    i.confidence = 0.5, i.status = 'pending', "
             "    i.source_query = 'test', "
+            "    i.org_id = $org_id, i.user_id = $user_id, "
             "    i.created_at = datetime(), i.updated_at = datetime()",
-            {"title": "SDK_DismissInsight"},
+            {"title": "SDK_DismissInsight", **_SCOPE_CYPHER_PARAMS},
         )
 
         result = eng.dismiss_insight("SDK_DismissInsight")

@@ -181,7 +181,7 @@ class TestNeo4jVectorStore:
                 {"name": name, "org_id": scope.org_id, "user_id": scope.user_id},
             )
             emb = embedder.embed(f"Concept: {name}")
-            vector_store.store_vector_by_key("Concept", "name", name, emb)
+            vector_store.store_vector_by_key("Concept", "name", name, emb, owner=scope)
 
         # Wait a moment for the index to update
         import time
@@ -389,6 +389,7 @@ class TestEngineEmbedOnWrite:
             "name",
             "Python",
             [0.1] * 768,
+            owner=_TEST_SCOPE,
         )
 
     def test_no_embed_when_null_provider(self):

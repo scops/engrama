@@ -3,7 +3,7 @@
 
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 -- Core node table. props is a JSON blob carrying every domain property
 -- (description, status, summary, tags, confidence, valid_from, ...) so
@@ -15,8 +15,19 @@ CREATE TABLE IF NOT EXISTS nodes (
     key_value   TEXT NOT NULL,
     props       TEXT NOT NULL DEFAULT '{}',
     created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    UNIQUE(label, key_value)
+    updated_at  TEXT NOT NULL
+);
+-- A node's identity is (label, key, owner): two tenants writing the same
+-- name get two nodes. The owner lives in the JSON props; an identity-less
+-- (legacy/admin) node indexes as ('', ''). Must stay in lockstep with
+-- ``owner_filter_sql`` — key-addressed writes match on the same expressions.
+-- Pre-v3 databases carry a table-level UNIQUE(label, key_value); the store
+-- drops it with a table rebuild on connect (``_migrate_node_identity``).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_identity ON nodes(
+    label,
+    key_value,
+    COALESCE(json_extract(props, '$.org_id'), ''),
+    COALESCE(json_extract(props, '$.user_id'), '')
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_label   ON nodes(label);
 CREATE INDEX IF NOT EXISTS idx_nodes_updated ON nodes(updated_at);

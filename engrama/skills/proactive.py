@@ -93,7 +93,7 @@ class ProactiveSkill:
         Returns:
             A dict with ``title``, ``action``, ``matched`` (bool).
         """
-        matched = engine._store.update_insight_status(title, "approved")
+        matched = engine._store.update_insight_status(title, "approved", scope=engine.default_scope)
         return {
             "title": title,
             "action": "approved",
@@ -110,7 +110,9 @@ class ProactiveSkill:
         Returns:
             A dict with ``title``, ``action``, ``matched`` (bool).
         """
-        matched = engine._store.update_insight_status(title, "dismissed")
+        matched = engine._store.update_insight_status(
+            title, "dismissed", scope=engine.default_scope
+        )
         return {
             "title": title,
             "action": "dismissed",
@@ -194,7 +196,7 @@ class ProactiveSkill:
         )
 
         # Mark as synced in Neo4j
-        engine._store.mark_insight_synced(title, target_note)
+        engine._store.mark_insight_synced(title, target_note, scope=engine.default_scope)
 
         return {
             "title": title,

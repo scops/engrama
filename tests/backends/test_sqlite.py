@@ -50,6 +50,11 @@ class _ScopedStoreProxy:
         properties = {**_SCOPE_PROPS, **properties}
         return self._inner.merge_node(label, key_field, key_value, properties, embedding)
 
+    def archive_node_by_name(self, label, name, *, purge=False, owner=None):
+        return self._inner.archive_node_by_name(
+            label, name, purge=purge, owner=owner or self._scope
+        )
+
     def seed_domain(self, name, description):
         # Re-route through the proxy's merge_node so scope props land.
         self.merge_node("Domain", "name", name, {"description": description})
