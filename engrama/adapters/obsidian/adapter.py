@@ -286,7 +286,7 @@ class ObsidianAdapter:
 
     def _resolve(self, relative_path: str) -> Path:
         target = (self.vault_path / relative_path).resolve()
-        if not str(target).startswith(str(self.vault_path)):
+        if not target.is_relative_to(self.vault_path):
             raise ValueError(f"Path traversal blocked: {relative_path!r}")
         return target
 
