@@ -192,6 +192,10 @@ def generate_schema(profile: dict[str, Any]) -> str:
             rel_types.append(rt)
     for rt in rel_types:
         lines.append(f'    {rt} = "{rt}"')
+    # Core relation, independent of the profile: an Insight points at the
+    # entities it talks about (DDR-008).
+    if "ABOUT" not in rel_types:
+        lines.append('    ABOUT = "ABOUT"')
     lines.append("")
 
     # Dataclasses

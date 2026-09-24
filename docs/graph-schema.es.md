@@ -113,6 +113,15 @@
 })
 ```
 
+Un **Insight de sistema** es el que escribe reflect: lleva `source_query`,
+pasa por la cola de revisión (pendiente → aprobado/descartado) y enlaza con
+las entidades de las que habla mediante `(:Insight)-[:ABOUT]->(n)`. `ABOUT` es
+un tipo de relación del núcleo, disponible con cualquier perfil. Un
+`Insight` escrito a mano (sin `source_query`) es un nodo de dominio más: no
+entra en la cola de revisión, y las comprobaciones estructurales (reflect,
+`engrama health`) lo tratan como a cualquier otro nodo
+([DDR-006](./ddr-006.md), [DDR-008](./ddr-008.md)).
+
 ### Material
 ```
 (:Material {

@@ -112,6 +112,14 @@
 })
 ```
 
+A **system Insight** is one reflect wrote: it carries `source_query`, goes
+through the review queue (pending → approved/dismissed), and links to the
+entities it talks about with `(:Insight)-[:ABOUT]->(n)`. `ABOUT` is a core
+relation type available in every profile. An `Insight` written by hand (no
+`source_query`) is an ordinary domain node: it never enters the review
+queue, and structural checks (reflect, `engrama health`) treat it like any
+other node ([DDR-006](./ddr-006.md), [DDR-008](./ddr-008.md)).
+
 ### Material
 ```
 (:Material {

@@ -148,3 +148,14 @@ def test_neo4j_snapshot_matches_the_sqlite_contract() -> None:
             eng._store._client.run("MATCH (n) WHERE n.org_id = $o DETACH DELETE n", {"o": owner})
     assert (report["totals"]["nodes"], report["totals"]["edges"]) == (3, 1)
     assert report["orphans"]["by_label"] == {"Concept": 1}
+
+
+def test_system_insight_edges_are_not_structure() -> None:
+    nodes = [
+        _node("lonely", "Decision", "orphan decision"),
+        _node("i", "Insight", "Under-connected", source_query="under_connected"),
+    ]
+    report = compute_health(nodes, [("i", "lonely")])
+    assert report["orphans"]["live"] == 1  # an ABOUT edge doesn't connect it
+    assert report["orphans"]["system_insights"] == 0  # the Insight is linked
+    assert report["totals"]["edges"] == 0

@@ -80,6 +80,13 @@ class ReflectSkill:
     def _write_insight(engine: EngramaEngine, draft: InsightDraft) -> Insight:
         """Merge an Insight node and return the dataclass."""
         engine.merge_node("Insight", {"title": draft.title, **draft.properties()})
+        # Link the Insight to its evidence (DDR-008); unresolved targets get
+        # no edge, and a label outside the schema is skipped.
+        for label, _key_field, name in draft.about_targets():
+            try:
+                engine.merge_relation(draft.title, "Insight", "ABOUT", name, label)
+            except ValueError:
+                continue
         return Insight(
             title=draft.title,
             body=draft.body,

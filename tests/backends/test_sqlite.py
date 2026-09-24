@@ -519,16 +519,26 @@ def test_insight_lifecycle_pending_to_approved(store):
 
 
 def test_get_pending_insights_orders_by_confidence(store):
-    store.merge_node("Insight", "title", "low", {"confidence": 0.3, "status": "pending"})
-    store.merge_node("Insight", "title", "high", {"confidence": 0.9, "status": "pending"})
-    store.merge_node("Insight", "title", "mid", {"confidence": 0.6, "status": "pending"})
+    store.merge_node(
+        "Insight", "title", "low", {"confidence": 0.3, "status": "pending", "source_query": "test"}
+    )
+    store.merge_node(
+        "Insight", "title", "high", {"confidence": 0.9, "status": "pending", "source_query": "test"}
+    )
+    store.merge_node(
+        "Insight", "title", "mid", {"confidence": 0.6, "status": "pending", "source_query": "test"}
+    )
     titles = [p["title"] for p in store.get_pending_insights()]
     assert titles == ["high", "mid", "low"]
 
 
 def test_dismissed_insights_excluded_from_pending(store):
-    store.merge_node("Insight", "title", "kept", {"confidence": 0.5, "status": "pending"})
-    store.merge_node("Insight", "title", "drop", {"confidence": 0.5, "status": "pending"})
+    store.merge_node(
+        "Insight", "title", "kept", {"confidence": 0.5, "status": "pending", "source_query": "test"}
+    )
+    store.merge_node(
+        "Insight", "title", "drop", {"confidence": 0.5, "status": "pending", "source_query": "test"}
+    )
     store.update_insight_status("drop", "dismissed")
     titles = {p["title"] for p in store.get_pending_insights()}
     assert "kept" in titles and "drop" not in titles
@@ -540,8 +550,12 @@ def test_approved_insight_titles_separate_from_dismissed(store):
     ones — otherwise the merge_node rebuild silently pins them back to
     status='pending'.
     """
-    store.merge_node("Insight", "title", "yes", {"confidence": 0.5, "status": "pending"})
-    store.merge_node("Insight", "title", "no", {"confidence": 0.5, "status": "pending"})
+    store.merge_node(
+        "Insight", "title", "yes", {"confidence": 0.5, "status": "pending", "source_query": "test"}
+    )
+    store.merge_node(
+        "Insight", "title", "no", {"confidence": 0.5, "status": "pending", "source_query": "test"}
+    )
     store.update_insight_status("yes", "approved")
     store.update_insight_status("no", "dismissed")
     assert store.get_approved_insight_titles() == {"yes"}

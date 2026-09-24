@@ -2722,6 +2722,22 @@ def create_engrama_mcp(
                     draft.title,
                     _with_mcp_provenance(draft.properties(), scope),
                 )
+                # Link the Insight to its evidence (DDR-008). A target that
+                # doesn't resolve in scope simply gets no edge.
+                for label, key_field, name in draft.about_targets():
+                    try:
+                        await store.merge_relation(
+                            "Insight",
+                            "title",
+                            draft.title,
+                            "ABOUT",
+                            label,
+                            key_field,
+                            name,
+                            scope=scope,
+                        )
+                    except Exception as e:
+                        logger.warning("Could not link Insight to %s: %s", label, e)
                 insights.append(
                     {
                         "query": draft.source_query,

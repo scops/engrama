@@ -38,6 +38,15 @@ class InsightDraft:
     source_query: str
     about: tuple[tuple[str, str], ...] = ()
 
+    def about_targets(self) -> list[tuple[str, str, str]]:
+        """``(label, key_field, name)`` for every entity to link with ``ABOUT``."""
+        from engrama.core.schema import TITLE_KEYED_LABELS
+
+        return [
+            (label, "title" if label in TITLE_KEYED_LABELS else "name", name)
+            for label, name in dict.fromkeys(self.about)
+        ]
+
     def properties(self) -> dict[str, Any]:
         return {
             "body": self.body,

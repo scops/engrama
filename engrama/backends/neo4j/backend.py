@@ -884,7 +884,7 @@ class Neo4jGraphStore:
         where_sql = f"AND {scope_clause} " if scope_clause else ""
         records = self._client.run(
             "MATCH (i:Insight {status: $status}) "
-            f"WHERE 1=1 {where_sql}"
+            f"WHERE i.source_query IS NOT NULL {where_sql}"
             "RETURN i.title AS title, i.body AS body, "
             "       i.confidence AS confidence, "
             "       i.source_query AS source_query, "

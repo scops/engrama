@@ -95,16 +95,24 @@ def compute_health(
     direction and relation type don't matter here.
     """
     by_id = {n["id"]: n for n in nodes}
+    system = {i for i, n in by_id.items() if is_system_insight(n)}
+    # Structure is measured between domain nodes only: a system Insight's
+    # ABOUT edges annotate the graph, they don't connect it.
     adjacency: dict[Any, set[Any]] = defaultdict(set)
+    insight_links: Counter[Any] = Counter()
     for a, b in edges:
-        if a in by_id and b in by_id and a != b:
-            adjacency[a].add(b)
-            adjacency[b].add(a)
+        if a not in by_id or b not in by_id or a == b:
+            continue
+        if a in system or b in system:
+            insight_links[a] += 1
+            insight_links[b] += 1
+            continue
+        adjacency[a].add(b)
+        adjacency[b].add(a)
 
     def degree(nid: Any) -> int:
         return len(adjacency[nid])
 
-    system = {i for i, n in by_id.items() if is_system_insight(n)}
     archived = {i for i, n in by_id.items() if n.get("status") == "archived"} - system
     live = set(by_id) - system - archived
     stubs = {i for i in live if by_id[i].get("status") == "stub"}
@@ -169,7 +177,7 @@ def compute_health(
             "live": len(orphans),
             "live_pct": round(100 * len(orphans) / len(live), 1) if live else 0.0,
             "by_label": dict(Counter(by_id[i]["label"] for i in orphans).most_common()),
-            "system_insights": sum(1 for i in system if degree(i) == 0),
+            "system_insights": sum(1 for i in system if not insight_links[i]),
             "domain_pct": round(
                 100 * sum(1 for i in domain_live if degree(i) == 0) / len(domain_live), 1
             )
@@ -228,7 +236,7 @@ def format_health(report: dict[str, Any]) -> str:
         f"Nodes: {t['nodes']} ({t['live']} live, {t['archived']} archived, "
         f"{t['system_insights']} system Insights, {t['stubs']} stubs), edges: {t['edges']}",
         f"Orphans (live, degree 0): {o['live']} ({o['live_pct']}%) — domain only: "
-        f"{o['domain_pct']}%; system Insights with no edge: {o['system_insights']}",
+        f"{o['domain_pct']}%; system Insights linked to nothing: {o['system_insights']}",
         "Degree (live): " + ", ".join(f"{k}: {v}" for k, v in report["degree"].items()),
     ]
     for view in ("live", "core"):

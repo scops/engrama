@@ -1233,6 +1233,7 @@ class SqliteGraphStore:
             FROM nodes
             WHERE label = 'Insight'
               AND json_extract(props, '$.status') = 'pending'
+              AND json_extract(props, '$.source_query') IS NOT NULL
         """
         params: dict[str, Any] = {"limit": limit}
         if title is not None:
@@ -1268,6 +1269,7 @@ class SqliteGraphStore:
             JOIN node_embeddings v ON v.node_id = n.id
             WHERE n.label = 'Insight'
               AND json_extract(n.props, '$.status') = 'pending'
+              AND json_extract(n.props, '$.source_query') IS NOT NULL
         """
         params: dict[str, Any] = {"limit": limit}
         if scope_clause:

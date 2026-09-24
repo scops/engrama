@@ -303,6 +303,7 @@ async def test_insight_lifecycle_and_dismissed_titles_alias(store):
             "body": "x",
             "confidence": 0.9,
             "status": "pending",
+            "source_query": "test",
         },
     )
     pending = await store.get_pending_insights()

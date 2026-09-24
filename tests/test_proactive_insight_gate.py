@@ -109,6 +109,7 @@ def _add_insight(s, vec, title, *, status, confidence, scope, embedding=None):
             "body": f"body of {title}",
             "status": status,
             "confidence": confidence,
+            "source_query": "test",
             "engrama_id": f"id-{title}",
             "org_id": scope.org_id,
             "user_id": scope.user_id,

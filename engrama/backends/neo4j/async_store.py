@@ -836,7 +836,7 @@ class Neo4jAsyncStore:
             params["title"] = title
         records, _, _ = await self._driver.execute_query(
             "MATCH (i:Insight {status: $status}) "
-            f"WHERE 1=1 {where_sql}{title_sql}"
+            f"WHERE i.source_query IS NOT NULL {where_sql}{title_sql}"
             "RETURN i.engrama_id AS engrama_id, i.title AS title, i.body AS body, "
             "       i.confidence AS confidence, "
             "       i.source_query AS source_query, "
