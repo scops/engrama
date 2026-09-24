@@ -36,6 +36,7 @@ class NullGraphStore:
         label: str,
         key_field: str,
         key_value: str,
+        scope: Any = None,
     ) -> dict[str, Any] | None:
         return None
 

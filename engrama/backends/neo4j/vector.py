@@ -202,9 +202,9 @@ class Neo4jVectorStore:
     # ------------------------------------------------------------------
 
     def iter_all_vectors(self):
-        """Yield ``{label, key_field, key_value, vector}`` for every
-        ``:Embedded`` node, resolved to the primary label + merge key so
-        the dump is portable across backends.
+        """Yield ``{label, key_field, key_value, org_id, user_id, vector}``
+        for every ``:Embedded`` node, resolved to the primary label + merge
+        key (plus owner) so the dump is portable across backends.
         """
         # scope-exempt: migration/export path — needed by ``engrama export``
         # to dump every embedding regardless of tenant. Never called from a
@@ -216,7 +216,9 @@ class Neo4jVectorStore:
             "RETURN label, "
             "       n.name      AS name, "
             "       n.title     AS title, "
-            "       n.embedding AS embedding"
+            "       n.embedding AS embedding, "
+            "       n.org_id    AS org_id, "
+            "       n.user_id   AS user_id"
         )
         for r in records:
             name = r["name"]
@@ -231,6 +233,8 @@ class Neo4jVectorStore:
                 "label": r["label"],
                 "key_field": key_field,
                 "key_value": key_value,
+                "org_id": r["org_id"],
+                "user_id": r["user_id"],
                 "vector": list(r["embedding"] or []),
             }
 

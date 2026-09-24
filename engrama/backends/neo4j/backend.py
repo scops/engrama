@@ -515,7 +515,7 @@ class Neo4jGraphStore:
     def iter_all_relations(self):
         """Yield every relationship as ``{from_label, from_key, from_value,
         rel_type, to_label, to_key, to_value}``. Mirrors the SQLite
-        backend's edge dump.
+        backend's edge dump, including the edge's ``org_id``/``user_id``.
         """
         records = self._client.run(
             "MATCH (a)-[r]->(b) "
@@ -530,7 +530,9 @@ class Neo4jGraphStore:
             "       type(r) AS rel_type, "
             "       to_label, "
             "       b.name  AS to_name, "
-            "       b.title AS to_title"
+            "       b.title AS to_title, "
+            "       r.org_id AS org_id, "
+            "       r.user_id AS user_id"
         )
         for r in records:
             from_field, from_value = (
@@ -549,6 +551,8 @@ class Neo4jGraphStore:
                 "to_label": r["to_label"],
                 "to_key": to_field,
                 "to_value": to_value,
+                "org_id": r["org_id"],
+                "user_id": r["user_id"],
             }
 
     def purge_all(self) -> None:

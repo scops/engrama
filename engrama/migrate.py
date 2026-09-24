@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import engrama
+from engrama.core.scope import node_owner
 
 EXPORT_FORMAT_VERSION = 1
 
@@ -142,6 +143,9 @@ def import_graph(
                 )
                 counts["nodes"] += 1
             elif rtype == "relation":
+                # Resolve endpoints in the scope that wrote the edge (names are
+                # only unique per owner). Dumps without edge identity (older
+                # exports) keep the unscoped legacy match.
                 graph_store.merge_relation(
                     rec["from_label"],
                     rec["from_key"],
@@ -150,6 +154,7 @@ def import_graph(
                     rec["to_label"],
                     rec["to_key"],
                     rec["to_value"],
+                    scope=node_owner(rec),
                 )
                 counts["relations"] += 1
             elif rtype == "vector":
@@ -161,6 +166,7 @@ def import_graph(
                     rec["key_field"],
                     rec["key_value"],
                     rec["vector"],
+                    owner=node_owner(rec),
                 )
                 if stored:
                     counts["vectors"] += 1

@@ -551,7 +551,10 @@ class SqliteGraphStore:
     def iter_all_relations(self) -> Iterator[dict[str, Any]]:
         """Yield every edge in the graph for export, resolved to the
         label/key tuple on each endpoint so the dump is portable across
-        backends (Neo4j has no concept of our integer ``nodes.id``).
+        backends (Neo4j has no concept of our integer ``nodes.id``). The
+        edge's own ``org_id``/``user_id`` travel with it so the importer can
+        resolve both endpoints in the scope that wrote the edge — names are
+        only unique per owner.
         """
         cur = self._conn.execute(
             """
@@ -561,7 +564,9 @@ class SqliteGraphStore:
                    e.rel_type  AS rel_type,
                    t.label     AS to_label,
                    t.key_field AS to_key,
-                   t.key_value AS to_value
+                   t.key_value AS to_value,
+                   e.org_id    AS org_id,
+                   e.user_id   AS user_id
               FROM edges e
               JOIN nodes f ON f.id = e.from_id
               JOIN nodes t ON t.id = e.to_id
@@ -577,6 +582,8 @@ class SqliteGraphStore:
                 "to_label": row["to_label"],
                 "to_key": row["to_key"],
                 "to_value": row["to_value"],
+                "org_id": row["org_id"],
+                "user_id": row["user_id"],
             }
 
     def get_neighbours(

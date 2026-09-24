@@ -160,9 +160,10 @@ class SqliteVecStore:
     # ------------------------------------------------------------------
 
     def iter_all_vectors(self):
-        """Yield ``{label, key_field, key_value, vector}`` for every stored
-        embedding, resolved against the nodes table so the dump is
-        portable across backends.
+        """Yield ``{label, key_field, key_value, org_id, user_id, vector}``
+        for every stored embedding, resolved against the nodes table so the
+        dump is portable across backends. The owner pins the vector to the
+        right node on import, since names are only unique per owner.
         """
         # scope-exempt: migration/export path — needed by ``engrama export``
         # to dump every embedding regardless of tenant. Never called from a
@@ -171,7 +172,9 @@ class SqliteVecStore:
             return
         cur = self._conn.execute(
             f"""
-            SELECT n.label, n.key_field, n.key_value, v.embedding
+            SELECT n.label, n.key_field, n.key_value, v.embedding,
+                   json_extract(n.props, '$.org_id')  AS org_id,
+                   json_extract(n.props, '$.user_id') AS user_id
               FROM {self._index_name} v
               JOIN nodes n ON n.id = v.node_id
              ORDER BY n.id
@@ -185,6 +188,8 @@ class SqliteVecStore:
                 "label": row["label"],
                 "key_field": row["key_field"],
                 "key_value": row["key_value"],
+                "org_id": row["org_id"],
+                "user_id": row["user_id"],
                 "vector": list(struct.unpack(fmt, blob)),
             }
 

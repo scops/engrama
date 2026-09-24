@@ -296,3 +296,44 @@ async def test_neo4j_same_name_is_owner_scoped() -> None:
             parameters_={"k": name},
         )
         await store.close()
+
+
+def test_export_import_round_trip_keeps_edges_and_vectors_on_their_owner(tmp_path: Path) -> None:
+    from engrama.migrate import export_graph, import_graph
+
+    def stores(db: Path) -> tuple[SqliteGraphStore, SqliteVecStore]:
+        g = SqliteGraphStore(db)
+        v = SqliteVecStore(g._conn, dimensions=4)
+        v.ensure_index()
+        return g, v
+
+    src_g, src_v = stores(tmp_path / "src.db")
+    for scope, other in ((ALICE, "alice-only"), (BOB, "bob-only")):
+        src_g.merge_node("Project", "name", "roadmap", scope.to_properties())
+        src_g.merge_node("Concept", "name", other, scope.to_properties())
+        src_g.merge_relation(
+            "Project", "name", "roadmap", "RELATED_TO", "Concept", "name", other, scope=scope
+        )
+    src_v.store_vector_by_key("Project", "name", "roadmap", [0, 0, 0, 1], owner=BOB)
+    dump = tmp_path / "dump.ndjson"
+    export_graph(src_g, src_v, dump)
+    src_g.close()
+
+    dst_g, dst_v = stores(tmp_path / "dst.db")
+    try:
+        import_graph(dst_g, dst_v, dump)
+        for scope, other in ((ALICE, "alice-only"), (BOB, "bob-only")):
+            names = {
+                r["neighbour"]["name"]
+                for r in dst_g.get_neighbours("Project", "name", "roadmap", scope=scope)
+            }
+            assert names == {other}
+        owners = [
+            json.loads(p)["user_id"]
+            for (p,) in dst_g._conn.execute(
+                f"SELECT n.props FROM nodes n JOIN {dst_v._index_name} v ON v.node_id = n.id"
+            )
+        ]
+        assert owners == ["bob"]
+    finally:
+        dst_g.close()
