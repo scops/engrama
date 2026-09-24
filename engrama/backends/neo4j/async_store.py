@@ -21,14 +21,23 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
-from engrama.backends.neo4j._cypher import escape_cypher_identifier
+from engrama.backends.neo4j import _reflect_cypher
+from engrama.backends.neo4j._cypher import escape_cypher_identifier, scoped_key_lookup
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.backends.neo4j.backend import (
     _SERVER_MANAGED_TIMESTAMPS,
     _TEMPORAL_PROPERTIES,
 )
+from engrama.core.health import tag_anchor_rows
+from engrama.core.resolve import name_fragments
 from engrama.core.schema import TITLE_KEYED_LABELS
-from engrama.core.scope import MemoryScope, scope_filter_cypher
+from engrama.core.scope import (
+    MemoryScope,
+    node_owner,
+    owner_filter_cypher,
+    scope_filter_cypher,
+)
+from engrama.core.stubs import clears_stub
 
 logger = logging.getLogger("engrama.backends.neo4j.async_store")
 
@@ -101,8 +110,15 @@ class Neo4jAsyncStore:
     ) -> dict[str, Any]:
         """Create or update a node.  Always MERGE semantics.
 
+        The node is keyed on ``(label, key, owner)`` where the owner is the
+        ``org_id``/``user_id`` in ``properties`` (see
+        :func:`~engrama.core.scope.node_owner`): two owners writing the same
+        name get two separate nodes.
+
         Returns the node properties including generated fields.
         """
+        owner = node_owner(properties)
+
         # Extract temporal fields from properties (if supplied)
         valid_from = properties.pop("valid_from", None)
         valid_to = properties.pop("valid_to", None)
@@ -125,10 +141,17 @@ class Neo4jAsyncStore:
         set_create: list[str] = [
             "n.created_at = datetime()",
             "n.updated_at = datetime()",
+            "n.last_activity_at = datetime()",
         ]
         set_match: list[str] = [
             "n.updated_at = datetime()",
+            "n.last_activity_at = datetime()",
         ]
+        if clears_stub(properties):
+            # Enriching a stub promotes it (DDR-006).
+            set_match.append(
+                "n.status = CASE WHEN n.status = 'stub' THEN 'active' ELSE n.status END"
+            )
 
         params: dict[str, Any] = {"merge_value": key_value}
 
@@ -156,7 +179,10 @@ class Neo4jAsyncStore:
             )
 
         if confidence is not None:
+            # An explicit confidence (or a supersession via valid_to) is a
+            # statement about the fact, so it applies on update too (DDR-007).
             set_create.append("n.confidence = $confidence_val")
+            set_match.append("n.confidence = $confidence_val")
             params["confidence_val"] = confidence
         else:
             set_create.append("n.confidence = 1.0")
@@ -188,15 +214,16 @@ class Neo4jAsyncStore:
         # DDR-003 Phase D: detect conflict — node previously had valid_to
         # We check BEFORE the merge so we can warn the caller
         conflict_warning: str | None = None
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
         if valid_to is None:
             pre_check = (
                 f"MATCH (n:{label} {{{key_field}: $merge_value}}) "
-                "WHERE n.valid_to IS NOT NULL "
+                f"WHERE n.valid_to IS NOT NULL AND {owner_clause} "
                 "RETURN n.valid_to AS old_valid_to LIMIT 1"
             )
             pre_records, _, _ = await self._driver.execute_query(
                 pre_check,
-                parameters_={"merge_value": key_value},
+                parameters_={"merge_value": key_value, **owner_params},
                 database_=self._database,
             )
             if pre_records:
@@ -209,14 +236,39 @@ class Neo4jAsyncStore:
                 )
                 logger.info(conflict_warning)
 
-        cypher = (
-            f"MERGE (n:{label} {{{key_field}: $merge_value}}) "
-            f"ON CREATE SET {', '.join(set_create)} "
-            f"ON MATCH SET {', '.join(set_match)} "
-            "RETURN n, "
-            "CASE WHEN n.created_at = n.updated_at "
-            "THEN true ELSE false END AS created"
+        returning = (
+            "RETURN n, CASE WHEN n.created_at = n.updated_at THEN true ELSE false END AS created"
         )
+        if owner is not None and owner.org_id and owner.user_id:
+            # The owner is part of the MERGE pattern, so the scoped
+            # uniqueness constraint (name, org_id, user_id) backs it.
+            params.update(owner_params)
+            cypher = (
+                f"MERGE (n:{label} {{{key_field}: $merge_value, "
+                "org_id: $owner_org_id, user_id: $owner_user_id}) "
+                f"ON CREATE SET {', '.join(set_create)} "
+                f"ON MATCH SET {', '.join(set_match)} "
+                f"{returning}"
+            )
+        else:
+            # Identity-less or partial (legacy/admin) owner: MERGE can't
+            # express "property absent", so resolve the exact node first.
+            existing, _, _ = await self._driver.execute_query(
+                f"MATCH (n:{label} {{{key_field}: $merge_value}}) WHERE {owner_clause} "
+                "RETURN elementId(n) AS eid LIMIT 1",
+                parameters_={"merge_value": key_value, **owner_params},
+                database_=self._database,
+            )
+            if existing:
+                params["eid"] = existing[0]["eid"]
+                cypher = (
+                    f"MATCH (n) WHERE elementId(n) = $eid SET {', '.join(set_match)} {returning}"
+                )
+            else:
+                cypher = (
+                    f"CREATE (n:{label} {{{key_field}: $merge_value}}) "
+                    f"SET {', '.join(set_create)} {returning}"
+                )
 
         records, _, _ = await self._driver.execute_query(
             cypher,
@@ -233,17 +285,45 @@ class Neo4jAsyncStore:
             return result
         return {"node": {}, "created": False}
 
+    async def node_degree(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+        scope: MemoryScope | None = None,
+    ) -> int | None:
+        """Substantive degree of the node visible in ``scope`` (own first);
+        edges to reflect-generated Insights don't count. ``None`` if unseen."""
+        cypher, params = scoped_key_lookup(label, key_field, scope)
+        cypher += (
+            " RETURN size([(n)-[]-(m) "
+            "WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) AS degree"
+        )
+        records, _, _ = await self._driver.execute_query(
+            cypher,
+            parameters_={"key_value": key_value, **params},
+            database_=self._database,
+        )
+        return records[0]["degree"] if records else None
+
     async def get_node(
         self,
         label: str,
         key_field: str,
         key_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        """Retrieve a single node by its unique key."""
-        cypher = f"MATCH (n:{label} {{{key_field}: $key_value}}) RETURN n"
+        """Retrieve a single node by ``(label, key)``.
+
+        Names are only unique per owner, so a tenant read passes ``scope``:
+        the lookup is restricted to nodes visible in it, preferring the
+        caller's own node over an org-shared ``__entity__`` one. ``None``
+        keeps the unscoped admin lookup (first match).
+        """
+        cypher, params = scoped_key_lookup(label, key_field, scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_={"key_value": key_value},
+            cypher + " RETURN n",
+            parameters_={"key_value": key_value, **params},
             database_=self._database,
         )
         if records:
@@ -260,13 +340,14 @@ class Neo4jAsyncStore:
         """Delete or archive a node.
 
         When ``soft=True``, sets ``status='archived'``, ``archived_at``
-        and ``updated_at``.  When ``soft=False``, detach-deletes the node.
+        and ``archived_reason`` (``updated_at`` is left alone: archiving is
+        not activity). When ``soft=False``, detach-deletes the node.
         """
         if soft:
             cypher = (
                 f"MATCH (n:{label} {{{key_field}: $key_value}}) "
                 "SET n.status = 'archived', n.archived_at = datetime(), "
-                "    n.updated_at = datetime() "
+                "    n.archived_reason = 'delete' "
                 "RETURN n"
             )
         else:
@@ -341,6 +422,8 @@ class Neo4jAsyncStore:
             f"WITH a, b LIMIT 1 "
             f"MERGE (a)-[r:{rel_type}]->(b) "
             f"{set_clause}"
+            # Linking is activity on both endpoints (DDR-007).
+            "SET a.last_activity_at = datetime(), b.last_activity_at = datetime() "
             f"RETURN type(r) AS rel_type, "
             f"COALESCE(a.name, a.title) AS from_name, "
             f"COALESCE(b.name, b.title) AS to_name, "
@@ -560,7 +643,11 @@ class Neo4jAsyncStore:
             "node.tags AS tags, "
             "node.confidence AS confidence, "
             "node.trust_level AS trust_level, "
-            "toString(node.updated_at) AS updated_at "
+            "toString(node.updated_at) AS updated_at, "
+            "toString(node.last_activity_at) AS last_activity_at, "
+            "node.source_query AS source_query, "
+            "size([(node)--(m) WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) "
+            "AS degree "
             "ORDER BY score DESC LIMIT $limit"
         )
         params: dict[str, Any] = {
@@ -786,7 +873,7 @@ class Neo4jAsyncStore:
             params["title"] = title
         records, _, _ = await self._driver.execute_query(
             "MATCH (i:Insight {status: $status}) "
-            f"WHERE 1=1 {where_sql}{title_sql}"
+            f"WHERE i.source_query IS NOT NULL {where_sql}{title_sql}"
             "RETURN i.engrama_id AS engrama_id, i.title AS title, i.body AS body, "
             "       i.confidence AS confidence, "
             "       i.source_query AS source_query, "
@@ -854,16 +941,22 @@ class Neo4jAsyncStore:
         self,
         title: str,
         new_status: str,
+        scope: MemoryScope | None = None,
     ) -> bool:
-        """Update an Insight's status and record a timestamp."""
+        """Update an Insight's status and record a timestamp.
+
+        Titles are templated and only unique per owner, so with ``scope``
+        exactly one Insight visible in it is updated (own first).
+        """
         ts_field = "approved_at" if new_status == "approved" else "dismissed_at"
+        match, params = scoped_key_lookup("Insight", "title", scope, var="i")
         records, _, _ = await self._driver.execute_query(
-            "MATCH (i:Insight {title: $title}) "
+            f"{match} "
             f"SET i.status = $new_status, "
             f"    i.{ts_field} = datetime(), "
             "    i.updated_at = datetime() "
             "RETURN i.title AS title",
-            parameters_={"title": title, "new_status": new_status},
+            parameters_={"key_value": title, "new_status": new_status, **params},
             database_=self._database,
         )
         return len(records) > 0
@@ -872,15 +965,18 @@ class Neo4jAsyncStore:
         self,
         title: str,
         obsidian_path: str,
+        scope: MemoryScope | None = None,
     ) -> bool:
-        """Mark an Insight as synced to vault."""
+        """Mark an Insight as synced to vault (scoped like
+        :meth:`update_insight_status`)."""
+        match, params = scoped_key_lookup("Insight", "title", scope, var="i")
         records, _, _ = await self._driver.execute_query(
-            "MATCH (i:Insight {title: $title}) "
+            f"{match} "
             "SET i.obsidian_path = $path, "
             "    i.synced_at = datetime(), "
             "    i.updated_at = datetime() "
             "RETURN i.title AS title",
-            parameters_={"title": title, "path": obsidian_path},
+            parameters_={"key_value": title, "path": obsidian_path, **params},
             database_=self._database,
         )
         return len(records) > 0
@@ -927,56 +1023,14 @@ class Neo4jAsyncStore:
     # so a missing-identity caller cannot leak cross-tenant patterns through
     # reflect.
 
-    @staticmethod
-    def _scope_and(
-        node_vars: tuple[str, ...],
-        scope: MemoryScope | None,
-    ) -> tuple[str, dict[str, Any]]:
-        """Build ``AND (scope_n1) AND (scope_n2) ...`` Cypher + params.
-
-        Returns ``("", {})`` for an empty scope so the caller can splice
-        the fragment unconditionally; with a complete scope, the helper's
-        equality predicate is applied to every node variable.
-        """
-        clauses: list[str] = []
-        params: dict[str, Any] = {}
-        for nv in node_vars:
-            clause, p = scope_filter_cypher(scope, nv)
-            if not clause:
-                continue
-            clauses.append(clause)
-            # All node vars share the same scope params (same keys); merging
-            # is idempotent.
-            params.update(p)
-        if not clauses:
-            return "", {}
-        return "AND " + " AND ".join(clauses), params
-
     async def detect_cross_project_solutions(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Open Problem shares a Concept with a resolved Problem in a
-        different Project that has a Decision, within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("pB", "open", "c", "resolved", "d", "pA"), scope)
-        cypher = (
-            "MATCH (pB:Project)-[:HAS]->(open:Problem {status: $open_status}) "
-            "MATCH (open)-[:INSTANCE_OF|APPLIES]->(c:Concept)"
-            "<-[:INSTANCE_OF|APPLIES]-(resolved:Problem {status: $resolved_status}) "
-            "MATCH (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project) "
-            f"WHERE pA <> pB {scope_sql} "
-            "RETURN pB.name AS target_project, open.title AS open_problem, "
-            "d.title AS decision, pA.name AS source_project, c.name AS concept"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.cross_project_solutions``)."""
+        cypher, params = _reflect_cypher.cross_project_solutions(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_={
-                "open_status": "open",
-                "resolved_status": "resolved",
-                **scope_params,
-            },
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -984,21 +1038,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Two distinct entities use the same Technology, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("a", "b", "t"), scope)
-        cypher = (
-            "MATCH (a)-[:USES|TEACHES|COMPOSED_OF]->(t:Technology)"
-            "<-[:USES|TEACHES|COMPOSED_OF]-(b) "
-            "WHERE id(a) < id(b) "
-            f"AND NOT a:Insight AND NOT b:Insight {scope_sql} "
-            "RETURN coalesce(a.name, a.title) AS entity_a, labels(a)[0] AS type_a, "
-            "coalesce(b.name, b.title) AS entity_b, labels(b)[0] AS type_b, "
-            "t.name AS technology"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.shared_technology``)."""
+        cypher, params = _reflect_cypher.shared_technology(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_=scope_params,
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1006,21 +1049,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """A Vulnerability or open Problem shares a Concept with a Course,
-        within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("issue", "c", "course"), scope)
-        cypher = (
-            "MATCH (issue)-[:INSTANCE_OF|APPLIES]->(c:Concept)<-[:COVERS]-(course:Course) "
-            "WHERE ((issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status)) "
-            f"{scope_sql} "
-            "RETURN coalesce(issue.title, issue.name) AS issue, "
-            "labels(issue)[0] AS issue_type, c.name AS concept, course.name AS course"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.training_opportunities``)."""
+        cypher, params = _reflect_cypher.training_opportunities(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_={"open_status": "open", **scope_params},
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1028,23 +1060,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Technique used in domain A could apply in domain B, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("t", "d1", "d2", "other"), scope)
-        cypher = (
-            "MATCH (t:Technique)-[:IN_DOMAIN]->(d1:Domain) "
-            "MATCH (d2:Domain) WHERE d1 <> d2 "
-            "AND NOT EXISTS { MATCH (t)-[:IN_DOMAIN]->(d2) } "
-            "MATCH (other)-[:IN_DOMAIN]->(d2) "
-            "WHERE (other)-[:INSTANCE_OF|APPLIES]->(:Concept)<-[:INSTANCE_OF|APPLIES]-(t) "
-            f"{scope_sql} "
-            "RETURN t.name AS technique, d1.name AS source_domain, "
-            "d2.name AS target_domain, count(other) AS related_entities "
-            "ORDER BY related_entities DESC LIMIT 10"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.technique_transfer``)."""
+        cypher, params = _reflect_cypher.technique_transfer(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_=scope_params,
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1052,21 +1071,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Concept connected to >= 3 entities, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("c", "n"), scope)
-        cypher = (
-            "MATCH (c:Concept)<-[:INSTANCE_OF|APPLIES]-(n) "
-            f"WHERE 1=1 {scope_sql} "
-            "WITH c, collect(DISTINCT {name: coalesce(n.name, n.title), "
-            "label: labels(n)[0]}) AS connected, count(n) AS cnt "
-            "WHERE cnt >= 3 "
-            "RETURN c.name AS concept, cnt AS entity_count, connected[..5] AS sample "
-            "ORDER BY cnt DESC LIMIT 10"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.concept_clusters``)."""
+        cypher, params = _reflect_cypher.concept_clusters(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_=scope_params,
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1074,28 +1082,78 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Nodes 90d+ stale or low-confidence connected to active
-        Project/Course, within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("n", "active"), scope)
-        cypher = (
-            "MATCH (n)-[r]-(active) "
-            "WHERE (active:Project OR active:Course) "
-            "AND (active.status IS NULL OR active.status IN [$active_status, 'active']) "
-            "AND ("
-            "  n.updated_at < datetime() - duration({days: 90}) "
-            "  OR (n.confidence IS NOT NULL AND n.confidence < 0.3)"
-            ") "
-            f"AND NOT n:Project AND NOT n:Course AND NOT n:Domain {scope_sql} "
-            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-            "n.updated_at AS last_updated, n.confidence AS confidence, "
-            "active.name AS project, type(r) AS rel "
-            "ORDER BY coalesce(n.confidence, 1.0) ASC, n.updated_at ASC LIMIT 15"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.stale_knowledge``)."""
+        cypher, params = _reflect_cypher.stale_knowledge(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_={"active_status": "active", **scope_params},
+            cypher, parameters_=params, database_=self._database
+        )
+        return [dict(r) for r in records]
+
+    async def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        """Scoped nodes and edges for :func:`engrama.core.health.compute_health`
+        (fail-closed on an incomplete scope)."""
+        cypher, params = _reflect_cypher.health_nodes(scope)
+        node_records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
+        )
+        cypher, params = _reflect_cypher.health_edges(scope)
+        edge_records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
+        )
+        return {
+            "nodes": [dict(r) for r in node_records],
+            "edges": [(r["a"], r["b"]) for r in edge_records],
+        }
+
+    async def name_candidates(
+        self, name: str, scope: MemoryScope | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """In-scope nodes sharing a name fragment with ``name`` (DDR-006)."""
+        frags = name_fragments(name)
+        if not frags:
+            return []
+        cypher, params = _reflect_cypher.name_candidates(name, frags, scope, limit)
+        records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
+        )
+        return [dict(r) for r in records]
+
+    async def get_vectors(self, node_ids: list[str]) -> dict[str, list[float]]:
+        """Stored embeddings keyed by ``elementId`` (ids from :meth:`search_similar`)."""
+        # scope-exempt: resolves vectors for ids the caller already obtained
+        # from a scoped search.
+        if not node_ids:
+            return {}
+        records, _, _ = await self._driver.execute_query(
+            "MATCH (n) WHERE elementId(n) IN $ids AND n.embedding IS NOT NULL "
+            "RETURN elementId(n) AS id, n.embedding AS embedding",
+            parameters_={"ids": list(node_ids)},
             database_=self._database,
+        )
+        return {r["id"]: list(r["embedding"]) for r in records}
+
+    async def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
+        """Live anchor nodes in ``scope`` as ``{label, name}``."""
+        cypher, params = _reflect_cypher.anchors(scope)
+        records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
+        )
+        return [dict(r) for r in records]
+
+    async def detect_tags_without_edge(
+        self, scope: MemoryScope | None = None
+    ) -> list[dict[str, Any]]:
+        """Reflect detector: anchors named by tags on nodes not linked to them."""
+        return tag_anchor_rows(await self.health_snapshot(scope))
+
+    async def detect_hub_stubs(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.hub_stubs``)."""
+        cypher, params = _reflect_cypher.hub_stubs(scope)
+        records, _, _ = await self._driver.execute_query(
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1103,28 +1161,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Nodes with fewer than 2 *substantive* relationships, within ``scope``.
-
-        Edges to neighbours with ``status = 'stub'`` are not counted —
-        stubs are placeholder nodes and treating them as real
-        connections hides genuinely under-connected nodes.
-        """
-        scope_sql, scope_params = self._scope_and(("n",), scope)
-        cypher = (
-            "MATCH (n) WHERE NOT n:Domain AND NOT n:Insight "
-            "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
-            f"AND n.status <> 'archived' {scope_sql} "
-            "WITH n, size([(n)-[]-(m) "
-            "WHERE coalesce(m.status, 'active') <> 'stub' | 1]) AS rel_count "
-            "WHERE rel_count < 2 "
-            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-            "rel_count, n.created_at AS created "
-            "ORDER BY n.created_at DESC LIMIT 15"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.under_connected_nodes``)."""
+        cypher, params = _reflect_cypher.under_connected_nodes(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_=scope_params,
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1160,13 +1200,20 @@ class Neo4jAsyncStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: MemoryScope | None = None,
     ) -> bool:
-        """Store an embedding on a node and add the :Embedded label."""
+        """Store an embedding on a node and add the :Embedded label.
+
+        Names are only unique per owner, so ``owner`` (the node's
+        ``org_id``/``user_id``) pins the exact node; ``None`` targets the
+        identity-less node of that name.
+        """
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
         records, _, _ = await self._driver.execute_query(
-            f"MATCH (n:{label} {{{key_field}: $key_value}}) "
+            f"MATCH (n:{label} {{{key_field}: $key_value}}) WHERE {owner_clause} "
             "SET n.embedding = $embedding, n:Embedded "
             "RETURN elementId(n) AS eid",
-            parameters_={"key_value": key_value, "embedding": embedding},
+            parameters_={"key_value": key_value, "embedding": embedding, **owner_params},
             database_=self._database,
         )
         return len(records) > 0
@@ -1259,7 +1306,11 @@ class Neo4jAsyncStore:
                 "node.tags AS tags, "
                 "node.confidence AS confidence, "
                 "node.trust_level AS trust_level, "
-                "toString(node.updated_at) AS updated_at "
+                "toString(node.updated_at) AS updated_at, "
+                "toString(node.last_activity_at) AS last_activity_at, "
+                "node.source_query AS source_query, "
+                "size([(node)--(m) WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) "
+                "AS degree "
                 "ORDER BY score DESC LIMIT $limit"
             )
             params: dict[str, Any] = {
@@ -1313,6 +1364,9 @@ class Neo4jAsyncStore:
         min_confidence: float = 0.0,
     ) -> dict[str, Any]:
         """Apply exponential decay to node confidence based on staleness.
+
+        Deprecated (DDR-007): no longer called by Engrama; removed in a future release.
+
 
         Formula: ``new_confidence = confidence × exp(-decay_rate × days_old)``
 

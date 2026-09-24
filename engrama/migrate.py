@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import engrama
+from engrama.core.scope import node_owner
 
 EXPORT_FORMAT_VERSION = 1
 
@@ -134,14 +135,35 @@ def import_graph(
             rec = json.loads(line)
             rtype = rec.get("type")
             if rtype == "node":
+                props = rec.get("properties", {})
+                # Read these first: merge_node drops (and may pop) them, since
+                # it never trusts caller timestamps (#76).
+                created_at = _iso(props.get("created_at"))
+                updated_at = _iso(props.get("updated_at"))
+                last_activity_at = _iso(props.get("last_activity_at"))
+                owner = node_owner(props)
                 graph_store.merge_node(
                     rec["label"],
                     rec["key_field"],
                     rec["key_value"],
-                    rec.get("properties", {}),
+                    props,
                 )
+                # Put the originals back so an import keeps the graph's history.
+                restore = getattr(graph_store, "restore_timestamps", None)
+                if restore is not None and (created_at or updated_at or last_activity_at):
+                    restore(
+                        rec["label"],
+                        rec["key_value"],
+                        owner,
+                        created_at,
+                        updated_at,
+                        last_activity_at=last_activity_at,
+                    )
                 counts["nodes"] += 1
             elif rtype == "relation":
+                # Resolve endpoints in the scope that wrote the edge (names are
+                # only unique per owner). Dumps without edge identity (older
+                # exports) keep the unscoped legacy match.
                 graph_store.merge_relation(
                     rec["from_label"],
                     rec["from_key"],
@@ -150,6 +172,7 @@ def import_graph(
                     rec["to_label"],
                     rec["to_key"],
                     rec["to_value"],
+                    scope=node_owner(rec),
                 )
                 counts["relations"] += 1
             elif rtype == "vector":
@@ -161,6 +184,7 @@ def import_graph(
                     rec["key_field"],
                     rec["key_value"],
                     rec["vector"],
+                    owner=node_owner(rec),
                 )
                 if stored:
                     counts["vectors"] += 1
@@ -174,6 +198,13 @@ def import_graph(
             # by skipping the records it doesn't understand.
 
     return counts
+
+
+def _iso(value: Any) -> str | None:
+    """Normalise an exported timestamp to an ISO-8601 string (or ``None``)."""
+    if value is None or value == "":
+        return None
+    return value if isinstance(value, str) else str(value)
 
 
 def _write_line(handle: Any, obj: dict[str, Any]) -> None:

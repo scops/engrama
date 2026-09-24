@@ -13,6 +13,9 @@ from engrama.core.engine import EngramaEngine
 from engrama.core.scope import MemoryScope
 from engrama.skills.reflect import ReflectSkill
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # Spec 001 fail-closed: every read goes through the (org_id, user_id) filter,
 # so tests must seed nodes under a known scope and run reflect with the
 # matching default_scope on the engine.
@@ -80,10 +83,10 @@ def seed_cross_project(neo4j_session) -> None:
 
 @pytest.fixture()
 def seed_shared_tech(neo4j_session) -> None:
-    """Seed data for Query 2: shared technology.
+    """Seed data for Query 2: shared technology (needs three live users).
 
     Graph:
-        ProjectC -[:USES]-> TechShared <-[:USES]- ProjectD
+        ProjectC, ProjectD, ProjectE -[:USES]-> TechShared
     """
     neo4j_session.run(
         "MERGE (pC:Project {name: $pC}) SET pC.test = true, pC.status = 'active', "
@@ -92,14 +95,19 @@ def seed_shared_tech(neo4j_session) -> None:
         "MERGE (pD:Project {name: $pD}) SET pD.test = true, pD.status = 'active', "
         "pD.org_id = $org_id, pD.user_id = $user_id, "
         "pD.created_at = datetime(), pD.updated_at = datetime() "
+        "MERGE (pE:Project {name: $pE}) SET pE.test = true, pE.status = 'active', "
+        "pE.org_id = $org_id, pE.user_id = $user_id, "
+        "pE.created_at = datetime(), pE.updated_at = datetime() "
         "MERGE (t:Technology {name: $t}) SET t.test = true, "
         "t.org_id = $org_id, t.user_id = $user_id, "
         "t.created_at = datetime(), t.updated_at = datetime() "
         "MERGE (pC)-[:USES]->(t) "
-        "MERGE (pD)-[:USES]->(t)",
+        "MERGE (pD)-[:USES]->(t) "
+        "MERGE (pE)-[:USES]->(t)",
         {
             "pC": "Reflect_ProjectC",
             "pD": "Reflect_ProjectD",
+            "pE": "Reflect_ProjectE",
             "t": "FastAPI_ReflectTest",
             **_SCOPE_CYPHER_PARAMS,
         },
@@ -175,7 +183,7 @@ class TestReflectSkill:
     def test_shared_technology(
         self, engine: EngramaEngine, neo4j_session, seed_shared_tech
     ) -> None:
-        """Detect that two active projects share a technology."""
+        """Detect a technology shared by three active projects (one Insight)."""
         skill = ReflectSkill()
         insights = skill.run(engine)
 
@@ -191,7 +199,8 @@ class TestReflectSkill:
 
         insight = matching[0]
         assert "FastAPI_ReflectTest" in insight.title
-        # Both seeded entities are Project → same type → confidence 0.6
+        assert insight.title == "Shared technology: FastAPI_ReflectTest"
+        # All seeded users are Projects → same type → confidence 0.6
         assert insight.confidence == 0.6
         assert insight.status == "pending"
 

@@ -112,6 +112,14 @@
 })
 ```
 
+A **system Insight** is one reflect wrote: it carries `source_query`, goes
+through the review queue (pending → approved/dismissed), and links to the
+entities it talks about with `(:Insight)-[:ABOUT]->(n)`. `ABOUT` is a core
+relation type available in every profile. An `Insight` written by hand (no
+`source_query`) is an ordinary domain node: it never enters the review
+queue, and structural checks (reflect, `engrama health`) treat it like any
+other node ([DDR-006](./ddr-006.md), [DDR-008](./ddr-008.md)).
+
 ### Material
 ```
 (:Material {
@@ -135,8 +143,8 @@ Every node carries temporal metadata managed by the engine (DDR-003 Phase D):
   updated_at:  datetime,   // auto-updated on every MERGE
   valid_from:  datetime,   // when the fact became true (auto-set on creation)
   valid_to:    datetime,   // when superseded (null = still true)
-  confidence:  float,      // 0.0–1.0, decays over time (default 1.0)
-  decayed_at:  datetime,   // last time confidence was decayed
+  confidence:  float,      // 0.0–1.0, belief in the fact (default 1.0; never decays, DDR-007)
+  archived_at: datetime,   // set by explicit archiving, with archived_reason
   embedding:   [float],    // 768-dim vector (when EMBEDDING_PROVIDER != none)
 }
 ```
@@ -226,5 +234,5 @@ RETURN path LIMIT 50
 - **Fail-closed scoping** — every read is restricted to the caller's `(org_id, user_id)`; a missing or partial scope matches nothing. See [security.md](security.md#tenant-isolation-multi-tenant).
 - **Embeddings are optional** — semantic search via any OpenAI-compatible service (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina) enhances search when enabled (DDR-003 Phase B+C, DDR-004). On Neo4j the vector index on `(:Embedded)` covers all node types; on SQLite vectors live in the `node_embeddings` `vec0` virtual table.
 - **Always parameterise queries** — never string-format Cypher (Neo4j) or SQL (SQLite). Both backends use parameter binding.
-- **Temporal fields auto-managed** — `valid_from`, `confidence` set on creation; `valid_to` cleared on revival (MATCH). Decay applied via `engrama decay` CLI.
+- **Temporal fields auto-managed** — `valid_from`, `confidence` set on creation; `valid_to` cleared on revival (MATCH). Stored confidence never decays (DDR-007); `engrama decay` is a deprecated no-op.
 - **Schema is backend-agnostic** — the same labels and relationships defined in `profiles/*.yaml` apply to either backend. See [backends.md](backends.md) for the decision guide between SQLite and Neo4j.

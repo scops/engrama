@@ -16,6 +16,9 @@ from engrama.skills.forget import ForgetSkill
 from engrama.skills.recall import RecallSkill
 from engrama.skills.remember import RememberSkill
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # Spec 001 fail-closed: every scoped read filters by (org_id, user_id), so
 # the engine fixture pins a test scope and every seeded node carries it.
 _TEST_SCOPE = MemoryScope(org_id="test-phase4", user_id="test-phase4")

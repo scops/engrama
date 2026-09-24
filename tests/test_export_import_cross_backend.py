@@ -20,6 +20,9 @@ from engrama.backends.sqlite.vector import SqliteVecStore
 from engrama.core.client import EngramaClient
 from engrama.migrate import export_graph, import_graph
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 
 def _seed_sqlite(store: SqliteGraphStore) -> None:
     store.merge_node("Concept", "name", "MigrationAlpha", {"description": "first"})

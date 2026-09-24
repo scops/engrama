@@ -87,7 +87,9 @@ class RecallSkill:
 
             # Step 2 — retrieve full node properties
             merge_key = "title" if label in TITLE_KEYED_LABELS else "name"
-            properties = engine._store.get_node(label, merge_key, name) or {}
+            properties = (
+                engine._store.get_node(label, merge_key, name, scope=engine.default_scope) or {}
+            )
 
             # Step 3 — expand neighbourhood
             neighbours: list[dict[str, Any]] = []

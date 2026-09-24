@@ -25,7 +25,17 @@ from typing import Any
 
 import sqlite_vec
 
-from engrama.core.scope import MemoryScope, node_visible, scope_filter_sql
+from engrama.core.health import tag_anchor_rows
+from engrama.core.reflection import SHARED_TECHNOLOGY_MIN_MEMBERS
+from engrama.core.resolve import name_fragments
+from engrama.core.scope import (
+    MemoryScope,
+    node_owner,
+    node_visible,
+    owner_filter_sql,
+    scope_filter_sql,
+)
+from engrama.core.stubs import HUB_STUB_MIN_DEGREE, STUB_STATUS, clears_stub
 
 logger = logging.getLogger("engrama.backends.sqlite")
 
@@ -100,6 +110,23 @@ def _node_dict(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _health_node(node_id: Any, label: str, key: str, props: dict[str, Any]) -> dict[str, Any]:
+    """Project a node onto the fields :mod:`engrama.core.health` needs."""
+    return {
+        "id": node_id,
+        "label": label,
+        "key": key,
+        "status": props.get("status"),
+        "tags": props.get("tags"),
+        "confidence": props.get("confidence"),
+        "source_query": props.get("source_query"),
+        "has_summary": bool(props.get("summary")),
+        "has_engrama_id": bool(props.get("engrama_id")),
+        "has_source": props.get("source") is not None,
+        "has_trust": props.get("trust_level") is not None,
+    }
+
+
 class SqliteGraphStore:
     """Sync ``GraphStore`` (and partial ``VectorStore``) backed by SQLite.
 
@@ -129,8 +156,8 @@ class SqliteGraphStore:
         self._conn.close()
 
     def _init_schema_from_file(self) -> None:
-        with open(_SCHEMA_PATH, encoding="utf-8") as f:
-            self._conn.executescript(f.read())
+        schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
+        self._conn.executescript(schema_sql)
         # CREATE TABLE IF NOT EXISTS doesn't add columns to a pre-existing
         # table, so pre-Spec-001 DBs need idempotent ALTERs to gain the
         # new ``edges.org_id`` / ``edges.user_id`` columns. SQLite raises
@@ -147,6 +174,67 @@ class SqliteGraphStore:
                     raise
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_scope ON edges(org_id, user_id)")
         self._conn.commit()
+        if self._migrate_node_identity():
+            # The rebuilt table lost its indexes; the schema script is
+            # idempotent and recreates them.
+            self._conn.executescript(schema_sql)
+
+    def _migrate_node_identity(self) -> bool:
+        """Drop the pre-v3 table-level ``UNIQUE(label, key_value)`` on ``nodes``.
+
+        That constraint made a node's identity its name alone. v3 keys nodes
+        on ``(label, key, owner)`` via
+        ``idx_nodes_identity``. SQLite cannot drop a table constraint, so the
+        table is rebuilt (the documented create-copy-drop-rename procedure)
+        keeping every ``id``: edges, FTS rows and vectors all reference it.
+        Returns ``True`` when a rebuild ran. Idempotent: a v3 table has no
+        constraint-backed index and is left alone.
+        """
+        # scope-exempt: schema migration — copies every row verbatim,
+        # regardless of owner, into the rebuilt table.
+        legacy = any(row["origin"] == "u" for row in self._conn.execute("PRAGMA index_list(nodes)"))
+        if not legacy:
+            return False
+        logger.info("Migrating SQLite nodes table to owner-scoped identity (schema v3)")
+        seq_row = self._conn.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'nodes'"
+        ).fetchone()
+        # Foreign keys must be off so DROP TABLE doesn't cascade into edges;
+        # the pragma is a no-op inside a transaction, so set it before BEGIN.
+        self._conn.commit()
+        self._conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            self._conn.execute(
+                "CREATE TABLE nodes_v3 ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, "
+                "key_field TEXT NOT NULL, key_value TEXT NOT NULL, "
+                "props TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, "
+                "updated_at TEXT NOT NULL)"
+            )
+            self._conn.execute(
+                "INSERT INTO nodes_v3 (id, label, key_field, key_value, props, "
+                "created_at, updated_at) SELECT id, label, key_field, key_value, "
+                "props, created_at, updated_at FROM nodes"
+            )
+            self._conn.execute("DROP TABLE nodes")
+            self._conn.execute("ALTER TABLE nodes_v3 RENAME TO nodes")
+            if seq_row is not None:
+                # Keep the AUTOINCREMENT high-water mark so ids of deleted
+                # nodes are never reissued.
+                self._conn.execute(
+                    "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'nodes'",
+                    (seq_row["seq"],),
+                )
+            if self._conn.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                raise sqlite3.IntegrityError("foreign key violation after nodes rebuild")
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        finally:
+            self._conn.execute("PRAGMA foreign_keys = ON")
+        return True
 
     def init_schema(self, schema: Any = None) -> None:
         """No-op: schema is applied at connection time. Kept for protocol parity."""
@@ -184,16 +272,28 @@ class SqliteGraphStore:
         ``confidence`` default on CREATE only; on MATCH they're preserved
         unless the caller supplies new values. ``valid_to``, when present
         on the existing node and not in the update, is cleared (revival).
+
+        The node is keyed on ``(label, key_value, owner)`` where the owner is
+        the ``org_id``/``user_id`` in ``properties`` (see
+        :func:`~engrama.core.scope.node_owner`): a same-named write from
+        another tenant creates its own node instead of merging into this one.
         """
         now = _now_iso()
         properties = dict(properties)  # don't mutate caller
         # Embedding is handled by the vector store layer; ignore here.
         properties.pop("_id", None)
         properties.pop("_labels", None)
+        # Server-managed timestamps live in their own columns and are never
+        # taken from the caller (#76, parity with the Neo4j store).
+        properties.pop("created_at", None)
+        properties.pop("updated_at", None)
+        properties.pop("last_activity_at", None)
 
+        owner_clause, owner_params = owner_filter_sql(node_owner(properties), "nodes")
         cur = self._conn.execute(
-            "SELECT id, props, created_at FROM nodes WHERE label = ? AND key_value = ?",
-            (label, key_value),
+            "SELECT id, props, created_at FROM nodes "
+            f"WHERE label = :label AND key_value = :key_value AND {owner_clause}",
+            {"label": label, "key_value": key_value, **owner_params},
         )
         row = cur.fetchone()
 
@@ -209,6 +309,7 @@ class SqliteGraphStore:
             # Stable node identity (#6): mint a UUID unless the caller adopted
             # one (e.g. an existing Obsidian note's id). Mirrors the Neo4j store.
             full.setdefault("engrama_id", str(uuid.uuid4()))
+            full["last_activity_at"] = now
             cur = self._conn.execute(
                 "INSERT INTO nodes(label, key_field, key_value, props, "
                 "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -228,12 +329,16 @@ class SqliteGraphStore:
             # Revival: clear valid_to unless caller explicitly set one.
             if "valid_to" not in properties:
                 merged.pop("valid_to", None)
+            # Enriching a stub promotes it (DDR-006).
+            if existing.get("status") == STUB_STATUS and clears_stub(properties):
+                merged["status"] = "active"
             # Stable identity (#6): an existing id always wins (a caller can't
             # rewrite it); backfill nodes written before this field existed.
             if existing.get("engrama_id"):
                 merged["engrama_id"] = existing["engrama_id"]
             elif not merged.get("engrama_id"):
                 merged["engrama_id"] = str(uuid.uuid4())
+            merged["last_activity_at"] = now
             self._conn.execute(
                 "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
                 (json.dumps(merged), now, node_id),
@@ -259,12 +364,28 @@ class SqliteGraphStore:
         label: str,
         key_field: str,
         key_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        cur = self._conn.execute(
-            "SELECT * FROM nodes WHERE label = ? AND key_value = ?",
-            (label, key_value),
-        )
-        row = cur.fetchone()
+        """Fetch a node by ``(label, key_value)``.
+
+        Names are only unique per owner, so a tenant read passes ``scope``:
+        the lookup is then restricted to nodes visible in it, preferring the
+        caller's own node over an org-shared ``__entity__`` one. ``None``
+        keeps the unscoped admin lookup (first match).
+        """
+        sql = "SELECT * FROM nodes WHERE label = :label AND key_value = :key_value"
+        params: dict[str, Any] = {"label": label, "key_value": key_value}
+        if scope is not None:
+            scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+            sql += f" AND {scope_clause}"
+            if scope_params:  # empty for an incomplete scope → (1 = 0)
+                sql += (
+                    " ORDER BY CASE WHEN json_extract(props, '$.user_id') = :scope_user_id "
+                    "THEN 0 ELSE 1 END"
+                )
+                params.update(scope_params)
+        sql += " LIMIT 1"
+        row = self._conn.execute(sql, params).fetchone()
         if row is None:
             return None
         props = json.loads(row["props"]) if row["props"] else {}
@@ -293,9 +414,10 @@ class SqliteGraphStore:
             props = json.loads(row["props"]) if row["props"] else {}
             props["status"] = "archived"
             props["archived_at"] = now
+            props["archived_reason"] = "delete"
             self._conn.execute(
-                "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-                (json.dumps(props), now, row["id"]),
+                "UPDATE nodes SET props = ? WHERE id = ?",
+                (json.dumps(props), row["id"]),
             )
             self._sync_fts(row["id"], props)
         else:
@@ -310,15 +432,20 @@ class SqliteGraphStore:
         name: str,
         *,
         purge: bool = False,
+        owner: MemoryScope | None = None,
     ) -> dict[str, Any]:
-        """Archive (or hard-delete) a node by ``(label, name|title)``.
+        """Archive (or hard-delete) a node by ``(label, name|title, owner)``.
+
+        Names are only unique per owner, so ``owner`` pins the caller's own
+        node. ``None`` targets the identity-less node.
 
         Returns ``{"matched": bool, "deleted": int}`` to mirror the
         Neo4j store's contract — used by the forget skill.
         """
+        owner_clause, owner_params = owner_filter_sql(owner, "nodes")
         cur = self._conn.execute(
-            "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
-            (label, name),
+            f"SELECT id FROM nodes WHERE label = :label AND key_value = :name AND {owner_clause}",
+            {"label": label, "name": name, **owner_params},
         )
         row = cur.fetchone()
         if row is None:
@@ -338,13 +465,41 @@ class SqliteGraphStore:
         props = json.loads(cur.fetchone()["props"] or "{}")
         props["status"] = "archived"
         props["archived_at"] = now
+        props["archived_reason"] = "forget"
         self._conn.execute(
-            "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(props), now, node_id),
+            "UPDATE nodes SET props = ? WHERE id = ?",
+            (json.dumps(props), node_id),
         )
         self._sync_fts(node_id, props)
         self._conn.commit()
         return {"matched": True, "deleted": 0}
+
+    def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        """Scoped nodes and edges for :func:`engrama.core.health.compute_health`.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty snapshot.
+        Only edges whose two endpoints are visible in ``scope`` are returned.
+        """
+        node_clause, params = scope_filter_sql(scope, "n", json_column="props")
+        nodes: list[dict[str, Any]] = []
+        for row in self._conn.execute(
+            f"SELECT n.id, n.label, n.key_value, n.props FROM nodes n WHERE {node_clause}",
+            params,
+        ):
+            props = json.loads(row["props"]) if row["props"] else {}
+            nodes.append(_health_node(row["id"], row["label"], row["key_value"], props))
+        a_clause, _ = scope_filter_sql(scope, "a", json_column="props")
+        b_clause, _ = scope_filter_sql(scope, "b", json_column="props")
+        edges = [
+            (row["from_id"], row["to_id"])
+            for row in self._conn.execute(
+                "SELECT e.from_id, e.to_id FROM edges e "
+                "JOIN nodes a ON a.id = e.from_id JOIN nodes b ON b.id = e.to_id "
+                f"WHERE {a_clause} AND {b_clause}",
+                params,
+            )
+        ]
+        return {"nodes": nodes, "edges": edges}
 
     def list_existing_nodes(
         self,
@@ -368,15 +523,61 @@ class SqliteGraphStore:
     def iter_all_nodes(self) -> Iterator[dict[str, Any]]:
         """Yield every node in the graph for export. Migration-only — not
         intended for query paths, which should use indexed lookups instead.
+        ``created_at`` / ``updated_at`` live in columns here, so they are
+        added to the exported properties (Neo4j exports carry them there too).
         """
-        cur = self._conn.execute("SELECT label, key_field, key_value, props FROM nodes ORDER BY id")
+        cur = self._conn.execute(
+            "SELECT label, key_field, key_value, props, created_at, updated_at "
+            "FROM nodes ORDER BY id"
+        )
         for row in cur:
+            props = json.loads(row["props"]) if row["props"] else {}
+            props["created_at"] = row["created_at"]
+            props["updated_at"] = row["updated_at"]
             yield {
                 "label": row["label"],
                 "key_field": row["key_field"],
                 "key_value": row["key_value"],
-                "properties": json.loads(row["props"]) if row["props"] else {},
+                "properties": props,
             }
+
+    def restore_timestamps(
+        self,
+        label: str,
+        key_value: str,
+        owner: MemoryScope | None,
+        created_at: str | None,
+        updated_at: str | None,
+        last_activity_at: str | None = None,
+    ) -> bool:
+        """Importer-only: put back the original ``created_at`` / ``updated_at``
+        (and ``last_activity_at``).
+
+        ``merge_node`` never takes these from a caller (#76), so an import
+        would otherwise date every node to the day it ran (DDR-007). This is
+        the trusted path for that one caller; values that are ``None`` are
+        left as they are.
+        """
+        # scope-exempt: import/migration path — addresses the exact owner's
+        # node that the importer just wrote.
+        owner_clause, owner_params = owner_filter_sql(owner, "nodes")
+        cur = self._conn.execute(
+            "UPDATE nodes SET created_at = COALESCE(:created_at, created_at), "
+            "updated_at = COALESCE(:updated_at, updated_at), "
+            "props = CASE WHEN :last_activity_at IS NULL THEN props "
+            "ELSE json_set(props, '$.last_activity_at', :last_activity_at) END "
+            f"WHERE label = :label AND key_value = :key_value AND {owner_clause}",
+            {
+                "label": label,
+                "key_value": key_value,
+                "created_at": created_at,
+                "updated_at": updated_at,
+                "last_activity_at": last_activity_at,
+                **owner_params,
+            },
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
 
     def purge_all(self) -> None:
         """Wipe every node, edge, and FTS row. Used by ``engrama import
@@ -450,13 +651,21 @@ class SqliteGraphStore:
             "    user_id = COALESCE(excluded.user_id, edges.user_id)",
             (from_row["id"], rel_type, to_row["id"], now, org_id, user_id),
         )
+        # Linking is activity on both endpoints (DDR-007).
+        self._conn.execute(
+            "UPDATE nodes SET props = json_set(props, '$.last_activity_at', ?) WHERE id IN (?, ?)",
+            (now, from_row["id"], to_row["id"]),
+        )
         self._conn.commit()
         return [{"rel_type": rel_type}]
 
     def iter_all_relations(self) -> Iterator[dict[str, Any]]:
         """Yield every edge in the graph for export, resolved to the
         label/key tuple on each endpoint so the dump is portable across
-        backends (Neo4j has no concept of our integer ``nodes.id``).
+        backends (Neo4j has no concept of our integer ``nodes.id``). The
+        edge's own ``org_id``/``user_id`` travel with it so the importer can
+        resolve both endpoints in the scope that wrote the edge — names are
+        only unique per owner.
         """
         cur = self._conn.execute(
             """
@@ -466,7 +675,9 @@ class SqliteGraphStore:
                    e.rel_type  AS rel_type,
                    t.label     AS to_label,
                    t.key_field AS to_key,
-                   t.key_value AS to_value
+                   t.key_value AS to_value,
+                   e.org_id    AS org_id,
+                   e.user_id   AS user_id
               FROM edges e
               JOIN nodes f ON f.id = e.from_id
               JOIN nodes t ON t.id = e.to_id
@@ -482,6 +693,8 @@ class SqliteGraphStore:
                 "to_label": row["to_label"],
                 "to_key": row["to_key"],
                 "to_value": row["to_value"],
+                "org_id": row["org_id"],
+                "user_id": row["user_id"],
             }
 
     def get_neighbours(
@@ -619,7 +832,7 @@ class SqliteGraphStore:
         node owned by another tenant via a guessed key. A ``None`` scope keeps
         the admin/debug fetch-by-key (no tenant context).
         """
-        node = self.get_node(label, key_field, key_value)
+        node = self.get_node(label, key_field, key_value, scope=scope)
         if node is None:
             return None
         # Cross-tenant guard: a non-None scope must be able to see the root.
@@ -730,6 +943,15 @@ class SqliteGraphStore:
                        json_extract(n.props, '$.tags')          AS tags,
                        json_extract(n.props, '$.confidence')    AS confidence,
                        json_extract(n.props, '$.trust_level')   AS trust_level,
+                       json_extract(n.props, '$.last_activity_at') AS last_activity_at,
+                       json_extract(n.props, '$.source_query')  AS source_query,
+                       (SELECT COUNT(*) FROM edges e
+                          JOIN nodes m ON m.id = CASE WHEN e.from_id = n.id
+                                                     THEN e.to_id ELSE e.from_id END
+                         WHERE (e.from_id = n.id OR e.to_id = n.id)
+                           AND NOT (m.label = 'Insight'
+                                    AND json_extract(m.props, '$.source_query') IS NOT NULL)
+                       )                                        AS degree,
                        n.updated_at                             AS updated_at
                 FROM nodes_fts
                 JOIN nodes n ON n.id = nodes_fts.rowid
@@ -767,6 +989,9 @@ class SqliteGraphStore:
                     "confidence": r["confidence"],
                     "trust_level": r["trust_level"],
                     "updated_at": r["updated_at"],
+                    "last_activity_at": r["last_activity_at"],
+                    "source_query": r["source_query"],
+                    "degree": r["degree"],
                 }
             )
         return results
@@ -824,6 +1049,8 @@ class SqliteGraphStore:
         label: str | None = None,
     ) -> dict[str, int]:
         """Apply exponential confidence decay, then optionally archive.
+
+        Deprecated (DDR-007): no longer called by Engrama; removed in a future release.
 
         Done in Python (fetch + recompute + write) because SQLite has no
         native ``exp``. For typical graphs (<100k nodes) this is fast
@@ -999,9 +1226,10 @@ class SqliteGraphStore:
                 props = json.loads(r["props"])
                 props["status"] = "archived"
                 props["archived_at"] = now
+                props["archived_reason"] = "ttl"
                 self._conn.execute(
-                    "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(props), now, r["id"]),
+                    "UPDATE nodes SET props = ? WHERE id = ?",
+                    (json.dumps(props), r["id"]),
                 )
                 affected += 1
         self._conn.commit()
@@ -1036,6 +1264,7 @@ class SqliteGraphStore:
             FROM nodes
             WHERE label = 'Insight'
               AND json_extract(props, '$.status') = 'pending'
+              AND json_extract(props, '$.source_query') IS NOT NULL
         """
         params: dict[str, Any] = {"limit": limit}
         if title is not None:
@@ -1071,6 +1300,7 @@ class SqliteGraphStore:
             JOIN node_embeddings v ON v.node_id = n.id
             WHERE n.label = 'Insight'
               AND json_extract(n.props, '$.status') = 'pending'
+              AND json_extract(n.props, '$.source_query') IS NOT NULL
         """
         params: dict[str, Any] = {"limit": limit}
         if scope_clause:
@@ -1093,17 +1323,31 @@ class SqliteGraphStore:
             )
         return out
 
-    def update_insight_status(self, title: str, new_status: str) -> bool:
-        # scope-exempt: write path — the MCP `engrama_approve_insight` and SDK
-        # `ProactiveSkill.approve/dismiss` first call `get_insight_by_title`
-        # (scoped, fail-closed) to confirm ownership, then route here only
-        # when the read returned a row. Cross-tenant promotion is therefore
-        # blocked at the prior read.
-        cur = self._conn.execute(
-            "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
-            (title,),
-        )
-        row = cur.fetchone()
+    def _insight_row(self, title: str, scope: MemoryScope | None) -> sqlite3.Row | None:
+        """Resolve the Insight a status/sync write targets.
+
+        Titles are templated (``"Concept cluster: X (N entities)"``) and only
+        unique per owner, so with ``scope`` the row is restricted to the
+        caller's visible Insights, own first. ``None`` keeps the unscoped admin
+        lookup.
+        """
+        sql = "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = :title"
+        params: dict[str, Any] = {"title": title}
+        if scope is not None:
+            scope_clause, scope_params = scope_filter_sql(scope, "nodes", json_column="props")
+            sql += f" AND {scope_clause}"
+            if scope_params:
+                sql += (
+                    " ORDER BY CASE WHEN json_extract(props, '$.user_id') = :scope_user_id "
+                    "THEN 0 ELSE 1 END"
+                )
+                params.update(scope_params)
+        return self._conn.execute(sql + " LIMIT 1", params).fetchone()
+
+    def update_insight_status(
+        self, title: str, new_status: str, scope: MemoryScope | None = None
+    ) -> bool:
+        row = self._insight_row(title, scope)
         if row is None:
             return False
         now = _now_iso()
@@ -1144,16 +1388,10 @@ class SqliteGraphStore:
         row = cur.fetchone()
         return dict(row) if row else None
 
-    def mark_insight_synced(self, title: str, obsidian_path: str) -> bool:
-        # scope-exempt: write path — same shape as `update_insight_status`.
-        # `ProactiveSkill.write_to_vault` first reads the Insight via the
-        # scoped `get_insight_by_title`, so cross-tenant marking is blocked
-        # upstream.
-        cur = self._conn.execute(
-            "SELECT id, props FROM nodes WHERE label = 'Insight' AND key_value = ?",
-            (title,),
-        )
-        row = cur.fetchone()
+    def mark_insight_synced(
+        self, title: str, obsidian_path: str, scope: MemoryScope | None = None
+    ) -> bool:
+        row = self._insight_row(title, scope)
         if row is None:
             return False
         now = _now_iso()
@@ -1276,6 +1514,20 @@ class SqliteGraphStore:
             return "", {}
         return " AND " + " AND ".join(clauses), params
 
+    @staticmethod
+    def _live_and(aliases: tuple[str, ...]) -> str:
+        """``AND``-joined live predicate per alias (DDR-008): not archived, not
+        superseded (null-safe), and not a reflect-generated Insight. Mirrors
+        ``engrama.backends.neo4j._reflect_cypher.live``."""
+        parts = [
+            f" AND COALESCE(json_extract({a}.props, '$.status'), 'active') "
+            f"NOT IN ('archived', 'superseded') "
+            f"AND NOT ({a}.label = 'Insight' "
+            f"AND json_extract({a}.props, '$.source_query') IS NOT NULL)"
+            for a in aliases
+        ]
+        return "".join(parts)
+
     def detect_cross_project_solutions(
         self,
         scope: MemoryScope | None = None,
@@ -1312,6 +1564,7 @@ class SqliteGraphStore:
             JOIN edges e5 ON e5.to_id = d.id AND e5.rel_type = 'INFORMED_BY'
             JOIN nodes pA ON pA.id = e5.from_id AND pA.label = 'Project'
             WHERE pB.label = 'Project' AND pA.id != pB.id{scope_sql}
+                  {self._live_and(("pB", "c", "d", "pA"))}
         """
         cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
@@ -1320,28 +1573,31 @@ class SqliteGraphStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Two distinct entities both connect to the same Technology via
-        USES / TEACHES / COMPOSED_OF, within ``scope``.
+        """One row per Technology with enough live users (via USES / TEACHES /
+        COMPOSED_OF), within ``scope``: ``{technology, members}`` where
+        ``members`` is a list of ``{name, label}``.
         """
-        scope_sql, scope_params = self._scope_and(("t", "a", "b"), scope)
+        scope_sql, scope_params = self._scope_and(("t", "m"), scope)
         sql = f"""
-            SELECT DISTINCT
-                a.key_value AS entity_a, a.label AS type_a,
-                b.key_value AS entity_b, b.label AS type_b,
-                t.key_value AS technology
+            SELECT
+                t.key_value AS technology,
+                json_group_array(
+                    DISTINCT json_object('name', m.key_value, 'label', m.label)
+                ) AS members_raw
             FROM nodes t
-            JOIN edges ea ON ea.to_id = t.id
-                         AND ea.rel_type IN ('USES', 'TEACHES', 'COMPOSED_OF')
-            JOIN nodes a  ON a.id = ea.from_id
-            JOIN edges eb ON eb.to_id = t.id
-                         AND eb.rel_type IN ('USES', 'TEACHES', 'COMPOSED_OF')
-            JOIN nodes b  ON b.id = eb.from_id
-            WHERE t.label = 'Technology'
-              AND a.id < b.id
-              AND a.label != 'Insight' AND b.label != 'Insight'{scope_sql}
+            JOIN edges e ON e.to_id = t.id
+                        AND e.rel_type IN ('USES', 'TEACHES', 'COMPOSED_OF')
+            JOIN nodes m ON m.id = e.from_id
+            WHERE t.label = 'Technology'{scope_sql}{self._live_and(("t", "m"))}
+            GROUP BY t.id
+            HAVING COUNT(DISTINCT m.id) >= :min_members
+            ORDER BY COUNT(DISTINCT m.id) DESC, technology
         """
-        cur = self._conn.execute(sql, scope_params)
-        return [dict(r) for r in cur.fetchall()]
+        params = {"min_members": SHARED_TECHNOLOGY_MIN_MEMBERS, **scope_params}
+        return [
+            {"technology": r["technology"], "members": json.loads(r["members_raw"])}
+            for r in self._conn.execute(sql, params)
+        ]
 
     def detect_training_opportunities(
         self,
@@ -1364,6 +1620,7 @@ class SqliteGraphStore:
             WHERE (issue.label = 'Vulnerability'
                OR (issue.label = 'Problem'
                    AND json_extract(issue.props, '$.status') = 'open')){scope_sql}
+                  {self._live_and(("issue", "c", "course"))}
         """
         cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
@@ -1397,7 +1654,7 @@ class SqliteGraphStore:
                 FROM nodes t
                 JOIN edges e ON e.from_id = t.id AND e.rel_type = 'IN_DOMAIN'
                 JOIN nodes d ON d.id = e.to_id AND d.label = 'Domain'
-                WHERE t.label = 'Technique'{cte_t}{cte_d}
+                WHERE t.label = 'Technique'{cte_t}{cte_d}{self._live_and(("t", "d"))}
             ),
             technique_concept AS (
                 SELECT t.id AS t_id, c.id AS c_id
@@ -1405,7 +1662,7 @@ class SqliteGraphStore:
                 JOIN edges e ON e.from_id = t.id
                             AND e.rel_type IN ('INSTANCE_OF', 'APPLIES')
                 JOIN nodes c ON c.id = e.to_id AND c.label = 'Concept'
-                WHERE t.label = 'Technique'{cte_t}{cte_c}
+                WHERE t.label = 'Technique'{cte_t}{cte_c}{self._live_and(("t", "c"))}
             )
             SELECT
                 tid.t_name      AS technique,
@@ -1424,9 +1681,9 @@ class SqliteGraphStore:
                 WHERE from_id = tid.t_id
                   AND rel_type = 'IN_DOMAIN'
                   AND to_id = d2.id
-            ){main_scope_sql}
+            ){main_scope_sql}{self._live_and(("d2", "other"))}
             GROUP BY tid.t_id, tid.d_id, d2.id
-            ORDER BY related_entities DESC
+            ORDER BY related_entities DESC, technique, target_domain
             LIMIT 10
         """
         cur = self._conn.execute(sql, params)
@@ -1454,10 +1711,10 @@ class SqliteGraphStore:
             JOIN edges e ON e.to_id = c.id
                         AND e.rel_type IN ('INSTANCE_OF', 'APPLIES')
             JOIN nodes n ON n.id = e.from_id
-            WHERE c.label = 'Concept'{scope_sql}
+            WHERE c.label = 'Concept'{scope_sql}{self._live_and(("c", "n"))}
             GROUP BY c.id
             HAVING COUNT(DISTINCT n.id) >= 3
-            ORDER BY entity_count DESC
+            ORDER BY entity_count DESC, concept
             LIMIT 10
         """
         cur = self._conn.execute(sql, scope_params)
@@ -1486,6 +1743,7 @@ class SqliteGraphStore:
         # reused across halves via named placeholders.
         scope_sql, scope_params = self._scope_and(("n", "active"), scope)
         params: dict[str, Any] = {"cutoff": cutoff, **scope_params}
+        live_n = self._live_and(("n",))
         sql = f"""
             SELECT n_name, n_label, last_updated, confidence, project, rel
             FROM (
@@ -1505,12 +1763,12 @@ class SqliteGraphStore:
                                         json_extract(active.props, '$.status'),
                                         'active'
                                       ) IN ('active', '')
-                WHERE n.label NOT IN ('Project', 'Course', 'Domain', 'Insight')
+                WHERE n.label NOT IN ('Project', 'Course', 'Domain')
                   AND (
                         n.updated_at < :cutoff
                      OR (json_extract(n.props, '$.confidence') IS NOT NULL
                          AND CAST(json_extract(n.props, '$.confidence') AS REAL) < 0.3)
-                      ){scope_sql}
+                      ){scope_sql}{live_n}
                 UNION
                 SELECT
                     n.key_value, n.label, n.updated_at,
@@ -1524,14 +1782,14 @@ class SqliteGraphStore:
                                         json_extract(active.props, '$.status'),
                                         'active'
                                       ) IN ('active', '')
-                WHERE n.label NOT IN ('Project', 'Course', 'Domain', 'Insight')
+                WHERE n.label NOT IN ('Project', 'Course', 'Domain')
                   AND (
                         n.updated_at < :cutoff
                      OR (json_extract(n.props, '$.confidence') IS NOT NULL
                          AND CAST(json_extract(n.props, '$.confidence') AS REAL) < 0.3)
-                      ){scope_sql}
+                      ){scope_sql}{live_n}
             )
-            ORDER BY COALESCE(CAST(confidence AS REAL), 1.0) ASC, last_updated ASC
+            ORDER BY COALESCE(CAST(confidence AS REAL), 1.0) ASC, last_updated ASC, n_name
             LIMIT 15
         """
         cur = self._conn.execute(sql, params)
@@ -1547,18 +1805,92 @@ class SqliteGraphStore:
             for r in cur.fetchall()
         ]
 
-    def detect_under_connected_nodes(
+    def node_degree(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+        scope: MemoryScope | None = None,
+    ) -> int | None:
+        """Substantive degree of the node visible in ``scope`` (own first).
+
+        Edges to reflect-generated Insights don't count. ``None`` when the
+        node isn't visible — fail-closed on an incomplete scope.
+        """
+        clause, params = scope_filter_sql(scope, "n", json_column="props")
+        row = self._conn.execute(
+            "SELECT n.id FROM nodes n WHERE n.label = :label AND n.key_value = :key_value "
+            f"AND {clause} ORDER BY CASE WHEN json_extract(n.props, '$.user_id') = "
+            ":owner_hint THEN 0 ELSE 1 END LIMIT 1",
+            {
+                "label": label,
+                "key_value": key_value,
+                "owner_hint": scope.user_id if scope is not None else None,
+                **params,
+            },
+        ).fetchone()
+        if row is None:
+            return None
+        return self._conn.execute(
+            "SELECT COUNT(*) FROM edges e JOIN nodes m ON m.id = CASE WHEN e.from_id = :id "
+            "THEN e.to_id ELSE e.from_id END WHERE (e.from_id = :id OR e.to_id = :id) "
+            "AND NOT (m.label = 'Insight' AND json_extract(m.props, '$.source_query') IS NOT NULL)",
+            {"id": row["id"]},
+        ).fetchone()[0]
+
+    def name_candidates(
+        self,
+        name: str,
+        scope: MemoryScope | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """In-scope nodes whose name shares a fragment with ``name``
+        (see :func:`engrama.core.resolve.name_fragments`), exact names and
+        similar lengths first, as ``{label, name, status}``. Reflect-generated
+        Insights are never candidates. Fail-closed on an incomplete scope.
+        """
+        frags = name_fragments(name)
+        if not frags:
+            return []
+        clause, params = scope_filter_sql(scope, "n", json_column="props")
+        likes = []
+        for i, frag in enumerate(frags):
+            escaped = frag.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            params[f"frag{i}"] = f"%{escaped}%"
+            likes.append(f"LOWER(n.key_value) LIKE :frag{i} ESCAPE '!'")
+        sql = (
+            "SELECT n.label AS label, n.key_value AS name, "
+            "json_extract(n.props, '$.status') AS status FROM nodes n "
+            f"WHERE ({' OR '.join(likes)}) AND {clause} "
+            "AND NOT (n.label = 'Insight' "
+            "AND json_extract(n.props, '$.source_query') IS NOT NULL) "
+            "ORDER BY LOWER(n.key_value) = LOWER(:name) DESC, "
+            "ABS(LENGTH(n.key_value) - LENGTH(:name)), n.key_value LIMIT :limit"
+        )
+        params.update({"name": name, "limit": limit})
+        return [dict(r) for r in self._conn.execute(sql, params)]
+
+    def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
+        """Live anchor nodes (Project/Client/Course/Domain) in ``scope`` as
+        ``{label, name}``; fail-closed on an incomplete scope."""
+        clause, params = scope_filter_sql(scope, "n", json_column="props")
+        sql = (
+            "SELECT n.label AS label, n.key_value AS name FROM nodes n "
+            "WHERE n.label IN ('Project', 'Client', 'Course', 'Domain') "
+            f"AND {clause}{self._live_and(('n',))}"
+        )
+        return [dict(r) for r in self._conn.execute(sql, params)]
+
+    def detect_tags_without_edge(self, scope: MemoryScope | None = None) -> list[dict[str, Any]]:
+        """Reflect detector: anchors named by tags on nodes not linked to them."""
+        return tag_anchor_rows(self.health_snapshot(scope))
+
+    def detect_hub_stubs(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Nodes with fewer than 2 *substantive* relationships (excluding
-        Domain/Insight and archived nodes), within ``scope``.
-
-        Edges to neighbours marked ``status = 'stub'`` are not counted —
-        stubs are placeholder nodes created during ingest before their
-        real content arrives, and treating them as real connections
-        masks genuinely under-connected nodes whose only neighbours are
-        placeholders.
+        """Stubs holding at least ``HUB_STUB_MIN_DEGREE`` substantive edges
+        (edges to reflect-generated Insights don't count), within ``scope``.
         """
         scope_sql, scope_params = self._scope_and(("n",), scope)
         sql = f"""
@@ -1572,17 +1904,51 @@ class SqliteGraphStore:
                                      THEN e.to_id
                                      ELSE e.from_id END
                     WHERE (e.from_id = n.id OR e.to_id = n.id)
-                      AND COALESCE(json_extract(m.props, '$.status'), 'active')
-                          != 'stub'
+                      AND NOT (m.label = 'Insight'
+                               AND json_extract(m.props, '$.source_query') IS NOT NULL)
+                ) AS degree
+            FROM nodes n
+            WHERE json_extract(n.props, '$.status') = 'stub'{scope_sql}
+            GROUP BY n.id
+            HAVING degree >= :min_degree
+            ORDER BY degree DESC, name
+        """
+        params = {"min_degree": HUB_STUB_MIN_DEGREE, **scope_params}
+        return [dict(r) for r in self._conn.execute(sql, params)]
+
+    def detect_under_connected_nodes(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Every live node (except ``Domain``) with fewer than 2 substantive
+        relationships, within ``scope``, most isolated first. No limit: the
+        caller reports the total and samples.
+
+        Edges to stubs and to reflect-generated Insights don't count: they
+        are placeholders or annotations, not structure.
+        """
+        scope_sql, scope_params = self._scope_and(("n",), scope)
+        sql = f"""
+            SELECT
+                n.key_value AS name,
+                n.label     AS label,
+                (
+                    SELECT COUNT(*) FROM edges e
+                    JOIN nodes m
+                      ON m.id = CASE WHEN e.from_id = n.id
+                                     THEN e.to_id
+                                     ELSE e.from_id END
+                    WHERE (e.from_id = n.id OR e.to_id = n.id)
+                      AND COALESCE(json_extract(m.props, '$.status'), 'active') != 'stub'
+                      AND NOT (m.label = 'Insight'
+                               AND json_extract(m.props, '$.source_query') IS NOT NULL)
                 ) AS rel_count,
                 n.created_at AS created
             FROM nodes n
-            WHERE n.label NOT IN ('Domain', 'Insight')
-              AND COALESCE(json_extract(n.props, '$.status'), '') != 'archived'{scope_sql}
+            WHERE n.label != 'Domain'{scope_sql}{self._live_and(("n",))}
             GROUP BY n.id
             HAVING rel_count < 2
-            ORDER BY n.created_at DESC
-            LIMIT 15
+            ORDER BY rel_count ASC, n.created_at DESC, name
         """
         cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
@@ -1631,9 +1997,10 @@ class SqliteGraphStore:
         props = json.loads(row["props"]) if row["props"] else {}
         props["status"] = "archived"
         props["archived_at"] = now
+        props["archived_reason"] = "missing_note"
         self._conn.execute(
-            "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(props), now, row["id"]),
+            "UPDATE nodes SET props = ? WHERE id = ?",
+            (json.dumps(props), row["id"]),
         )
         self._sync_fts(row["id"], props)
         self._conn.commit()

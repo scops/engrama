@@ -8,15 +8,19 @@ Instead of running a fixed set of hardcoded queries, the reflect skill:
 1. **Inspects** the graph to see what labels and relationship types actually
    have data.
 2. **Selects** applicable detection queries based on what's present.
-3. **Filters** out previously dismissed Insights so the user isn't re-bothered.
-4. **Scores** each Insight with a confidence value based on path length,
-   supporting connections, and recency.
+3. **Filters** out Insights a human already approved or dismissed, so the
+   user isn't re-bothered and a re-run never undoes a review.
+4. **Scores** each Insight with a confidence value.
+
+The detectors themselves (activation rules, queries, builders, per-run
+budget) are declared once in :mod:`engrama.core.reflection` and shared with
+the MCP ``engrama_reflect`` tool, so both produce the same Insights.
 
 Detection patterns:
 
 - **Cross-project solution transfer** — an open Problem shares a Concept with
   a resolved Problem that has a Decision.
-- **Shared technology** — two active Projects use the same Technology.
+- **Shared technology** — a Technology used by three or more live entities.
 - **Training opportunity** — an open Problem shares a Concept with a Course.
 - **Technique transfer** — a Technique used in one Domain could apply in
   another Domain where it hasn't been tried.
@@ -32,6 +36,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from engrama.core.reflection import DETECTORS, InsightDraft, select
 from engrama.core.schema import Insight
 
 if TYPE_CHECKING:
@@ -41,8 +46,8 @@ if TYPE_CHECKING:
 class ReflectSkill:
     """Adaptive cross-entity pattern detection skill.
 
-    Inspects what's in the graph, selects applicable queries, filters
-    dismissed Insights, and scores results by confidence.
+    Inspects what's in the caller's slice of the graph, runs the applicable
+    detectors, skips already-judged Insights, and writes the rest.
     """
 
     def run(self, engine: EngramaEngine) -> list[Insight]:
@@ -51,345 +56,41 @@ class ReflectSkill:
         Returns:
             A list of :class:`Insight` instances that were created or updated.
         """
-        # Step 1: Profile the graph
-        profile = self._profile_graph(engine)
+        store = engine._store
+        scope = engine.default_scope
+        profile = store.count_labels(scope=scope)
+        judged = store.get_dismissed_insight_titles(scope=scope) | (
+            store.get_approved_insight_titles(scope=scope)
+        )
 
-        # Step 2: Get dismissed insight titles to avoid re-surfacing
-        dismissed = self._get_dismissed_titles(engine)
-
-        # Step 3: Run applicable queries
         insights: list[Insight] = []
-
-        # Activation conditions: only run queries where the graph has the
-        # required node types.  Broadened in v0.5 to match real-world graphs.
-
-        if profile.get("Problem") and profile.get("Project"):
-            insights.extend(self._detect_cross_project_solutions(engine, dismissed))
-
-        # shared_technology: any 2+ entities connected to Technology via USES/TEACHES
-        if profile.get("Technology"):
-            insights.extend(self._detect_shared_technology(engine, dismissed))
-
-        # training_opportunity: Vulnerability OR open Problem sharing Concept with Course
-        if (profile.get("Problem") or profile.get("Vulnerability")) and profile.get("Course"):
-            insights.extend(self._detect_training_opportunities(engine, dismissed))
-
-        if profile.get("Technique") and profile.get("Domain", 0) >= 2:
-            insights.extend(self._detect_technique_transfer(engine, dismissed))
-
-        if profile.get("Concept"):
-            insights.extend(self._detect_concept_clustering(engine, dismissed))
-
-        # stale_knowledge: any node connected to an active Project or Course
-        if profile.get("Project") or profile.get("Course"):
-            insights.extend(self._detect_stale_knowledge(engine, dismissed))
-
-        # Under-connected always runs (useful for any graph)
-        total_nodes = sum(profile.values())
-        if total_nodes >= 5:
-            insights.extend(self._detect_under_connected(engine, dismissed))
-
+        for detector in DETECTORS:
+            if not detector.applies(profile):
+                continue
+            if detector.name == "under_connected" and store.find_insight_by_source_query(
+                "under_connected", statuses=["dismissed"], scope=scope
+            ):
+                continue
+            records = getattr(store, detector.store_method)(scope=scope)
+            for draft in select(detector.build(records), judged):
+                insights.append(self._write_insight(engine, draft))
         return insights
 
-    # ------------------------------------------------------------------
-    # Graph introspection
-    # ------------------------------------------------------------------
-
     @staticmethod
-    def _profile_graph(engine: EngramaEngine) -> dict[str, int]:
-        """Return a dict of {label: count} for the caller's slice of the graph.
-
-        Spec 001 FR-12: the profile is scoped so reflect doesn't react to
-        other tenants' label counts.
-        """
-        return engine._store.count_labels(scope=engine.default_scope)
-
-    @staticmethod
-    def _get_dismissed_titles(engine: EngramaEngine) -> set[str]:
-        """Return titles of dismissed Insights within the caller's scope."""
-        return engine._store.get_dismissed_insight_titles(scope=engine.default_scope)
-
-    # ------------------------------------------------------------------
-    # Detection methods — original three (improved)
-    # ------------------------------------------------------------------
-
-    def _detect_cross_project_solutions(
-        self,
-        engine: EngramaEngine,
-        dismissed: set[str],
-    ) -> list[Insight]:
-        records = engine._store.detect_cross_project_solutions(scope=engine.default_scope)
-        results: list[Insight] = []
-        for r in records:
-            title = (
-                f"Solution transfer: {r['decision']} "
-                f"({r['source_project']} → {r['target_project']})"
-            )
-            if title in dismissed:
+    def _write_insight(engine: EngramaEngine, draft: InsightDraft) -> Insight:
+        """Merge an Insight node and return the dataclass."""
+        engine.merge_node("Insight", {"title": draft.title, **draft.properties()})
+        # Link the Insight to its evidence (DDR-008); unresolved targets get
+        # no edge, and a label outside the schema is skipped.
+        for label, _key_field, name in draft.about_targets():
+            try:
+                engine.merge_relation(draft.title, "Insight", "ABOUT", name, label)
+            except ValueError:
                 continue
-            body = (
-                f'The open problem "{r["open_problem"]}" in project '
-                f'"{r["target_project"]}" shares the concept '
-                f'"{r["concept"]}" with a resolved problem in project '
-                f'"{r["source_project"]}". The decision '
-                f'"{r["decision"]}" may apply here.'
-            )
-            insight = self._write_insight(
-                engine,
-                title=title,
-                body=body,
-                source_query="cross_project_solution",
-                confidence=0.85,
-            )
-            results.append(insight)
-        return results
-
-    def _detect_shared_technology(
-        self,
-        engine: EngramaEngine,
-        dismissed: set[str],
-    ) -> list[Insight]:
-        records = engine._store.detect_shared_technology(scope=engine.default_scope)
-        results: list[Insight] = []
-        for r in records:
-            a_desc = f"{r['type_a']}:{r['entity_a']}"
-            b_desc = f"{r['type_b']}:{r['entity_b']}"
-            title = f"Shared technology: {r['technology']} ({a_desc} & {b_desc})"
-            if title in dismissed:
-                continue
-            # Cross-type sharing is more interesting than same-type
-            confidence = 0.75 if r["type_a"] != r["type_b"] else 0.6
-            body = (
-                f"{a_desc} and {b_desc} both use {r['technology']}. "
-                f"Consider sharing knowledge or materials between them."
-            )
-            insight = self._write_insight(
-                engine,
-                title=title,
-                body=body,
-                source_query="shared_technology",
-                confidence=confidence,
-            )
-            results.append(insight)
-        return results
-
-    def _detect_training_opportunities(
-        self,
-        engine: EngramaEngine,
-        dismissed: set[str],
-    ) -> list[Insight]:
-        records = engine._store.detect_training_opportunities(scope=engine.default_scope)
-        results: list[Insight] = []
-        for r in records:
-            issue_desc = f"{r['issue_type']}:{r['issue']}"
-            title = (
-                f"Training opportunity: {r['course']} "
-                f"covers {r['concept']} (relates to: {issue_desc})"
-            )
-            if title in dismissed:
-                continue
-            body = (
-                f'The {r["issue_type"].lower()} "{r["issue"]}" involves '
-                f'the concept "{r["concept"]}", which is covered by the '
-                f'course "{r["course"]}". Reviewing this material may help.'
-            )
-            insight = self._write_insight(
-                engine,
-                title=title,
-                body=body,
-                source_query="training_opportunity",
-                confidence=0.65,
-            )
-            results.append(insight)
-        return results
-
-    # ------------------------------------------------------------------
-    # Detection methods — new patterns (Phase 2)
-    # ------------------------------------------------------------------
-
-    def _detect_technique_transfer(
-        self,
-        engine: EngramaEngine,
-        dismissed: set[str],
-    ) -> list[Insight]:
-        """A Technique used in domain A could apply in domain B."""
-        records = engine._store.detect_technique_transfer(scope=engine.default_scope)
-        results: list[Insight] = []
-        for r in records:
-            title = (
-                f"Technique transfer: {r['technique']} "
-                f"({r['source_domain']} → {r['target_domain']})"
-            )
-            if title in dismissed:
-                continue
-            related = r["related_entities"]
-            confidence = min(0.5 + (related * 0.1), 0.9)
-            body = (
-                f'The technique "{r["technique"]}" is used in '
-                f'"{r["source_domain"]}" but not in '
-                f'"{r["target_domain"]}". There are {related} '
-                f"entities in {r['target_domain']} that share concepts "
-                f"with this technique — it may be applicable there."
-            )
-            insight = self._write_insight(
-                engine,
-                title=title,
-                body=body,
-                source_query="technique_transfer",
-                confidence=confidence,
-            )
-            results.append(insight)
-        return results
-
-    def _detect_concept_clustering(
-        self,
-        engine: EngramaEngine,
-        dismissed: set[str],
-    ) -> list[Insight]:
-        """Multiple unrelated entities share the same Concept."""
-        records = engine._store.detect_concept_clusters(scope=engine.default_scope)
-        results: list[Insight] = []
-        for r in records:
-            concept = r["concept"]
-            count = r["entity_count"]
-            sample = r["sample"]
-            title = f"Concept cluster: {concept} ({count} entities)"
-            if title in dismissed:
-                continue
-            sample_desc = ", ".join(f"{s['label']}:{s['name']}" for s in sample[:5])
-            confidence = min(0.5 + (count * 0.05), 0.9)
-            body = (
-                f'The concept "{concept}" connects {count} entities: '
-                f"{sample_desc}. This cluster may reveal a pattern worth "
-                f"exploring — these entities share a common thread."
-            )
-            insight = self._write_insight(
-                engine,
-                title=title,
-                body=body,
-                source_query="concept_clustering",
-                confidence=confidence,
-            )
-            results.append(insight)
-        return results
-
-    def _detect_stale_knowledge(
-        self,
-        engine: EngramaEngine,
-        dismissed: set[str],
-    ) -> list[Insight]:
-        """Nodes connected to active Projects that are stale.
-
-        Staleness criteria (DDR-003 Phase D):
-        - Not updated in 90+ days, OR
-        - Confidence below 0.3 (regardless of age).
-        """
-        records = engine._store.detect_stale_knowledge(scope=engine.default_scope)
-        results: list[Insight] = []
-        for r in records:
-            name = r["name"]
-            title = f"Stale knowledge: {r['label']}:{name} (linked to {r['project']})"
-            if title in dismissed:
-                continue
-            last_updated = r["last_updated"]
-            if hasattr(last_updated, "isoformat"):
-                last_updated = last_updated.isoformat()[:10]
-            confidence = r.get("confidence")
-            conf_str = f" (confidence: {confidence:.2f})" if confidence is not None else ""
-            # Determine staleness reason
-            if confidence is not None and confidence < 0.3:
-                reason = f"has low confidence ({confidence:.2f})"
-            else:
-                reason = f"hasn't been updated since {last_updated}"
-            body = (
-                f'The {r["label"]} "{name}" is connected to the active '
-                f'project "{r["project"]}" via {r["rel"]}, but {reason}{conf_str}. '
-                f"Consider updating or archiving this node."
-            )
-            insight = self._write_insight(
-                engine,
-                title=title,
-                body=body,
-                source_query="stale_knowledge",
-                confidence=0.5,
-            )
-            results.append(insight)
-        return results
-
-    # Stable title avoids uniqueness-constraint collisions when the node
-    # count changes between runs (BUG-007).
-    _UNDER_CONNECTED_TITLE = "Under-connected nodes need more relationships"
-
-    def _detect_under_connected(
-        self,
-        engine: EngramaEngine,
-        dismissed: set[str],
-    ) -> list[Insight]:
-        """Nodes with fewer than 2 relationships — likely under-classified."""
-        title = self._UNDER_CONNECTED_TITLE
-
-        # BUG-007: skip if already dismissed (by stable title or source_query)
-        if title in dismissed:
-            return []
-        if engine._store.find_insight_by_source_query(
-            "under_connected",
-            statuses=["dismissed"],
-            scope=engine.default_scope,
-        ):
-            return []
-
-        records = engine._store.detect_under_connected_nodes(scope=engine.default_scope)
-        if not records:
-            return []
-
-        # Build body with current counts (title stays stable)
-        names = [f"{r['label']}:{r['name']}" for r in records[:10]]
-        total = len(records)
-        body = (
-            f"Found {total} nodes with fewer than 2 relationships. "
-            f"These are likely under-classified and would benefit from "
-            f"adding INSTANCE_OF, BELONGS_TO, or IN_DOMAIN connections. "
-            f"Top candidates: {', '.join(names)}."
-        )
-
-        # MERGE on stable title — idempotent, updates body on repeat runs
-        insight = self._write_insight(
-            engine,
-            title=title,
-            body=body,
-            source_query="under_connected",
-            confidence=0.4,
-        )
-        return [insight]
-
-    # ------------------------------------------------------------------
-    # Helper
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _write_insight(
-        engine: EngramaEngine,
-        *,
-        title: str,
-        body: str,
-        source_query: str,
-        confidence: float = 0.8,
-    ) -> Insight:
-        """Merge an Insight node into Neo4j and return the dataclass."""
-        engine.merge_node(
-            "Insight",
-            {
-                "title": title,
-                "body": body,
-                "confidence": confidence,
-                "status": "pending",
-                "source_query": source_query,
-            },
-        )
         return Insight(
-            title=title,
-            body=body,
-            confidence=confidence,
+            title=draft.title,
+            body=draft.body,
+            confidence=draft.confidence,
             status="pending",
-            source_query=source_query,
+            source_query=draft.source_query,
         )

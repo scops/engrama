@@ -97,6 +97,7 @@ class _RecordingVectorStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: Any = None,
     ) -> bool:
         self.calls.append((label, key_field, key_value, list(embedding)))
         return True

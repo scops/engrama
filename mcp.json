@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "engrama",
   "displayName": "Engrama",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Graph-based long-term memory for AI agents. Engrama stores entities, observations and relationships as a knowledge graph and lets agents traverse it to reconstruct context on demand. SQLite by default (zero external services); Neo4j optional for multi-process production.",
   "license": "Apache-2.0",
   "homepage": "https://scops.github.io/engrama/",
@@ -156,9 +156,15 @@
               "items": {},
               "type": "array"
             },
-            "description": "Optional relations to create in the same call. Format: {\"REL_TYPE\": [\"target_name\", ...]}. Example: {\"USES\": [\"BDK\"], \"IN_DOMAIN\": [\"teaching\"], \"FOR\": [\"Accenture\"]}. Targets are matched by name; a missing target is created as a stub. By default the stub's label is inferred from the relation type, which is lossy. To pin it, pass an object instead of a string: {\"RELATED_TO\": [{\"name\": \"BDK\", \"label\": \"Tool\"}]}.",
+            "description": "Optional relations to create in the same call. Format: {\"REL_TYPE\": [\"target_name\", ...]}. Example: {\"USES\": [\"Python\"], \"IN_DOMAIN\": [\"teaching\"], \"FOR\": [\"Acme Corp\"]}. Targets are matched by name; a missing target is created as a stub. By default the stub's label is inferred from the relation type, which is lossy. To pin it, pass an object instead of a string: {\"RELATED_TO\": [{\"name\": \"Python\", \"label\": \"Tool\"}]}.",
             "title": "Relations",
             "type": "object"
+          },
+          "force_new": {
+            "default": false,
+            "description": "Create the node even if it looks like an existing one. Only matters when the server runs with ENGRAMA_REMEMBER_DEDUPE=block; otherwise possible duplicates are reported, never refused.",
+            "title": "Force New",
+            "type": "boolean"
           }
         },
         "required": [
@@ -194,7 +200,7 @@
             "type": "string"
           },
           "rel_type": {
-            "description": "Relationship type — one of: APPLIES, BELONGS_TO, CAUSED_BY, COMPOSED_OF, CONTRADICTS, COVERS, DEPENDS_ON, DOCUMENTS, EVALUATES, EXECUTED_WITH, EXPLOITS, FEATURES, FEEDS, FOR, HAS, HAS_MATERIAL, IMPLEMENTS, INCLUDES, INFORMED_BY, INHABITS, INSTANCE_OF, INVOLVES, IN_DOMAIN, LINKS_TO, ORIGIN_OF, PERFORMS, PRACTICES, PREREQUISITE_OF, RELATED_TO, REPLACES, REQUIRES, RUNS, SERVES, SHOT_WITH, SIMILAR_TO, SOLVED_BY, SUBSET_OF, TAKEN_AT, TARGETS, TEACHES, TRAINS_ON, USES.",
+            "description": "Relationship type — one of: ABOUT, APPLIES, BELONGS_TO, CAUSED_BY, COMPOSED_OF, CONTRADICTS, COVERS, DEPENDS_ON, DOCUMENTS, EVALUATES, EXECUTED_WITH, EXPLOITS, FEATURES, FEEDS, FOR, HAS, HAS_MATERIAL, IMPLEMENTS, INCLUDES, INFORMED_BY, INHABITS, INSTANCE_OF, INVOLVES, IN_DOMAIN, LINKS_TO, ORIGIN_OF, PERFORMS, PRACTICES, PREREQUISITE_OF, RELATED_TO, REPLACES, REQUIRES, RUNS, SERVES, SHOT_WITH, SIMILAR_TO, SOLVED_BY, SUBSET_OF, TAKEN_AT, TARGETS, TEACHES, TRAINS_ON, USES.",
             "title": "Rel Type",
             "type": "string"
           },

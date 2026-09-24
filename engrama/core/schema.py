@@ -94,6 +94,7 @@ class RelationType(str, Enum):
     RUNS = "RUNS"
     EVALUATES = "EVALUATES"
     FEEDS = "FEEDS"
+    ABOUT = "ABOUT"
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,9 @@ from engrama.core.engine import EngramaEngine
 from engrama.core.scope import MemoryScope
 from engrama.skills.proactive import ProactiveSkill
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # Spec 001 fail-closed: scoped reads only return nodes carrying the same
 # (org_id, user_id). Tests seed under this test scope and the engine fixture
 # pins the same scope so surface/approve/etc see the seeded Insights.

@@ -105,7 +105,7 @@ class _ScopedAsyncStoreProxy:
         )
 
 
-@pytest.fixture(params=["sqlite-async", "neo4j-async"])
+@pytest.fixture(params=["sqlite-async", pytest.param("neo4j-async", marks=pytest.mark.neo4j)])
 async def store(request, tmp_path):
     if request.param == "sqlite-async":
         from engrama.backends.sqlite import SqliteAsyncStore
@@ -303,6 +303,7 @@ async def test_insight_lifecycle_and_dismissed_titles_alias(store):
             "body": "x",
             "confidence": 0.9,
             "status": "pending",
+            "source_query": "test",
         },
     )
     pending = await store.get_pending_insights()

@@ -144,41 +144,12 @@ jobs:
         # Neo4j-dependent fixtures skip via NEO4J_PASSWORD being unset.
         run: uv sync --extra dev --extra mcp
 
-      - name: Run pytest (SQLite + backend-agnostic)
-        # tests/test_sdk.py explicitly opts into backend="neo4j" — those
-        # are integration tests for the Neo4j path and run in the
-        # `test-neo4j` job. tests/test_neo4j_store.py and tests that
-        # depend on the `neo4j_session` fixture skip cleanly via the
-        # conftest skip when NEO4J_PASSWORD is unset.
-        run: |
-          uv run pytest -q \
-            tests/backends \
-            tests/contracts \
-            tests/test_protocols.py \
-            tests/test_composable.py \
-            tests/test_openai_compat_embedder.py \
-            tests/test_cli.py \
-            tests/test_mcp_entrypoint.py \
-            tests/test_mcp_output_no_embedding.py \
-            tests/test_export_import.py \
-            tests/test_mcp_http.py \
-            tests/test_mcp_status.py \
-            tests/test_mcp_error_redaction.py \
-            tests/test_mcp_gdpr_forget.py \
-            tests/test_mcp_logging_scope.py \
-            tests/test_mcp_remember_fixes.py \
-            tests/test_mcp_remember_merge_key.py \
-            tests/test_mcp_search_ranking.py \
-            tests/test_mcp_sync_dry_run.py \
-            tests/test_tenancy_standalone.py \
-            tests/test_tenancy_write_identity.py \
-            tests/test_scope_resolver.py \
-            tests/test_provenance.py \
-            tests/test_sanitiser.py \
-            tests/test_reindex_tool.py \
-            tests/test_proactive_insight_gate.py \
-            tests/test_inline_relations_validation.py \
-            tests/test_cold_start_embedding_repro.py
+      - name: Run pytest (everything that does not need Neo4j)
+        # Neo4j-dependent tests carry the ``neo4j`` marker (see
+        # tests/conftest.py) and run in the ``test-neo4j`` job. Selecting
+        # by marker instead of listing files means a new test file runs
+        # here by default.
+        run: uv run pytest -q -m "not neo4j"
 
   test-neo4j:
     name: Tests (Neo4j integration)
@@ -265,26 +236,9 @@ jobs:
           PY
 
       - name: Run pytest (Neo4j integration)
-        # Everything excluded from `test-sqlite` (see that job's pytest
-        # invocation). Some of these files also contain pure-helper
-        # tests that don't need Neo4j; running them here is harmless
-        # and keeps the split easy to reason about.
-        run: |
-          uv run pytest -q \
-            tests/test_core.py \
-            tests/test_neo4j_store.py \
-            tests/test_sdk.py \
-            tests/test_temporal.py \
-            tests/test_hybrid_search.py \
-            tests/test_vector_store.py \
-            tests/test_embeddings.py \
-            tests/test_adapters.py \
-            tests/test_proactive.py \
-            tests/test_skills.py \
-            tests/test_phase4_skills.py \
-            tests/test_obsidian_sync.py \
-            tests/test_mcp_output_no_embedding.py \
-            tests/test_export_import_cross_backend.py
+        # Exactly the tests marked ``neo4j``: whole modules plus the Neo4j
+        # parameter of the backend-parametrised suites (contracts, MCP output).
+        run: uv run pytest -q -m neo4j
 
   audit-deps:
     name: Audit dependencies (pip-audit)

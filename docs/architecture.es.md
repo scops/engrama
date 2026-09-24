@@ -447,14 +447,19 @@ tiempo:
   Se establece automáticamente en la creación.
 - `valid_to` (datetime) — cuándo el hecho fue supersedido. `null` =
   sigue siendo verdadero.
-- `confidence` (float, 0.0–1.0) — decae con el tiempo. Por defecto
-  1.0.
-- `decayed_at` (datetime) — último pase de decaimiento.
-- `created_at`, `updated_at` — marcas temporales del sistema
-  (gestionadas automáticamente).
+- `confidence` (float, 0.0–1.0) — creencia en el hecho. Por defecto 1.0;
+  solo cambia cuando una escritura la declara (o supersede el nodo) y
+  nunca decae en el almacenamiento ([DDR-007](./ddr-007.md)).
+- `archived_at`, `archived_reason` — se fijan al archivar un nodo de forma
+  explícita (`forget`, TTL, una nota eliminada del vault). Archivar no toca
+  `updated_at`.
+- `created_at`, `updated_at` — marcas temporales del sistema (gestionadas
+  automáticamente; `engrama import` las conserva).
 
-**Decaimiento de confianza** (`engrama decay`): decaimiento exponencial
-`new_conf = conf × exp(-rate × days_since_update)`.
+**El decaimiento de confianza** queda retirado ([DDR-007](./ddr-007.md)):
+`engrama decay` es una operación obsoleta que no hace nada. La relevancia
+en el tiempo es una señal de ranking que se calcula al consultar, y nada se
+archiva automáticamente.
 
 **Supersesión (`valid_to`)**: establecerlo reduce automáticamente la
 confianza a la mitad. Actualizar un nodo supersedido limpia `valid_to`

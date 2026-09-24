@@ -105,6 +105,9 @@ nav:
       - DDR-003: ddr-003.md
       - DDR-004: ddr-004.md
       - DDR-005: ddr-005.md
+      - DDR-006: ddr-006.md
+      - DDR-007: ddr-007.md
+      - DDR-008: ddr-008.md
       - Template: ddr-template.md
   - Reference:
       - Changelog: changelog.md

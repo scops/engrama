@@ -43,7 +43,6 @@ import json
 import os
 import subprocess
 import sys
-from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -312,6 +311,24 @@ def cmd_reflect(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_health(args: argparse.Namespace) -> int:
+    """Print the read-only graph health report for the active scope."""
+    try:
+        from engrama.adapters.sdk import Engrama
+        from engrama.core.health import format_health
+
+        with Engrama() as eng:
+            report = eng.health()
+        if args.json:
+            print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+        else:
+            print(format_health(report))
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_reindex(args: argparse.Namespace) -> int:
     """Batch re-embed all nodes and store vectors.
 
@@ -413,77 +430,23 @@ def cmd_reindex(args: argparse.Namespace) -> int:
 
 
 def cmd_decay(args: argparse.Namespace) -> int:
-    """Apply confidence decay to all nodes (DDR-003 Phase D).
+    """Deprecated (DDR-007): stored confidence no longer decays.
 
-    Uses the sync backend's ``decay_scores`` for writes and provides
-    a detailed sample table when ``--dry-run`` is set.
+    Kept so scripts that call it keep exiting cleanly. The flags are still
+    accepted and validated, but nothing is read or written.
     """
-    try:
-        from engrama.adapters.sdk import Engrama
-
-        with Engrama() as eng:
-            rate = args.rate
-            min_conf = args.min_confidence
-            max_age = args.max_age
-            label = args.label
-
-            label_err = _validate_label_args(label)
-            if label_err:
-                print(label_err, file=sys.stderr)
-                return 2
-
-            if args.dry_run:
-                print("[DRY RUN] No changes will be written.\n")
-                print(
-                    f"  rate={rate}, min_confidence={min_conf}, "
-                    f"max_age_days={max_age}, label={label or 'all'}\n"
-                )
-                # Show a preview of what would be decayed
-                try:
-                    preview = eng._store.query_at_date(
-                        "2099-12-31",
-                        label=label,
-                        limit=20,
-                    )
-                except Exception:
-                    preview = []
-                if not preview:
-                    print("  No nodes with confidence data found.")
-                    return 0
-                import math
-                from datetime import datetime
-
-                print(f"  {'Name':<30} {'Label':<12} {'Conf':>6} {'→ New':>6} {'Days':>5}")
-                print(f"  {'─' * 30} {'─' * 12} {'─' * 6} {'─' * 6} {'─' * 5}")
-                now = datetime.now(UTC)
-                for r in preview:
-                    old_c = r.get("confidence") or 1.0
-                    vf = r.get("valid_from")
-                    if vf and hasattr(vf, "to_native"):
-                        vf = vf.to_native()
-                    days = 0.0
-                    if vf and hasattr(vf, "timestamp"):
-                        days = max(0.0, (now - vf.replace(tzinfo=UTC)).total_seconds() / 86400)
-                    new_c = old_c * math.exp(-rate * days)
-                    name = (r.get("name") or "?")[:30]
-                    label = r.get("label", "?")
-                    print(f"  {name:<30} {label:<12} {old_c:>6.3f} {new_c:>6.3f} {days:>5.0f}")
-                return 0
-
-            result = eng.decay_scores(
-                rate=rate,
-                min_confidence=min_conf,
-                max_age_days=max_age,
-                label=label,
-            )
-            print(
-                f"Decay applied: {result['decayed']} nodes updated, "
-                f"{result['archived']} nodes archived."
-            )
-        return 0
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    label_err = _validate_label_args(args.label)
+    if label_err:
+        print(label_err, file=sys.stderr)
+        return 2
+    print(
+        "engrama decay is deprecated and changes nothing: stored confidence no "
+        "longer decays and nothing is archived automatically (DDR-007). Recency "
+        "is applied when ranking search results. This command will be removed "
+        "in a future release.",
+        file=sys.stderr,
+    )
+    return 0
 
 
 def cmd_export(args: argparse.Namespace) -> int:
@@ -962,6 +925,12 @@ def main() -> None:
     # --- reflect ---
     sub.add_parser("reflect", help="Run cross-entity pattern detection")
 
+    # --- health ---
+    p_health = sub.add_parser(
+        "health", help="Report graph health (orphans, stubs, components, duplicates)"
+    )
+    p_health.add_argument("--json", action="store_true", help="Print the report as JSON")
+
     # --- search ---
     p_search = sub.add_parser("search", help="Fulltext search")
     p_search.add_argument("query", help="Search query")
@@ -995,7 +964,7 @@ def main() -> None:
     # --- decay ---
     p_decay = sub.add_parser(
         "decay",
-        help="Apply confidence decay to nodes (DDR-003 Phase D)",
+        help="Deprecated no-op: stored confidence no longer decays (DDR-007)",
     )
     p_decay.add_argument(
         "--rate",
@@ -1252,6 +1221,7 @@ def main() -> None:
         "init": cmd_init,
         "verify": cmd_verify,
         "reflect": cmd_reflect,
+        "health": cmd_health,
         "search": cmd_search,
         "reindex": cmd_reindex,
         "decay": cmd_decay,

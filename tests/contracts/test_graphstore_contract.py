@@ -106,7 +106,7 @@ class _ScopedSyncStoreProxy:
         )
 
 
-@pytest.fixture(params=["sqlite", "neo4j"])
+@pytest.fixture(params=["sqlite", pytest.param("neo4j", marks=pytest.mark.neo4j)])
 def store(request, tmp_path):
     if request.param == "sqlite":
         from engrama.backends.sqlite import SqliteGraphStore

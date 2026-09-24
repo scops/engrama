@@ -46,10 +46,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from engrama import __version__
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
+from engrama.core.anchors import (
+    RELATION_EXEMPT_LABELS,
+    node_tags,
+    require_relations,
+    suggest_from_tags,
+    tag_linking_mode,
+)
 from engrama.core.identity import resolve_local_sub
+from engrama.core.reflection import DETECTORS, select
+from engrama.core.resolve import cosine, decide_target, dedupe_mode, possible_duplicates
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
-from engrama.core.scope import MemoryScope
+from engrama.core.scope import MemoryScope, node_owner
 from engrama.core.security import Provenance, Sanitiser, sanitize_node_for_output
+from engrama.core.stubs import HUB_STUB_MIN_DEGREE, STUB_STATUS
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -149,46 +159,7 @@ def _resolve_and_bind(ctx: Context) -> MemoryScope:
 _VALID_LABELS: set[str] = {member.value for member in NodeType}
 _VALID_RELATIONS: set[str] = {member.value for member in RelationType}
 
-# Inline-relation fuzzy resolution (#93). When a relation target doesn't match
-# an existing node exactly, measured similarity drives a three-way decision
-# (connect / ask / create) instead of silently minting a stub. Thresholds are
-# deliberately conservative: a wrong auto-connection is harder to spot than an
-# orphan stub, so anything short of near-certainty falls to "ask" (did_you_mean),
-# never "connect". ``CONNECT`` must clearly beat the runner-up by ``MARGIN`` or
-# the match is treated as ambiguous. Tunable as the graph grows.
-_FUZZY_CONNECT_RATIO = 0.9
-_FUZZY_SUGGEST_RATIO = 0.6
-_FUZZY_CONNECT_MARGIN = 0.08
-_FUZZY_SUGGEST_LIMIT = 5
-_FUZZY_CANDIDATE_SCAN_LIMIT = 1000
-
-
-def _rank_fuzzy_candidates(
-    target: str, candidates: list[dict[str, str]]
-) -> list[tuple[float, str, str]]:
-    """Rank in-scope nodes by name similarity to ``target``.
-
-    Pure and deterministic (``difflib`` ratio, no embeddings) so the same graph
-    state always yields the same suggestion order — ties broken by name. Returns
-    ``[(score, label, name), ...]`` sorted best-first, keeping only candidates at
-    or above :data:`_FUZZY_SUGGEST_RATIO`. The caller (not this helper) owns the
-    connect/ask/create decision so the policy lives in one place.
-    """
-    from difflib import SequenceMatcher
-
-    target_cf = target.casefold()
-    scored: list[tuple[float, str, str]] = []
-    for cand in candidates:
-        name = cand.get("name")
-        label = cand.get("label")
-        if not name or not label:
-            continue
-        ratio = SequenceMatcher(None, target_cf, name.casefold()).ratio()
-        if ratio >= _FUZZY_SUGGEST_RATIO:
-            scored.append((ratio, label, name))
-    # Best score first; stable tiebreak on name so output is reproducible.
-    scored.sort(key=lambda t: (-t[0], t[2]))
-    return scored
+# Inline-relation resolution lives in engrama.core.resolve (DDR-006).
 
 
 # MCP talks to the store directly (it doesn't go through EngramaEngine
@@ -335,6 +306,86 @@ def _with_mcp_provenance(extra: dict[str, Any] | None, scope: MemoryScope) -> di
 _SWEEP_LIMIT = 3
 
 
+async def _possible_duplicates(
+    store: Any, label: str, name: str, vector: list[float] | None, scope: MemoryScope
+) -> list[dict[str, Any]]:
+    """Existing in-scope nodes a new ``label``/``name`` may duplicate (DDR-006).
+
+    Lexical candidates come from ``name_candidates``; with a vector, the
+    nearest neighbours are re-scored with an exact cosine (store scores use
+    different scales per backend).
+    """
+    try:
+        candidates = await store.name_candidates(name, scope=scope)
+        hits: list[dict[str, Any]] = []
+        if vector:
+            similar = await store.search_similar(vector, limit=6, scope=scope)
+            stored = await store.get_vectors([str(h["node_id"]) for h in similar])
+            for h in similar:
+                other = stored.get(str(h["node_id"]))
+                if other:
+                    hits.append(
+                        {"label": h["label"], "name": h["name"], "cosine": cosine(vector, other)}
+                    )
+    except Exception as e:  # noqa: BLE001 — a warning must never break the write
+        logger.warning("Could not check a %s node for duplicates: %s", label, e)
+        return []
+    return possible_duplicates(label, name, candidates, hits)
+
+
+async def _tag_anchor_suggestions(
+    store: Any, label: str, key_field: str, name: str, tags: list[str], scope: MemoryScope
+) -> list[dict[str, str]]:
+    """Relations implied by tags that name an in-scope anchor not yet linked."""
+    if not tags:
+        return []
+    try:
+        anchors = await store.list_anchors(scope=scope)
+        if not anchors:
+            return []
+        neighbours = await store.get_neighbours(
+            label, key_field, name, hops=1, limit=500, scope=scope
+        )
+    except Exception as e:  # noqa: BLE001 — suggestions must never break the write
+        logger.warning("Could not compute tag suggestions for a %s node: %s", label, e)
+        return []
+    linked = {(n["label"], n["name"]) for n in neighbours}
+    return suggest_from_tags(label, name, tags, anchors, linked)
+
+
+async def _link_anchor(
+    store: Any, label: str, key_field: str, name: str, s: dict[str, str], scope: MemoryScope
+) -> bool:
+    """Create the edge a tag suggestion describes (``ENGRAMA_TAG_LINKING=auto``)."""
+    a_key = "title" if s["label"] in TITLE_KEYED_LABELS else "name"
+    ends = [(label, key_field, name), (s["label"], a_key, s["name"])]
+    if s["direction"] == "in":
+        ends.reverse()
+    (fl, fk, fv), (tl, tk, tv) = ends
+    try:
+        return bool(await store.merge_relation(fl, fk, fv, s["rel_type"], tl, tk, tv, scope=scope))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not link a %s node to its tagged anchor: %s", label, e)
+        return False
+
+
+async def _hub_stub_hint(
+    store: Any, label: str, key_field: str, name: str, scope: MemoryScope
+) -> dict[str, Any] | None:
+    """``{label, name, degree}`` when the target is a stub worth enriching."""
+    try:
+        node = await store.get_node(label, key_field, name, scope=scope)
+        if not node or node.get("status") != STUB_STATUS:
+            return None
+        degree = await store.node_degree(label, key_field, name, scope=scope)
+    except Exception as e:  # noqa: BLE001 — a hint must never break the write
+        logger.warning("Could not check stub enrichment for a %s node: %s", label, e)
+        return None
+    if degree is None or degree < HUB_STUB_MIN_DEGREE:
+        return None
+    return {"label": label, "name": name, "degree": degree}
+
+
 async def _embed_text(embedder: Any, text: str) -> list[float]:
     """Embed via the async API when available, else the sync one."""
     if hasattr(embedder, "aembed"):
@@ -342,28 +393,38 @@ async def _embed_text(embedder: Any, text: str) -> list[float]:
     return embedder.embed(text)
 
 
-async def _reembed_node(store: Any, embedder: Any, label: str, props: dict[str, Any]) -> bool:
-    """Embed one node from its stored props and attach the vector.
+async def _reembed_node(
+    store: Any,
+    embedder: Any,
+    label: str,
+    props: dict[str, Any],
+    owner: MemoryScope | None = None,
+) -> list[float] | None:
+    """Embed one node from its props and attach the vector.
 
-    Returns ``True`` if a vector was stored, ``False`` if the node has no
-    embeddable text or the embedder produced nothing. Raises on embedder /
-    transport failure so callers can tell "nothing to embed" from
-    "embedder unreachable".
+    ``owner`` pins the node (names are only unique per owner); it defaults to
+    the ``org_id``/``user_id`` in ``props``, which stored props carry but a
+    caller's property bag does not. Returns the stored vector, or ``None``
+    when the node has no embeddable text, the embedder produced nothing, or
+    the store found no node to attach it to. Raises on embedder / transport
+    failure so callers can tell "nothing to embed" from "embedder unreachable".
     """
     from engrama.embeddings.text import node_to_text
 
     text = node_to_text(label, props)
     if not text or not text.strip():
-        return False
+        return None
     key_field = "title" if label in TITLE_KEYED_LABELS else "name"
     key_value = props.get(key_field) or props.get("name") or props.get("title")
     if not key_value:
-        return False
+        return None
     embedding = await _embed_text(embedder, text)
     if not embedding:
-        return False
-    await store.store_embedding(label, key_field, key_value, embedding)
-    return True
+        return None
+    stored = await store.store_embedding(
+        label, key_field, key_value, embedding, owner=owner or node_owner(props)
+    )
+    return list(embedding) if stored else None
 
 
 async def _sweep_pending_embeddings(store: Any, embedder: Any, limit: int = _SWEEP_LIMIT) -> int:
@@ -550,11 +611,19 @@ class RememberInput(BaseModel):
         description=(
             "Optional relations to create in the same call. "
             'Format: {"REL_TYPE": ["target_name", ...]}. '
-            'Example: {"USES": ["BDK"], "IN_DOMAIN": ["teaching"], "FOR": ["Accenture"]}. '
+            'Example: {"USES": ["Python"], "IN_DOMAIN": ["teaching"], "FOR": ["Acme Corp"]}. '
             "Targets are matched by name; a missing target is created as a "
             "stub. By default the stub's label is inferred from the relation "
             "type, which is lossy. To pin it, pass an object instead of a "
-            'string: {"RELATED_TO": [{"name": "BDK", "label": "Tool"}]}.'
+            'string: {"RELATED_TO": [{"name": "Python", "label": "Tool"}]}.'
+        ),
+    )
+    force_new: bool = Field(
+        default=False,
+        description=(
+            "Create the node even if it looks like an existing one. Only matters "
+            "when the server runs with ENGRAMA_REMEMBER_DEDUPE=block; otherwise "
+            "possible duplicates are reported, never refused."
         ),
     )
 
@@ -1127,6 +1196,17 @@ def create_engrama_mcp(
             "degraded": False,
             "reason": "" if would_hybrid else "no functional embedder; search is fulltext-only",
         }
+        # Read-time recency parameters (DDR-007): nothing decays in storage.
+        from engrama.core.anchors import ANCHOR_LABELS
+        from engrama.core.search import HybridConfig
+
+        ranking = HybridConfig()
+        search_info["recency"] = {
+            "half_life_days": ranking.recency_half_life,
+            "insight_half_life_days": ranking.insight_recency_half_life,
+            "degree_factor": ranking.recency_degree_factor,
+            "exempt_labels": sorted(ANCHOR_LABELS),
+        }
 
         response: dict[str, Any] = {
             "version": engrama_version,
@@ -1408,6 +1488,55 @@ def create_engrama_mcp(
         except ScopeUnresolved as e:
             return _safe_error(e)
 
+        # Opt-in: refuse to leave a non-anchor node with no edge (DDR-006).
+        # Checked before any write so a refused call changes nothing.
+        if (
+            require_relations()
+            and label not in RELATION_EXEMPT_LABELS
+            and not (params.relations or inline_relations)
+            and not await store.node_degree(label, merge_key, merge_value, scope=scope)
+        ):
+            suggestions = await _tag_anchor_suggestions(
+                store, label, merge_key, merge_value, node_tags(props), scope
+            )
+            if not (suggestions and tag_linking_mode() == "auto"):
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": (
+                            "ENGRAMA_REQUIRE_RELATIONS is set: this write would leave the "
+                            f"{label} with no relation. Pass 'relations' (or link it with "
+                            "engrama_relate) so it joins the graph."
+                        ),
+                        "suggested_relations": suggestions,
+                    },
+                    indent=2,
+                )
+
+        # ENGRAMA_REMEMBER_DEDUPE=block: refuse to create a node that looks
+        # like an existing one unless the caller insists (DDR-006).
+        if (
+            dedupe_mode() == "block"
+            and not params.force_new
+            and not await store.get_node(label, merge_key, merge_value, scope=scope)
+        ):
+            duplicates = possible_duplicates(
+                label, merge_value, await store.name_candidates(merge_value, scope=scope)
+            )
+            if duplicates:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": (
+                            f"this {label} looks like an existing node, so it was not "
+                            "created. Update the existing node instead, or pass "
+                            "force_new=true if it really is a different entity."
+                        ),
+                        "possible_duplicate_of": duplicates,
+                    },
+                    indent=2,
+                )
+
         # --- Vault note creation (BUG-002 / DDR-002) ---
         state = ctx.request_context.lifespan_context
         obsidian: ObsidianAdapter | None = state.get("obsidian")
@@ -1502,12 +1631,14 @@ def create_engrama_mcp(
         _embedder = state.get("embedder")
         embed_attempted = _embedder is not None and getattr(_embedder, "dimensions", 0) > 0
         embedded = False
+        vector: list[float] | None = None
         if embed_attempted:
             try:
-                embedded = await _reembed_node(store, _embedder, label, props)
+                vector = await _reembed_node(store, _embedder, label, props, owner=scope)
+                embedded = vector is not None
                 if not embedded:
                     logger.info(
-                        "No embeddable text for %s/%s (engrama_id=%s); stored without vector",
+                        "No vector stored for %s/%s (engrama_id=%s): nothing to embed",
                         label,
                         merge_value,
                         engrama_id,
@@ -1570,6 +1701,9 @@ def create_engrama_mcp(
         relations_stubbed: list[dict[str, str]] = []
         relations_resolved: list[dict[str, Any]] = []
         relations_ambiguous: list[dict[str, Any]] = []
+        # Existing stubs this write linked to that already hold structure
+        # (DDR-006): the agent is asked to give them content.
+        enrich_hints: list[dict[str, Any]] = []
         if all_relations:
             from engrama.adapters.obsidian.sync import ObsidianSync
 
@@ -1582,102 +1716,86 @@ def create_engrama_mcp(
                     continue
 
                 for target_name, explicit_label in targets:
-                    # Find or create the target node. ``lookup_node_label``
-                    # already COALESCEs ``name`` and ``title``, so an
-                    # existing title-keyed target (Decision, Problem,
-                    # Experiment, ...) resolves to the right label here.
-                    target_label = await store.lookup_node_label(target_name, scope=scope)
+                    # Resolve the target against in-scope nodes (DDR-006):
+                    # connect on near-certainty, ask when in doubt (including an
+                    # exact match under another label or on an archived node),
+                    # create a stub when nothing is similar. Candidates come from
+                    # a bounded, scope-filtered lookup, so did_you_mean can never
+                    # leak another tenant's names.
+                    requested_label = explicit_label if explicit_label in _VALID_LABELS else None
+                    decision = decide_target(
+                        target_name,
+                        requested_label,
+                        await store.name_candidates(target_name, scope=scope),
+                    )
                     created_as_stub = False
                     # ``resolved_name`` is what we actually connect to: the
                     # caller's spelling by default, or an existing node's real
                     # name when a fuzzy match wins.
                     resolved_name = target_name
+                    target_label = None
 
-                    if target_label is None:
-                        # No exact match. Don't blindly mint a stub — measure
-                        # similarity against in-scope nodes and let confidence
-                        # pick connect / ask / create (#93). ``list_existing_nodes``
-                        # is scope-filtered fail-closed, so candidates (and any
-                        # ``did_you_mean``) can never leak another tenant's names.
-                        candidates = await store.list_existing_nodes(
-                            limit=_FUZZY_CANDIDATE_SCAN_LIMIT, scope=scope
-                        )
-                        ranked = _rank_fuzzy_candidates(target_name, candidates)
-                        top = ranked[0] if ranked else None
-                        runner_up = ranked[1][0] if len(ranked) > 1 else 0.0
-                        unambiguous = (
-                            top is not None
-                            and top[0] >= _FUZZY_CONNECT_RATIO
-                            and (top[0] - runner_up) >= _FUZZY_CONNECT_MARGIN
-                        )
-
-                        if unambiguous:
-                            # Path 1 — near-certain match: connect to the
-                            # existing node, never silently. Use its real name
-                            # and label so the edge lands on the right node.
-                            _, target_label, resolved_name = top
+                    if decision.kind == "connect":
+                        target_label, resolved_name = decision.label, decision.name
+                        if decision.fuzzy:
                             relations_resolved.append(
                                 {
                                     "rel_type": rel_type_upper,
                                     "target": target_name,
                                     "resolved_to": resolved_name,
                                     "resolved_by": "fuzzy_match",
-                                    "score": round(top[0], 3),
+                                    "score": round(decision.score, 3),
                                 }
                             )
-                        elif top is not None:
-                            # Path 2 — grey zone: candidates exist but none
-                            # clearly wins. Refuse to guess; a wrong edge is
-                            # harder to detect than a missing one. Suggest and
-                            # move on without touching the graph.
-                            relations_ambiguous.append(
+                    elif decision.kind == "ask":
+                        # A wrong edge is harder to spot than a missing one:
+                        # suggest and move on without touching the graph.
+                        relations_ambiguous.append(
+                            {
+                                "rel_type": rel_type_upper,
+                                "target": target_name,
+                                "reason": decision.reason,
+                                "did_you_mean": decision.candidates,
+                            }
+                        )
+                        continue
+                    else:
+                        # Path 3 — nothing similar in scope: a stub is a
+                        # plausible intent. Prefer the caller's explicit
+                        # label (validated); otherwise infer from the
+                        # relation type. Key the stub canonically so a later
+                        # remember by the real key doesn't duplicate it.
+                        if explicit_label and explicit_label in _VALID_LABELS:
+                            target_label = explicit_label
+                        else:
+                            if explicit_label:
+                                logger.warning(
+                                    "Ignoring invalid stub label %r for %s; "
+                                    "inferring from relation %s",
+                                    explicit_label,
+                                    target_name,
+                                    rel_type_upper,
+                                )
+                            target_label = ObsidianSync._infer_stub_label(rel_type_upper)
+                        target_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
+                        created_as_stub = True
+                        try:
+                            await store.merge_node(
+                                target_label,
+                                target_key,
+                                target_name,
+                                _with_mcp_provenance({"status": "stub"}, scope),
+                            )
+                        except Exception as e:
+                            logger.warning("Could not create stub relation target: %s", e)
+                            relations_failed.append(
                                 {
                                     "rel_type": rel_type_upper,
                                     "target": target_name,
-                                    "did_you_mean": [
-                                        {"name": n, "label": lbl, "score": round(r, 3)}
-                                        for (r, lbl, n) in ranked[:_FUZZY_SUGGEST_LIMIT]
-                                    ],
+                                    "reason": "stub_creation_failed",
                                 }
                             )
                             continue
-                        else:
-                            # Path 3 — nothing similar in scope: a stub is a
-                            # plausible intent. Prefer the caller's explicit
-                            # label (validated); otherwise infer from the
-                            # relation type. Key the stub canonically so a later
-                            # remember by the real key doesn't duplicate it.
-                            if explicit_label and explicit_label in _VALID_LABELS:
-                                target_label = explicit_label
-                            else:
-                                if explicit_label:
-                                    logger.warning(
-                                        "Ignoring invalid stub label %r for %s; "
-                                        "inferring from relation %s",
-                                        explicit_label,
-                                        target_name,
-                                        rel_type_upper,
-                                    )
-                                target_label = ObsidianSync._infer_stub_label(rel_type_upper)
-                            target_key = "title" if target_label in TITLE_KEYED_LABELS else "name"
-                            created_as_stub = True
-                            try:
-                                await store.merge_node(
-                                    target_label,
-                                    target_key,
-                                    target_name,
-                                    _with_mcp_provenance({"status": "stub"}, scope),
-                                )
-                            except Exception as e:
-                                logger.warning("Could not create stub relation target: %s", e)
-                                relations_failed.append(
-                                    {
-                                        "rel_type": rel_type_upper,
-                                        "target": target_name,
-                                        "reason": "stub_creation_failed",
-                                    }
-                                )
-                                continue
 
                     if not created_as_stub:
                         # Canonicalise the target merge key the same way
@@ -1703,6 +1821,12 @@ def create_engrama_mcp(
                         )
                         if rel_result:
                             relations_created += 1
+                            if not created_as_stub:
+                                hint = await _hub_stub_hint(
+                                    store, target_label, target_key, resolved_name, scope
+                                )
+                                if hint:
+                                    enrich_hints.append(hint)
                             if created_as_stub:
                                 # Edge landed, but on a node we just invented.
                                 # The caller may have meant an existing node
@@ -1759,6 +1883,31 @@ def create_engrama_mcp(
                         except Exception:
                             pass
 
+        # --- DDR-006: tag anchoring and degree feedback ---
+        suggested_relations: list[dict[str, str]] = []
+        relations_from_tags: list[dict[str, str]] = []
+        tag_mode = tag_linking_mode()
+        if tag_mode != "off":
+            for s in await _tag_anchor_suggestions(
+                store, label, merge_key, merge_value, node_tags(props), scope
+            ):
+                if tag_mode == "auto" and await _link_anchor(
+                    store, label, merge_key, merge_value, s, scope
+                ):
+                    relations_created += 1
+                    relations_from_tags.append(s)
+                else:
+                    suggested_relations.append(s)
+        try:
+            degree = await store.node_degree(label, merge_key, merge_value, scope=scope)
+        except Exception as e:  # noqa: BLE001 — feedback must never break the write
+            logger.warning("Could not read degree for a %s node: %s", label, e)
+            degree = None
+
+        possible_dups: list[dict[str, Any]] = []
+        if dedupe_mode() != "off" and result.get("created"):
+            possible_dups = await _possible_duplicates(store, label, merge_value, vector, scope)
+
         # --- Proactivity: increment counter and check threshold ---
         result_data: dict[str, Any] = {
             "status": "ok",
@@ -1807,6 +1956,38 @@ def create_engrama_mcp(
                 f"created for them: {targets}. Pick the intended node from "
                 f"'did_you_mean' and re-relate with its exact name, or remember it "
                 f"first if it's genuinely new."
+            )
+        if degree is not None:
+            result_data["degree"] = degree
+            if degree == 0 and label not in RELATION_EXEMPT_LABELS:
+                result_data["orphan_warning"] = (
+                    f"this {label} has no relations, so the graph can't reach it from "
+                    "anything else. Link it with engrama_relate (or pass 'relations') "
+                    "to the project, concept or domain it belongs to."
+                )
+        if possible_dups:
+            result_data["possible_duplicate_of"] = possible_dups
+            result_data["possible_duplicate_note"] = (
+                "this new node looks like existing ones. If it is the same entity, "
+                "update that node instead and remove this one; if not, give it a more "
+                "distinctive name."
+            )
+        if suggested_relations:
+            result_data["suggested_relations"] = suggested_relations
+            result_data["suggested_relations_note"] = (
+                "tags on this node name existing nodes it isn't linked to. Create these "
+                "relations with engrama_relate if they're right (direction 'in' means the "
+                "anchor points at this node)."
+            )
+        if relations_from_tags:
+            result_data["relations_from_tags"] = relations_from_tags
+        if enrich_hints:
+            result_data["enrich_hints"] = enrich_hints
+            names = ", ".join(sorted({h["name"] for h in enrich_hints}))
+            result_data["enrich_hints_note"] = (
+                f"these nodes are still stubs but already connect several nodes: {names}. "
+                "Call engrama_remember on each with a 'summary' and 'details' so the "
+                "connections they hold are explained."
             )
         if relations_stubbed:
             result_data["relations_stubbed"] = relations_stubbed
@@ -2182,7 +2363,7 @@ def create_engrama_mcp(
         # would create or update the row; reports whether ``engrama_id``
         # would be injected based on the note's current frontmatter.
         if params.dry_run:
-            existing = await store.get_node(node_label, merge_key, merge_value)
+            existing = await store.get_node(node_label, merge_key, merge_value, scope=scope)
             return json.dumps(
                 {
                     "status": "ok",
@@ -2225,6 +2406,7 @@ def create_engrama_mcp(
                         merge_key,
                         merge_value,
                         embedding,
+                        owner=scope,
                     )
             except Exception as e:
                 logger.warning("Embed-on-sync failed for a %s node: %s", node_label, e)
@@ -2393,7 +2575,9 @@ def create_engrama_mcp(
                     # update, record which files would gain an engrama_id,
                     # and skip every write.
                     if params.dry_run:
-                        existing = await store.get_node(node_label, merge_key, merge_value)
+                        existing = await store.get_node(
+                            node_label, merge_key, merge_value, scope=scope
+                        )
                         if existing is None:
                             would_create_count += 1
                         else:
@@ -2686,331 +2870,60 @@ def create_engrama_mcp(
             pass
         judged = dismissed | approved
 
-        # --- Helper to run a query and create Insights ---
-        async def _run_pattern(
-            query_name: str,
-            detect_fn,
-            required_labels: list[str] | None = None,
-            any_labels: list[list[str]] | None = None,
-            min_label_count: dict[str, int] | None = None,
-            builder_fn=None,
-        ):
-            # Check if ALL required labels have data
-            for label in required_labels or []:
-                if not profile.get(label):
-                    queries_skipped.append(query_name)
-                    return
-            # Check any_labels: each entry is an OR-group — at least one must exist
-            for group in any_labels or []:
-                if not any(profile.get(lbl) for lbl in group):
-                    queries_skipped.append(query_name)
-                    return
-            if min_label_count:
-                for label, min_cnt in min_label_count.items():
-                    if profile.get(label, 0) < min_cnt:
-                        queries_skipped.append(query_name)
-                        return
-
-            queries_run.append(query_name)
+        # --- Step 3: Run applicable detectors (declared in core.reflection) ---
+        # Each store query only sees live nodes in the caller's scope
+        # (Spec 001 FR-12, DDR-008); ``select`` drops judged titles and caps
+        # every detector's output.
+        for detector in DETECTORS:
+            if not detector.applies(profile):
+                queries_skipped.append(detector.name)
+                continue
+            queries_run.append(detector.name)
+            if detector.name == "under_connected":
+                # A dismissed under-connected Insight stays dismissed even
+                # though its body changes between runs (BUG-007).
+                try:
+                    if await store.find_insight_by_source_query(
+                        "under_connected", statuses=["dismissed"], scope=scope
+                    ):
+                        continue
+                except Exception as e:
+                    logger.warning("Could not check dismissed under-connected Insight: %s", e)
             try:
-                records = await detect_fn()
+                records = await getattr(store, detector.store_method)(scope=scope)
             except Exception as e:
-                logger.warning("Reflect query %s failed: %s", query_name, e)
-                return
-
-            if builder_fn:
-                await builder_fn(records)
-
-        # --- Query builders ---
-
-        async def _build_cross_project(records):
-            for r in records:
-                title = (
-                    f"Solution transfer: {r['decision']} "
-                    f"({r['source_project']} → {r['target_project']})"
-                )
-                if title in judged:
-                    continue
-                body = (
-                    f'The open problem "{r["open_problem"]}" in project '
-                    f'"{r["target_project"]}" shares the concept '
-                    f'"{r["concept"]}" with a resolved problem in project '
-                    f'"{r["source_project"]}". The decision '
-                    f'"{r["decision"]}" may apply here.'
-                )
+                logger.warning("Reflect query %s failed: %s", detector.name, e)
+                continue
+            for draft in select(detector.build(records), judged):
                 await store.merge_node(
                     "Insight",
                     "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": 0.85,
-                            "status": "pending",
-                            "source_query": "cross_project_solution",
-                        },
-                        scope,
-                    ),
+                    draft.title,
+                    _with_mcp_provenance(draft.properties(), scope),
                 )
+                # Link the Insight to its evidence (DDR-008). A target that
+                # doesn't resolve in scope simply gets no edge.
+                for label, key_field, name in draft.about_targets():
+                    try:
+                        await store.merge_relation(
+                            "Insight",
+                            "title",
+                            draft.title,
+                            "ABOUT",
+                            label,
+                            key_field,
+                            name,
+                            scope=scope,
+                        )
+                    except Exception as e:
+                        logger.warning("Could not link Insight to %s: %s", label, e)
                 insights.append(
-                    {"query": "cross_project_solution", "title": title, "confidence": 0.85}
-                )
-
-        async def _build_shared_tech(records):
-            for r in records:
-                a_desc = f"{r['type_a']}:{r['entity_a']}"
-                b_desc = f"{r['type_b']}:{r['entity_b']}"
-                title = f"Shared technology: {r['technology']} ({a_desc} & {b_desc})"
-                if title in judged:
-                    continue
-                confidence = 0.75 if r["type_a"] != r["type_b"] else 0.6
-                body = (
-                    f"{a_desc} and {b_desc} both use {r['technology']}. "
-                    f"Consider sharing knowledge or materials between them."
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": confidence,
-                            "status": "pending",
-                            "source_query": "shared_technology",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append(
-                    {"query": "shared_technology", "title": title, "confidence": confidence}
-                )
-
-        async def _build_training(records):
-            for r in records:
-                issue_desc = f"{r['issue_type']}:{r['issue']}"
-                title = (
-                    f"Training opportunity: {r['course']} "
-                    f"covers {r['concept']} (relates to: {issue_desc})"
-                )
-                if title in judged:
-                    continue
-                body = (
-                    f'The {r["issue_type"].lower()} "{r["issue"]}" involves '
-                    f'the concept "{r["concept"]}", which is covered by the '
-                    f'course "{r["course"]}". Reviewing this material may help.'
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": 0.65,
-                            "status": "pending",
-                            "source_query": "training_opportunity",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append(
-                    {"query": "training_opportunity", "title": title, "confidence": 0.65}
-                )
-
-        async def _build_technique_transfer(records):
-            for r in records:
-                title = (
-                    f"Technique transfer: {r['technique']} "
-                    f"({r['source_domain']} → {r['target_domain']})"
-                )
-                if title in judged:
-                    continue
-                related = r["related_entities"]
-                confidence = min(0.5 + (related * 0.1), 0.9)
-                body = (
-                    f'The technique "{r["technique"]}" is used in '
-                    f'"{r["source_domain"]}" but not in '
-                    f'"{r["target_domain"]}". There are {related} '
-                    f"entities in {r['target_domain']} sharing concepts "
-                    f"with this technique."
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": confidence,
-                            "status": "pending",
-                            "source_query": "technique_transfer",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append(
-                    {"query": "technique_transfer", "title": title, "confidence": confidence}
-                )
-
-        async def _build_concept_clustering(records):
-            for r in records:
-                concept = r["concept"]
-                count = r["entity_count"]
-                sample = r["sample"]
-                title = f"Concept cluster: {concept} ({count} entities)"
-                if title in judged:
-                    continue
-                sample_desc = ", ".join(f"{s['label']}:{s['name']}" for s in (sample or [])[:5])
-                confidence = min(0.5 + (count * 0.05), 0.9)
-                body = (
-                    f'The concept "{concept}" connects {count} entities: '
-                    f"{sample_desc}. This cluster may reveal a pattern."
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": confidence,
-                            "status": "pending",
-                            "source_query": "concept_clustering",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append(
-                    {"query": "concept_clustering", "title": title, "confidence": confidence}
-                )
-
-        async def _build_stale(records):
-            for r in records:
-                name = r["name"]
-                title = f"Stale knowledge: {r['label']}:{name} (linked to {r['project']})"
-                if title in judged:
-                    continue
-                last_updated = r["last_updated"]
-                if hasattr(last_updated, "isoformat"):
-                    last_updated = last_updated.isoformat()[:10]
-                body = (
-                    f'The {r["label"]} "{name}" is connected to the active '
-                    f'project "{r["project"]}" via {r["rel"]}, but hasn\'t been '
-                    f"updated since {last_updated}. Consider reviewing or archiving."
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": 0.5,
-                            "status": "pending",
-                            "source_query": "stale_knowledge",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append({"query": "stale_knowledge", "title": title, "confidence": 0.5})
-
-        async def _build_under_connected(records):
-            if not records:
-                return
-            # BUG-007: use a stable title (no count) to avoid uniqueness
-            # constraint collisions when the node count changes between runs.
-            title = "Under-connected nodes need more relationships"
-
-            # Skip if already dismissed
-            if title in judged:
-                return
-            try:
-                dismissed_sq = await store.find_insight_by_source_query(
-                    "under_connected",
-                    statuses=["dismissed"],
-                    scope=scope,
-                )
-                if dismissed_sq:
-                    return
-            except Exception:
-                pass
-
-            names = [f"{r['label']}:{r['name']}" for r in records[:10]]
-            total = len(records)
-            body = (
-                f"Found {total} nodes with fewer than 2 relationships. "
-                f"Candidates for enrichment: {', '.join(names)}."
-            )
-            # MERGE on stable title — idempotent, updates body on repeat runs
-            await store.merge_node(
-                "Insight",
-                "title",
-                title,
-                _with_mcp_provenance(
                     {
-                        "body": body,
-                        "confidence": 0.4,
-                        "status": "pending",
-                        "source_query": "under_connected",
-                    },
-                    scope,
-                ),
-            )
-            insights.append({"query": "under_connected", "title": title, "confidence": 0.4})
-
-        # --- Step 3: Run applicable patterns ---
-        # Each detector is closed over the resolved scope so the pattern
-        # match only sees the caller's nodes (Spec 001 FR-12).
-        await _run_pattern(
-            "cross_project_solution",
-            lambda: store.detect_cross_project_solutions(scope=scope),
-            required_labels=["Problem", "Project"],
-            builder_fn=_build_cross_project,
-        )
-        await _run_pattern(
-            "shared_technology",
-            lambda: store.detect_shared_technology(scope=scope),
-            required_labels=["Technology"],
-            builder_fn=_build_shared_tech,
-        )
-        await _run_pattern(
-            "training_opportunity",
-            lambda: store.detect_training_opportunities(scope=scope),
-            any_labels=[["Problem", "Vulnerability"], ["Course"]],
-            builder_fn=_build_training,
-        )
-        await _run_pattern(
-            "technique_transfer",
-            lambda: store.detect_technique_transfer(scope=scope),
-            required_labels=["Technique"],
-            min_label_count={"Domain": 2},
-            builder_fn=_build_technique_transfer,
-        )
-        await _run_pattern(
-            "concept_clustering",
-            lambda: store.detect_concept_clusters(scope=scope),
-            required_labels=["Concept"],
-            builder_fn=_build_concept_clustering,
-        )
-        await _run_pattern(
-            "stale_knowledge",
-            lambda: store.detect_stale_knowledge(scope=scope),
-            any_labels=[["Project", "Course"]],
-            builder_fn=_build_stale,
-        )
-
-        # Under-connected: always run if enough nodes
-        total_nodes = sum(profile.values())
-        if total_nodes >= 5:
-            queries_run.append("under_connected")
-            try:
-                uc_records = await store.detect_under_connected_nodes(scope=scope)
-                await _build_under_connected(uc_records)
-            except Exception as e:
-                logger.warning("Under-connected query failed: %s", e)
-        else:
-            queries_skipped.append("under_connected")
+                        "query": draft.source_query,
+                        "title": draft.title,
+                        "confidence": draft.confidence,
+                    }
+                )
 
         # --- Proactivity: reset counter ---
         _proactive_state["last_reflect_at"] = _proactive_state.get("remember_count", 0)
@@ -3205,7 +3118,7 @@ def create_engrama_mcp(
             )
 
         try:
-            updated = await store.update_insight_status(params.title, new_status)
+            updated = await store.update_insight_status(params.title, new_status, scope=scope)
             if not updated:
                 return json.dumps(
                     {
@@ -3354,7 +3267,7 @@ def create_engrama_mcp(
 
         # Mark as synced in Neo4j
         try:
-            await store.mark_insight_synced(params.title, params.target_note)
+            await store.mark_insight_synced(params.title, params.target_note, scope=scope)
         except Exception as e:
             logger.warning("Could not mark insight as synced: %s", e)
 

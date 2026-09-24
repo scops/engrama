@@ -15,11 +15,20 @@ from neo4j import Record
 from neo4j.graph import Node, Relationship
 from neo4j.time import Date, DateTime, Duration, Time
 
-from engrama.backends.neo4j._cypher import escape_cypher_identifier
+from engrama.backends.neo4j import _reflect_cypher
+from engrama.backends.neo4j._cypher import escape_cypher_identifier, scoped_key_lookup
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.core.client import EngramaClient
+from engrama.core.health import tag_anchor_rows
+from engrama.core.resolve import name_fragments
 from engrama.core.schema import TITLE_KEYED_LABELS
-from engrama.core.scope import MemoryScope, scope_filter_cypher
+from engrama.core.scope import (
+    MemoryScope,
+    node_owner,
+    owner_filter_cypher,
+    scope_filter_cypher,
+)
+from engrama.core.stubs import clears_stub
 
 _NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 
@@ -31,7 +40,7 @@ _NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 # that string is written verbatim it clobbers the ``datetime()`` and the
 # property becomes STRING-typed, breaking ``duration.between(...)`` in
 # decay / ``query_at_date``. Enforce the invariant here. See #76.
-_SERVER_MANAGED_TIMESTAMPS = frozenset({"created_at", "updated_at"})
+_SERVER_MANAGED_TIMESTAMPS = frozenset({"created_at", "updated_at", "last_activity_at"})
 
 # Domain temporal properties a caller MAY set explicitly. When supplied
 # (notably by the importer, where they arrive as ISO strings) they must
@@ -136,6 +145,11 @@ class Neo4jGraphStore:
           "revived" node (conflict detection).  Callers may set it
           explicitly via *properties*.
 
+        The node is keyed on ``(label, key, owner)`` where the owner is the
+        ``org_id``/``user_id`` in ``properties`` (see
+        :func:`~engrama.core.scope.node_owner`), so two owners writing the
+        same name get two separate nodes.
+
         Parameters:
             label: The Neo4j node label (e.g. ``"Project"``).
             key_field: The merge key property (``"name"`` or ``"title"``).
@@ -148,6 +162,8 @@ class Neo4jGraphStore:
         Returns:
             A list with one dict shaped ``{"n": {"_id", "_labels", **props}}``.
         """
+        owner = node_owner(properties)
+
         # Extract temporal fields from properties (if supplied)
         valid_from = properties.pop("valid_from", None)
         confidence = properties.pop("confidence", None)
@@ -163,16 +179,28 @@ class Neo4jGraphStore:
             "n.updated_at = datetime()",
             "n.valid_from = $valid_from",
             "n.confidence = $confidence_val",
+            "n.last_activity_at = datetime()",
         ]
         set_clauses_match: list[str] = [
             "n.updated_at = datetime()",
+            "n.last_activity_at = datetime()",
         ]
+        if clears_stub(properties):
+            # Enriching a stub promotes it (DDR-006).
+            set_clauses_match.append(
+                "n.status = CASE WHEN n.status = 'stub' THEN 'active' ELSE n.status END"
+            )
 
         params: dict[str, Any] = {
             "merge_value": key_value,
             "valid_from": valid_from or "$$NOW$$",  # sentinel replaced below
             "confidence_val": confidence if confidence is not None else 1.0,
         }
+
+        # An explicit confidence is a statement about the fact, so it applies
+        # on update too (DDR-007); absent, an existing value is left alone.
+        if confidence is not None:
+            set_clauses_match.append("n.confidence = $confidence_val")
 
         # Use datetime() in Cypher for valid_from when not supplied
         if valid_from is None:
@@ -205,24 +233,65 @@ class Neo4jGraphStore:
         on_create = ", ".join(set_clauses_create)
         on_match = ", ".join(set_clauses_match)
 
-        query = (
-            f"MERGE (n:{label} {{{key_field}: $merge_value}}) "
-            f"ON CREATE SET {on_create} "
-            f"ON MATCH SET {on_match} "
-            "RETURN n"
-        )
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
+        if owner is not None and owner.org_id and owner.user_id:
+            # The owner is part of the MERGE pattern, so the scoped
+            # uniqueness constraint (name, org_id, user_id) backs it.
+            params.update(owner_params)
+            query = (
+                f"MERGE (n:{label} {{{key_field}: $merge_value, "
+                "org_id: $owner_org_id, user_id: $owner_user_id}) "
+                f"ON CREATE SET {on_create} "
+                f"ON MATCH SET {on_match} "
+                "RETURN n"
+            )
+        else:
+            # Identity-less or partial (legacy/admin) owner: MERGE can't
+            # express "property absent", so resolve the exact node first.
+            existing = self._client.run(
+                f"MATCH (n:{label} {{{key_field}: $merge_value}}) WHERE {owner_clause} "
+                "RETURN elementId(n) AS eid LIMIT 1",
+                {"merge_value": key_value, **owner_params},
+            )
+            if existing:
+                params["eid"] = existing[0]["eid"]
+                query = f"MATCH (n) WHERE elementId(n) = $eid SET {on_match} RETURN n"
+            else:
+                query = f"CREATE (n:{label} {{{key_field}: $merge_value}}) SET {on_create} RETURN n"
 
         return _records_to_dicts(self._client.run(query, params))
+
+    def node_degree(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+        scope: MemoryScope | None = None,
+    ) -> int | None:
+        """Substantive degree of the node visible in ``scope`` (own first);
+        edges to reflect-generated Insights don't count. ``None`` if unseen."""
+        cypher, params = scoped_key_lookup(label, key_field, scope)
+        cypher += (
+            " RETURN size([(n)-[]-(m) "
+            "WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) AS degree"
+        )
+        records = self._client.run(cypher, {"key_value": key_value, **params})
+        return records[0]["degree"] if records else None
 
     def get_node(
         self,
         label: str,
         key_field: str,
         key_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
-        """Retrieve a single node by its unique key."""
-        query = f"MATCH (n:{label} {{{key_field}: $key_value}}) RETURN n"
-        records = self._client.run(query, {"key_value": key_value})
+        """Retrieve a single node by ``(label, key)``.
+
+        Names are only unique per owner, so a tenant read passes ``scope``
+        (visible nodes only, own first); ``None`` is the unscoped admin lookup.
+        """
+        query, params = scoped_key_lookup(label, key_field, scope)
+        records = self._client.run(query + " RETURN n", {"key_value": key_value, **params})
         if records:
             return dict(records[0]["n"])
         return None
@@ -237,13 +306,14 @@ class Neo4jGraphStore:
         """Delete or archive a node.
 
         When ``soft=True``, sets ``status='archived'``, ``archived_at``
-        and ``updated_at``.  When ``soft=False``, detach-deletes the node.
+        and ``archived_reason`` (``updated_at`` is left alone: archiving is
+        not activity). When ``soft=False``, detach-deletes the node.
         """
         if soft:
             query = (
                 f"MATCH (n:{label} {{{key_field}: $key_value}}) "
                 "SET n.status = 'archived', n.archived_at = datetime(), "
-                "    n.updated_at = datetime() "
+                "    n.archived_reason = 'delete' "
                 "RETURN n"
             )
         else:
@@ -283,6 +353,8 @@ class Neo4jGraphStore:
         label: str | None = None,
     ) -> dict[str, int]:
         """Batch-apply exponential confidence decay to all nodes.
+
+        Deprecated (DDR-007): no longer called by Engrama; removed in a future release.
 
         For each node: ``new_confidence = confidence * exp(-rate * days_old)``
         where ``days_old = (now - updated_at)`` in days.
@@ -427,6 +499,8 @@ class Neo4jGraphStore:
             f"WITH a, b LIMIT 1 "
             f"MERGE (a)-[r:{rel_type}]->(b) "
             f"{set_clause}"
+            # Linking is activity on both endpoints (DDR-007).
+            "SET a.last_activity_at = datetime(), b.last_activity_at = datetime() "
             "RETURN type(r) AS rel_type"
         )
         return _records_to_dicts(self._client.run(query, params))
@@ -476,10 +550,76 @@ class Neo4jGraphStore:
                 "properties": props,
             }
 
+    def restore_timestamps(
+        self,
+        label: str,
+        key_value: str,
+        owner: MemoryScope | None,
+        created_at: str | None,
+        updated_at: str | None,
+        last_activity_at: str | None = None,
+    ) -> bool:
+        """Importer-only: put back the original ``created_at`` / ``updated_at``
+        (and ``last_activity_at``).
+
+        ``merge_node`` never takes these from a caller (#76), so an import
+        would otherwise date every node to the day it ran (DDR-007). This is
+        the trusted path for that one caller; ``None`` values are left alone.
+        """
+        # scope-exempt: import/migration path — addresses the exact owner's
+        # node that the importer just wrote.
+        key_field = "title" if label in TITLE_KEYED_LABELS else "name"
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
+        records = self._client.run(
+            f"MATCH (n:{label} {{{key_field}: $key_value}}) WHERE {owner_clause} "
+            "SET n.created_at = coalesce(datetime($created_at), n.created_at), "
+            "    n.updated_at = coalesce(datetime($updated_at), n.updated_at), "
+            "    n.last_activity_at = coalesce(datetime($last_activity_at), n.last_activity_at) "
+            "RETURN count(n) AS n",
+            {
+                "key_value": key_value,
+                "created_at": created_at,
+                "updated_at": updated_at,
+                "last_activity_at": last_activity_at,
+                **owner_params,
+            },
+        )
+        return bool(records and records[0]["n"])
+
+    def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        """Scoped nodes and edges for :func:`engrama.core.health.compute_health`.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty snapshot.
+        Only edges whose two endpoints are visible in ``scope`` are returned.
+        """
+        nodes = [dict(r) for r in self._client.run(*_reflect_cypher.health_nodes(scope))]
+        edges = [(r["a"], r["b"]) for r in self._client.run(*_reflect_cypher.health_edges(scope))]
+        return {"nodes": nodes, "edges": edges}
+
+    def name_candidates(
+        self, name: str, scope: MemoryScope | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """In-scope nodes sharing a name fragment with ``name`` (DDR-006)."""
+        frags = name_fragments(name)
+        if not frags:
+            return []
+        return [
+            dict(r)
+            for r in self._client.run(*_reflect_cypher.name_candidates(name, frags, scope, limit))
+        ]
+
+    def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
+        """Live anchor nodes in ``scope`` as ``{label, name}``."""
+        return [dict(r) for r in self._client.run(*_reflect_cypher.anchors(scope))]
+
+    def detect_tags_without_edge(self, scope: MemoryScope | None = None) -> list[dict[str, Any]]:
+        """Reflect detector: anchors named by tags on nodes not linked to them."""
+        return tag_anchor_rows(self.health_snapshot(scope))
+
     def iter_all_relations(self):
         """Yield every relationship as ``{from_label, from_key, from_value,
         rel_type, to_label, to_key, to_value}``. Mirrors the SQLite
-        backend's edge dump.
+        backend's edge dump, including the edge's ``org_id``/``user_id``.
         """
         records = self._client.run(
             "MATCH (a)-[r]->(b) "
@@ -494,7 +634,9 @@ class Neo4jGraphStore:
             "       type(r) AS rel_type, "
             "       to_label, "
             "       b.name  AS to_name, "
-            "       b.title AS to_title"
+            "       b.title AS to_title, "
+            "       r.org_id AS org_id, "
+            "       r.user_id AS user_id"
         )
         for r in records:
             from_field, from_value = (
@@ -513,6 +655,8 @@ class Neo4jGraphStore:
                 "to_label": r["to_label"],
                 "to_key": to_field,
                 "to_value": to_value,
+                "org_id": r["org_id"],
+                "user_id": r["user_id"],
             }
 
     def purge_all(self) -> None:
@@ -600,7 +744,11 @@ class Neo4jGraphStore:
             "node.tags AS tags, "
             "node.confidence AS confidence, "
             "node.trust_level AS trust_level, "
-            "toString(node.updated_at) AS updated_at "
+            "toString(node.updated_at) AS updated_at, "
+            "toString(node.last_activity_at) AS last_activity_at, "
+            "node.source_query AS source_query, "
+            "size([(node)--(m) WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) "
+            "AS degree "
             "ORDER BY score DESC LIMIT $limit"
         )
         params: dict[str, Any] = {
@@ -642,28 +790,6 @@ class Neo4jGraphStore:
         )
         return {r["label"]: r["cnt"] for r in records}
 
-    @staticmethod
-    def _scope_and(
-        node_vars: tuple[str, ...],
-        scope: MemoryScope | None,
-    ) -> tuple[str, dict[str, Any]]:
-        """Build ``AND (scope_n1) AND (scope_n2)...`` Cypher + params.
-
-        Returns ``("", {})`` for an empty scope so the caller can splice
-        the fragment unconditionally.
-        """
-        clauses: list[str] = []
-        params: dict[str, Any] = {}
-        for nv in node_vars:
-            clause, p = scope_filter_cypher(scope, nv)
-            if not clause:
-                continue
-            clauses.append(clause)
-            params.update(p)
-        if not clauses:
-            return "", {}
-        return "AND " + " AND ".join(clauses), params
-
     # ------------------------------------------------------------------
     # Schema operations
     # ------------------------------------------------------------------
@@ -699,11 +825,14 @@ class Neo4jGraphStore:
         name: str,
         *,
         purge: bool = False,
+        owner: MemoryScope | None = None,
     ) -> dict[str, Any]:
-        """Archive (or DETACH DELETE) a node by ``(label, name|title)``.
+        """Archive (or DETACH DELETE) a node by ``(label, name|title, owner)``.
 
         The merge-key (``name`` vs ``title``) is selected from
-        :data:`TITLE_KEYED_LABELS`.
+        :data:`TITLE_KEYED_LABELS`. Names are only unique per owner, so
+        ``owner`` pins the caller's own node. ``None`` targets the
+        identity-less node.
 
         Returns a dict with:
 
@@ -712,24 +841,26 @@ class Neo4jGraphStore:
           ``0`` when archiving.
         """
         merge_key = "title" if label in TITLE_KEYED_LABELS else "name"
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
+        params = {"name": name, **owner_params}
 
         if purge:
             query = (
-                f"MATCH (n:{label} {{{merge_key}: $name}}) "
+                f"MATCH (n:{label} {{{merge_key}: $name}}) WHERE {owner_clause} "
                 "DETACH DELETE n "
                 "RETURN count(*) AS deleted"
             )
-            records = self._client.run(query, {"name": name})
+            records = self._client.run(query, params)
             deleted = records[0]["deleted"] if records else 0
             return {"matched": deleted > 0, "deleted": deleted}
 
         query = (
-            f"MATCH (n:{label} {{{merge_key}: $name}}) "
+            f"MATCH (n:{label} {{{merge_key}: $name}}) WHERE {owner_clause} "
             "SET n.status = 'archived', n.archived_at = datetime(), "
-            "    n.updated_at = datetime() "
+            "    n.archived_reason = 'forget' "
             "RETURN n"
         )
-        records = self._client.run(query, {"name": name})
+        records = self._client.run(query, params)
         return {"matched": len(records) > 0, "deleted": 0}
 
     def archive_nodes_older_than(
@@ -759,7 +890,7 @@ class Neo4jGraphStore:
                 "  AND n.updated_at < datetime() - duration({days: $days}) "
                 "  AND (n.status IS NULL OR n.status <> 'archived') "
                 "SET n.status = 'archived', n.archived_at = datetime(), "
-                "    n.updated_at = datetime() "
+                "    n.archived_reason = 'ttl' "
                 "RETURN count(n) AS affected"
             )
 
@@ -785,7 +916,7 @@ class Neo4jGraphStore:
         where_sql = f"AND {scope_clause} " if scope_clause else ""
         records = self._client.run(
             "MATCH (i:Insight {status: $status}) "
-            f"WHERE 1=1 {where_sql}"
+            f"WHERE i.source_query IS NOT NULL {where_sql}"
             "RETURN i.title AS title, i.body AS body, "
             "       i.confidence AS confidence, "
             "       i.source_query AS source_query, "
@@ -796,13 +927,19 @@ class Neo4jGraphStore:
         )
         return [dict(r) for r in records]
 
-    def update_insight_status(self, title: str, new_status: str) -> bool:
+    def update_insight_status(
+        self, title: str, new_status: str, scope: MemoryScope | None = None
+    ) -> bool:
         """Set ``status`` and the matching timestamp (``approved_at`` /
         ``dismissed_at``) on an Insight node.
+
+        Titles are templated and only unique per owner, so with ``scope``
+        exactly one Insight visible in it is updated (own first).
         """
         ts_field = "approved_at" if new_status == "approved" else "dismissed_at"
+        match, params = scoped_key_lookup("Insight", "title", scope, var="i")
         query = (
-            "MATCH (i:Insight {title: $title}) "
+            f"{match} "
             f"SET i.status = $new_status, "
             f"    i.{ts_field} = datetime(), "
             "    i.updated_at = datetime() "
@@ -810,7 +947,7 @@ class Neo4jGraphStore:
         )
         records = self._client.run(
             query,
-            {"title": title, "new_status": new_status},
+            {"key_value": title, "new_status": new_status, **params},
         )
         return len(records) > 0
 
@@ -839,17 +976,21 @@ class Neo4jGraphStore:
             return dict(records[0])
         return None
 
-    def mark_insight_synced(self, title: str, obsidian_path: str) -> bool:
+    def mark_insight_synced(
+        self, title: str, obsidian_path: str, scope: MemoryScope | None = None
+    ) -> bool:
         """Set ``obsidian_path`` + ``synced_at`` + ``updated_at`` on an
-        Insight node.  Returns ``True`` if the Insight existed.
+        Insight node (scoped like :meth:`update_insight_status`).  Returns
+        ``True`` if the Insight existed.
         """
+        match, params = scoped_key_lookup("Insight", "title", scope, var="i")
         records = self._client.run(
-            "MATCH (i:Insight {title: $title}) "
+            f"{match} "
             "SET i.obsidian_path = $path, "
             "    i.synced_at = datetime(), "
             "    i.updated_at = datetime() "
             "RETURN i.title AS title",
-            {"title": title, "path": obsidian_path},
+            {"key_value": title, "path": obsidian_path, **params},
         )
         return len(records) > 0
 
@@ -930,152 +1071,65 @@ class Neo4jGraphStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Open Problem shares a Concept with a resolved Problem in a
-        different Project that has a Decision, within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("pB", "open", "c", "resolved", "d", "pA"), scope)
-        cypher = (
-            "MATCH (pB:Project)-[:HAS]->(open:Problem {status: $open_status}) "
-            "MATCH (open)-[:INSTANCE_OF|APPLIES]->(c:Concept)"
-            "<-[:INSTANCE_OF|APPLIES]-(resolved:Problem {status: $resolved_status}) "
-            "MATCH (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project) "
-            f"WHERE pA <> pB {scope_sql} "
-            "RETURN pB.name AS target_project, open.title AS open_problem, "
-            "d.title AS decision, pA.name AS source_project, c.name AS concept"
-        )
-        records = self._client.run(
-            cypher,
-            {
-                "open_status": "open",
-                "resolved_status": "resolved",
-                **scope_params,
-            },
-        )
-        return [dict(r) for r in records]
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.cross_project_solutions``)."""
+        cypher, params = _reflect_cypher.cross_project_solutions(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
 
     def detect_shared_technology(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Two distinct entities use the same Technology, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("a", "b", "t"), scope)
-        cypher = (
-            "MATCH (a)-[:USES|TEACHES|COMPOSED_OF]->(t:Technology)"
-            "<-[:USES|TEACHES|COMPOSED_OF]-(b) "
-            "WHERE id(a) < id(b) "
-            f"AND NOT a:Insight AND NOT b:Insight {scope_sql} "
-            "RETURN coalesce(a.name, a.title) AS entity_a, labels(a)[0] AS type_a, "
-            "coalesce(b.name, b.title) AS entity_b, labels(b)[0] AS type_b, "
-            "t.name AS technology"
-        )
-        records = self._client.run(cypher, scope_params)
-        return [dict(r) for r in records]
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.shared_technology``)."""
+        cypher, params = _reflect_cypher.shared_technology(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
 
     def detect_training_opportunities(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """A Vulnerability or open Problem shares a Concept with a Course,
-        within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("issue", "c", "course"), scope)
-        cypher = (
-            "MATCH (issue)-[:INSTANCE_OF|APPLIES]->(c:Concept)<-[:COVERS]-(course:Course) "
-            "WHERE ((issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status)) "
-            f"{scope_sql} "
-            "RETURN coalesce(issue.title, issue.name) AS issue, "
-            "labels(issue)[0] AS issue_type, c.name AS concept, course.name AS course"
-        )
-        records = self._client.run(cypher, {"open_status": "open", **scope_params})
-        return [dict(r) for r in records]
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.training_opportunities``)."""
+        cypher, params = _reflect_cypher.training_opportunities(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
 
     def detect_technique_transfer(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Technique used in domain A could apply in domain B, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("t", "d1", "d2", "other"), scope)
-        cypher = (
-            "MATCH (t:Technique)-[:IN_DOMAIN]->(d1:Domain) "
-            "MATCH (d2:Domain) WHERE d1 <> d2 "
-            "AND NOT EXISTS { MATCH (t)-[:IN_DOMAIN]->(d2) } "
-            "MATCH (other)-[:IN_DOMAIN]->(d2) "
-            "WHERE (other)-[:INSTANCE_OF|APPLIES]->(:Concept)<-[:INSTANCE_OF|APPLIES]-(t) "
-            f"{scope_sql} "
-            "RETURN t.name AS technique, d1.name AS source_domain, "
-            "d2.name AS target_domain, count(other) AS related_entities "
-            "ORDER BY related_entities DESC LIMIT 10"
-        )
-        records = self._client.run(cypher, scope_params)
-        return [dict(r) for r in records]
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.technique_transfer``)."""
+        cypher, params = _reflect_cypher.technique_transfer(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
 
     def detect_concept_clusters(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Concept connected to >= 3 entities, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("c", "n"), scope)
-        cypher = (
-            "MATCH (c:Concept)<-[:INSTANCE_OF|APPLIES]-(n) "
-            f"WHERE 1=1 {scope_sql} "
-            "WITH c, collect(DISTINCT {name: coalesce(n.name, n.title), "
-            "label: labels(n)[0]}) AS connected, count(n) AS cnt "
-            "WHERE cnt >= 3 "
-            "RETURN c.name AS concept, cnt AS entity_count, connected[..5] AS sample "
-            "ORDER BY cnt DESC LIMIT 10"
-        )
-        records = self._client.run(cypher, scope_params)
-        return [dict(r) for r in records]
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.concept_clusters``)."""
+        cypher, params = _reflect_cypher.concept_clusters(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
 
     def detect_stale_knowledge(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Nodes 90d+ stale or low-confidence connected to active
-        Project/Course, within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("n", "active"), scope)
-        cypher = (
-            "MATCH (n)-[r]-(active) "
-            "WHERE (active:Project OR active:Course) "
-            "AND (active.status IS NULL OR active.status IN [$active_status, 'active']) "
-            "AND ("
-            "  n.updated_at < datetime() - duration({days: 90}) "
-            "  OR (n.confidence IS NOT NULL AND n.confidence < 0.3)"
-            ") "
-            f"AND NOT n:Project AND NOT n:Course AND NOT n:Domain {scope_sql} "
-            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-            "n.updated_at AS last_updated, n.confidence AS confidence, "
-            "active.name AS project, type(r) AS rel "
-            "ORDER BY coalesce(n.confidence, 1.0) ASC, n.updated_at ASC LIMIT 15"
-        )
-        records = self._client.run(cypher, {"active_status": "active", **scope_params})
-        return [dict(r) for r in records]
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.stale_knowledge``)."""
+        cypher, params = _reflect_cypher.stale_knowledge(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
+
+    def detect_hub_stubs(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.hub_stubs``)."""
+        cypher, params = _reflect_cypher.hub_stubs(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
 
     def detect_under_connected_nodes(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Nodes with fewer than 2 *substantive* relationships, within ``scope``.
-
-        Edges to neighbours with ``status = 'stub'`` are not counted —
-        stubs are placeholder nodes and treating them as real
-        connections hides genuinely under-connected nodes.
-        """
-        scope_sql, scope_params = self._scope_and(("n",), scope)
-        cypher = (
-            "MATCH (n) WHERE NOT n:Domain AND NOT n:Insight "
-            "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
-            f"AND n.status <> 'archived' {scope_sql} "
-            "WITH n, size([(n)-[]-(m) "
-            "WHERE coalesce(m.status, 'active') <> 'stub' | 1]) AS rel_count "
-            "WHERE rel_count < 2 "
-            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-            "rel_count, n.created_at AS created "
-            "ORDER BY n.created_at DESC LIMIT 15"
-        )
-        records = self._client.run(cypher, scope_params)
-        return [dict(r) for r in records]
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.under_connected_nodes``)."""
+        cypher, params = _reflect_cypher.under_connected_nodes(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
 
     # ------------------------------------------------------------------
     # Associate (skills/associate.py)
@@ -1117,13 +1171,13 @@ class Neo4jGraphStore:
         Differs from :meth:`archive_node_by_name`: matches via
         ``$label IN labels(n)`` rather than ``(n:Label {name})``.  Sets
         the same archive shape (``status`` + ``archived_at`` +
-        ``updated_at``) as the other soft-archive methods.  Returns
+        ``archived_reason``) as the other soft-archive methods.  Returns
         ``True`` if a node was matched.
         """
         records = self._client.run(
             "MATCH (n {name: $name}) WHERE $label IN labels(n) "
             "SET n.status = 'archived', n.archived_at = datetime(), "
-            "    n.updated_at = datetime() "
+            "    n.archived_reason = 'missing_note' "
             "RETURN n.name AS name",
             {"name": name, "label": label},
         )

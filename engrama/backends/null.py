@@ -36,8 +36,12 @@ class NullGraphStore:
         label: str,
         key_field: str,
         key_value: str,
+        scope: Any = None,
     ) -> dict[str, Any] | None:
         return None
+
+    def health_snapshot(self, scope: Any = None) -> dict[str, Any]:
+        return {"nodes": [], "edges": []}
 
     def delete_node(
         self,

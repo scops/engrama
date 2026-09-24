@@ -13,6 +13,9 @@ from engrama.backends.neo4j.backend import Neo4jGraphStore
 from engrama.core.client import EngramaClient
 from engrama.core.scope import MemoryScope
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # Spec 001: reads are fail-closed — a node is only visible under a matching
 # ``(org_id, user_id)`` scope. The raw store does not stamp identity, so these
 # tests write the scope as plain node properties and read under the same scope.

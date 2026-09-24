@@ -24,7 +24,7 @@ import logging
 from typing import Any
 
 from engrama.core.client import EngramaClient
-from engrama.core.scope import MemoryScope, scope_filter_cypher
+from engrama.core.scope import MemoryScope, owner_filter_cypher, scope_filter_cypher
 
 logger = logging.getLogger("engrama.backends.neo4j.vector")
 
@@ -90,20 +90,25 @@ class Neo4jVectorStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: MemoryScope | None = None,
     ) -> bool:
-        """Store an embedding on a node identified by label + key.
+        """Store an embedding on a node identified by label + key + owner.
 
         This is a convenience method used by the engine's embed-on-write
         path, where we know the label and merge key but not the elementId.
+        Names are only unique per owner, so ``owner`` (the node's
+        ``org_id``/``user_id``) pins the exact node; ``None`` targets the
+        identity-less node of that name.
 
         Returns:
             ``True`` if the node was found and updated.
         """
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
         records = self._client.run(
-            f"MATCH (n:{label} {{{key_field}: $key_value}}) "
+            f"MATCH (n:{label} {{{key_field}: $key_value}}) WHERE {owner_clause} "
             "SET n.embedding = $embedding, n:Embedded "
             "RETURN elementId(n) AS eid",
-            {"key_value": key_value, "embedding": embedding},
+            {"key_value": key_value, "embedding": embedding, **owner_params},
         )
         return len(records) > 0
 
@@ -138,7 +143,12 @@ class Neo4jVectorStore:
             "primary_label AS label, "
             "COALESCE(node.name, node.title) AS name, "
             "score, "
-            "node.trust_level AS trust_level "
+            "node.trust_level AS trust_level, "
+            "toString(node.updated_at) AS updated_at, "
+            "toString(node.last_activity_at) AS last_activity_at, "
+            "node.source_query AS source_query, "
+            "size([(node)--(m) WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) "
+            "AS degree "
             "ORDER BY score DESC "
             "LIMIT $limit"
         )
@@ -197,9 +207,9 @@ class Neo4jVectorStore:
     # ------------------------------------------------------------------
 
     def iter_all_vectors(self):
-        """Yield ``{label, key_field, key_value, vector}`` for every
-        ``:Embedded`` node, resolved to the primary label + merge key so
-        the dump is portable across backends.
+        """Yield ``{label, key_field, key_value, org_id, user_id, vector}``
+        for every ``:Embedded`` node, resolved to the primary label + merge
+        key (plus owner) so the dump is portable across backends.
         """
         # scope-exempt: migration/export path — needed by ``engrama export``
         # to dump every embedding regardless of tenant. Never called from a
@@ -211,7 +221,9 @@ class Neo4jVectorStore:
             "RETURN label, "
             "       n.name      AS name, "
             "       n.title     AS title, "
-            "       n.embedding AS embedding"
+            "       n.embedding AS embedding, "
+            "       n.org_id    AS org_id, "
+            "       n.user_id   AS user_id"
         )
         for r in records:
             name = r["name"]
@@ -226,6 +238,8 @@ class Neo4jVectorStore:
                 "label": r["label"],
                 "key_field": key_field,
                 "key_value": key_value,
+                "org_id": r["org_id"],
+                "user_id": r["user_id"],
                 "vector": list(r["embedding"] or []),
             }
 

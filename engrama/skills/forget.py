@@ -48,7 +48,9 @@ class ForgetSkill:
             A dict with ``label``, ``name``, ``action`` (``"archived"``
             or ``"deleted"``), and ``matched`` (bool).
         """
-        result = engine._store.archive_node_by_name(label, name, purge=purge)
+        result = engine._store.archive_node_by_name(
+            label, name, purge=purge, owner=engine.default_scope
+        )
         return {
             "label": label,
             "name": name,

@@ -14,7 +14,7 @@ import sqlite3
 import struct
 from typing import Any
 
-from engrama.core.scope import MemoryScope, scope_filter_sql
+from engrama.core.scope import MemoryScope, owner_filter_sql, scope_filter_sql
 
 logger = logging.getLogger("engrama.backends.sqlite.vector")
 
@@ -109,20 +109,22 @@ class SqliteVecStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: MemoryScope | None = None,
     ) -> bool:
-        """Engine convenience: look up the node by ``(label, key_value)``
-        and store the embedding against its id.
+        """Engine convenience: look up the node by ``(label, key_value,
+        owner)`` and store the embedding against its id.
+
+        Names are only unique per owner, so ``owner`` (the node's
+        ``org_id``/``user_id``) pins the exact node the caller just wrote;
+        ``None`` targets the identity-less node of that name.
         """
-        # scope-exempt: internal embed-on-write helper. The caller (engine)
-        # has already passed the fail-closed write guard for this same
-        # (label, key_value), so the node we're about to vectorise belongs
-        # to the scope that just wrote it. The lookup just resolves the
-        # nodes.id needed for the vec0 row.
         if self._dimensions == 0:
             return False
+        owner_clause, owner_params = owner_filter_sql(owner, "nodes")
         cur = self._conn.execute(
-            "SELECT id FROM nodes WHERE label = ? AND key_value = ?",
-            (label, key_value),
+            "SELECT id FROM nodes "
+            f"WHERE label = :label AND key_value = :key_value AND {owner_clause}",
+            {"label": label, "key_value": key_value, **owner_params},
         )
         row = cur.fetchone()
         if row is None:
@@ -131,6 +133,20 @@ class SqliteVecStore:
             [(str(row[0] if not isinstance(row, sqlite3.Row) else row["id"]), embedding)]
         )
         return True
+
+    def get_vectors(self, node_ids: list[str]) -> dict[str, list[float]]:
+        """Stored embeddings keyed by node id (as a string)."""
+        # scope-exempt: resolves vectors for ids the caller already obtained
+        # from a scoped search; no node rows are read.
+        if self._dimensions == 0 or not self._index_ready or not node_ids:
+            return {}
+        ids = [int(i) for i in node_ids]
+        marks = ", ".join("?" for _ in ids)
+        fmt = f"<{self._dimensions}f"
+        rows = self._conn.execute(
+            f"SELECT node_id, embedding FROM {self._index_name} WHERE node_id IN ({marks})", ids
+        )
+        return {str(r[0]): list(struct.unpack(fmt, r[1])) for r in rows}
 
     def delete_vectors(self, node_ids: list[str]) -> int:
         if self._dimensions == 0 or not node_ids or not self._index_ready:
@@ -158,9 +174,10 @@ class SqliteVecStore:
     # ------------------------------------------------------------------
 
     def iter_all_vectors(self):
-        """Yield ``{label, key_field, key_value, vector}`` for every stored
-        embedding, resolved against the nodes table so the dump is
-        portable across backends.
+        """Yield ``{label, key_field, key_value, org_id, user_id, vector}``
+        for every stored embedding, resolved against the nodes table so the
+        dump is portable across backends. The owner pins the vector to the
+        right node on import, since names are only unique per owner.
         """
         # scope-exempt: migration/export path — needed by ``engrama export``
         # to dump every embedding regardless of tenant. Never called from a
@@ -169,7 +186,9 @@ class SqliteVecStore:
             return
         cur = self._conn.execute(
             f"""
-            SELECT n.label, n.key_field, n.key_value, v.embedding
+            SELECT n.label, n.key_field, n.key_value, v.embedding,
+                   json_extract(n.props, '$.org_id')  AS org_id,
+                   json_extract(n.props, '$.user_id') AS user_id
               FROM {self._index_name} v
               JOIN nodes n ON n.id = v.node_id
              ORDER BY n.id
@@ -183,6 +202,8 @@ class SqliteVecStore:
                 "label": row["label"],
                 "key_field": row["key_field"],
                 "key_value": row["key_value"],
+                "org_id": row["org_id"],
+                "user_id": row["user_id"],
                 "vector": list(struct.unpack(fmt, blob)),
             }
 
@@ -213,6 +234,15 @@ class SqliteVecStore:
                        json_extract(n.props, '$.tags')          AS tags,
                        json_extract(n.props, '$.confidence')    AS confidence,
                        json_extract(n.props, '$.trust_level')   AS trust_level,
+                       json_extract(n.props, '$.last_activity_at') AS last_activity_at,
+                       json_extract(n.props, '$.source_query')  AS source_query,
+                       (SELECT COUNT(*) FROM edges e
+                          JOIN nodes m ON m.id = CASE WHEN e.from_id = n.id
+                                                     THEN e.to_id ELSE e.from_id END
+                         WHERE (e.from_id = n.id OR e.to_id = n.id)
+                           AND NOT (m.label = 'Insight'
+                                    AND json_extract(m.props, '$.source_query') IS NOT NULL)
+                       )                                        AS degree,
                        n.updated_at                             AS updated_at
                 FROM {self._index_name} v
                 JOIN nodes n ON n.id = v.node_id
@@ -251,6 +281,9 @@ class SqliteVecStore:
                     "confidence": r["confidence"],
                     "trust_level": r["trust_level"],
                     "updated_at": r["updated_at"],
+                    "last_activity_at": r["last_activity_at"],
+                    "source_query": r["source_query"],
+                    "degree": r["degree"],
                 }
             )
         return results

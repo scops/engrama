@@ -29,8 +29,8 @@ load_dotenv(_PROJECT_ROOT / ".env")
 
 _MCP_EXTRA_HINT = (
     "engrama-mcp requires the 'mcp' extra. "
-    "Install with: uv sync --extra mcp "
-    "(or `pip install engrama[mcp]` once Engrama ships on PyPI)."
+    "Install with: pip install 'engrama[mcp]' "
+    "(or uv sync --extra mcp from a source checkout)."
 )
 
 

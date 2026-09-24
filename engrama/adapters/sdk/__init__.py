@@ -421,16 +421,12 @@ class Engrama:
         max_age_days: int = 0,
         label: str | None = None,
     ) -> dict:
-        """Apply exponential confidence decay to all nodes.
+        """Deprecated: stored confidence no longer decays (DDR-007).
 
-        Args:
-            rate: Decay rate (0.01 ≈ 63 % after 100 days).
-            min_confidence: Archive nodes below this threshold.
-            max_age_days: Archive nodes older than this.
-            label: Restrict to a specific label.
-
-        Returns:
-            Dict with ``decayed`` and ``archived`` counts.
+        Kept for one minor release so existing callers keep working. It
+        changes nothing, emits a :class:`DeprecationWarning` and always
+        returns ``{"decayed": 0, "archived": 0}``. Recency is applied when
+        ranking search results instead.
         """
         return self._engine.decay_scores(
             rate=rate,
@@ -450,6 +446,23 @@ class Engrama:
             List of :class:`Insight` dataclasses created or updated.
         """
         return self._reflect.run(self._engine)
+
+    # ------------------------------------------------------------------
+    # Health
+    # ------------------------------------------------------------------
+
+    def health(self) -> dict:
+        """Read-only structural health report for this instance's scope.
+
+        Returns:
+            The report from :func:`engrama.core.health.compute_health`:
+            orphans, hub stubs, components, duplicate candidates, tags
+            without edges, archived bridges and schema gaps.
+        """
+        from engrama.core.health import compute_health
+
+        snapshot = self._store.health_snapshot(scope=self._engine.default_scope)
+        return compute_health(snapshot["nodes"], snapshot["edges"])
 
     # ------------------------------------------------------------------
     # Proactive (Insight lifecycle)

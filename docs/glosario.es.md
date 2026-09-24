@@ -113,7 +113,7 @@ La operación de mirar el grafo en busca de patrones recurrentes y producir Insi
 Leer un documento o conversación y extraer automáticamente nodos y relaciones para el grafo. Atajo frente a poblar a mano con `remember` + `relate`.
 
 **Confidence decay**
-Mecanismo opcional que reduce con el tiempo el peso de los nodos no reforzados, simulando el olvido. `engrama decay --rate 0.01` aplica un decaimiento suave; con un mínimo bajo, archiva nodos casi olvidados.
+Mecanismo retirado ([DDR-007](./ddr-007.md)) que reducía en el almacenamiento la confianza de los nodos no reforzados y los archivaba. `engrama decay` sigue existiendo como operación obsoleta que no hace nada: la relevancia en el tiempo se calcula al consultar y nada se archiva automáticamente.
 
 **TTL (Time To Live)**
 Tiempo de vida de un nodo. `forget_by_ttl(..., days=365)` elimina (o purga) los nodos no tocados en un año.

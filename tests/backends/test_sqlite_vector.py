@@ -44,7 +44,7 @@ class _ScopedGraph:
 
 
 class _ScopedVec:
-    """Forward scope to ``search_vectors`` / ``search_similar``; pass everything else."""
+    """Forward scope to searches and owner to ``store_vector_by_key``; pass the rest."""
 
     def __init__(self, inner: SqliteVecStore, scope: MemoryScope) -> None:
         self._inner = inner
@@ -55,6 +55,11 @@ class _ScopedVec:
 
     def search_vectors(self, query_embedding, limit=10, scope=None):
         return self._inner.search_vectors(query_embedding, limit=limit, scope=scope or self._scope)
+
+    def store_vector_by_key(self, label, key_field, key_value, embedding, owner=None):
+        return self._inner.store_vector_by_key(
+            label, key_field, key_value, embedding, owner=owner or self._scope
+        )
 
     def search_similar(self, query_embedding, limit=10, scope=None):
         return self._inner.search_similar(query_embedding, limit=limit, scope=scope or self._scope)

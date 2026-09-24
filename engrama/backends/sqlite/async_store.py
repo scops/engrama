@@ -109,17 +109,52 @@ class SqliteAsyncStore:
         created = n.get("created_at") == n.get("updated_at")
         return {"node": n, "created": created}
 
+    async def name_candidates(
+        self, name: str, scope: MemoryScope | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.name_candidates, name, scope, limit)
+
+    async def get_vectors(self, node_ids: list[str]) -> dict[str, list[float]]:
+        """Stored embeddings for ``node_ids`` (ids as returned by
+        :meth:`search_similar`); ids without a vector are omitted."""
+        return await self._run(self._vector.get_vectors, node_ids)
+
+    async def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        return await self._run(self._sync.health_snapshot, scope)
+
+    async def list_anchors(self, scope: MemoryScope | None = None) -> list[dict[str, str]]:
+        return await self._run(self._sync.list_anchors, scope)
+
+    async def detect_tags_without_edge(
+        self, scope: MemoryScope | None = None
+    ) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_tags_without_edge, scope)
+
+    async def detect_hub_stubs(self, scope: MemoryScope | None = None) -> list[dict[str, Any]]:
+        return await self._run(self._sync.detect_hub_stubs, scope)
+
+    async def node_degree(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+        scope: MemoryScope | None = None,
+    ) -> int | None:
+        return await self._run(self._sync.node_degree, label, key_field, key_value, scope)
+
     async def get_node(
         self,
         label: str,
         key_field: str,
         key_value: str,
+        scope: MemoryScope | None = None,
     ) -> dict[str, Any] | None:
         return await self._run(
             self._sync.get_node,
             label,
             key_field,
             key_value,
+            scope,
         )
 
     async def delete_node(
@@ -367,22 +402,26 @@ class SqliteAsyncStore:
         self,
         title: str,
         new_status: str,
+        scope: MemoryScope | None = None,
     ) -> bool:
         return await self._run(
             self._sync.update_insight_status,
             title,
             new_status,
+            scope,
         )
 
     async def mark_insight_synced(
         self,
         title: str,
         obsidian_path: str,
+        scope: MemoryScope | None = None,
     ) -> bool:
         return await self._run(
             self._sync.mark_insight_synced,
             title,
             obsidian_path,
+            scope,
         )
 
     async def find_insight_by_source_query(
@@ -454,6 +493,7 @@ class SqliteAsyncStore:
         key_field: str,
         key_value: str,
         embedding: list[float],
+        owner: MemoryScope | None = None,
     ) -> bool:
         return await self._run(
             self._vector.store_vector_by_key,
@@ -461,6 +501,7 @@ class SqliteAsyncStore:
             key_field,
             key_value,
             embedding,
+            owner,
         )
 
     async def list_unembedded_nodes(
@@ -498,7 +539,11 @@ class SqliteAsyncStore:
                 "summary": r.get("summary", ""),
                 "tags": r.get("tags"),
                 "confidence": r.get("confidence"),
+                "trust_level": r.get("trust_level"),
                 "updated_at": r.get("updated_at"),
+                "last_activity_at": r.get("last_activity_at"),
+                "source_query": r.get("source_query"),
+                "degree": r.get("degree"),
             }
             for r in rows
         ]

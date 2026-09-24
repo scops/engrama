@@ -17,6 +17,7 @@ It delegates all storage operations to a ``GraphStore`` backend (see
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any
 
 from engrama.core.client import EngramaClient
@@ -214,7 +215,9 @@ class EngramaEngine:
             try:
                 store_by_key = getattr(self._vector_store, "store_vector_by_key", None)
                 if store_by_key:
-                    store_by_key(label, merge_key, merge_value, embedding)
+                    # Names are only unique per owner: pin the vector to the
+                    # node this scope just wrote.
+                    store_by_key(label, merge_key, merge_value, embedding, owner=effective_scope)
             except Exception as e:
                 logger.warning("Vector store failed for a %s node: %s", label, e)
 
@@ -323,27 +326,24 @@ class EngramaEngine:
         max_age_days: int = 0,
         label: str | None = None,
     ) -> dict[str, int]:
-        """Batch-apply confidence decay (delegates to the backend).
+        """Deprecated: stored confidence no longer decays (DDR-007).
+
+        Recency is a read-time ranking signal and nothing is archived
+        automatically, so this changes nothing. It stays for one minor
+        release so existing callers keep working, and always reports zero.
 
         Returns:
-            Dict with ``decayed`` and ``archived`` counts.
+            ``{"decayed": 0, "archived": 0}``.
         """
-        # ``label`` is interpolated into Cypher by the backend, so validate it
-        # against the schema whitelist before it reaches the store — never let
-        # an unchecked label string into the query (same guarantee as
-        # ``merge_node``).
         if label is not None:
             self.sanitiser.validate_label(label)
-        fn = getattr(self._store, "decay_scores", None)
-        if fn is None:
-            logger.warning("Backend does not support decay_scores")
-            return {"decayed": 0, "archived": 0}
-        return fn(
-            rate=rate,
-            min_confidence=min_confidence,
-            max_age_days=max_age_days,
-            label=label,
+        warnings.warn(
+            "decay_scores is deprecated and no longer modifies the graph: stored "
+            "confidence does not decay and nothing is archived automatically (DDR-007).",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        return {"decayed": 0, "archived": 0}
 
     def get_context(self, name: str, label: str, hops: int = 1) -> list[dict[str, Any]]:
         """Retrieve the local neighbourhood of a node.

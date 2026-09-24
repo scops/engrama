@@ -50,6 +50,11 @@ class _ScopedStoreProxy:
         properties = {**_SCOPE_PROPS, **properties}
         return self._inner.merge_node(label, key_field, key_value, properties, embedding)
 
+    def archive_node_by_name(self, label, name, *, purge=False, owner=None):
+        return self._inner.archive_node_by_name(
+            label, name, purge=purge, owner=owner or self._scope
+        )
+
     def seed_domain(self, name, description):
         # Re-route through the proxy's merge_node so scope props land.
         self.merge_node("Domain", "name", name, {"description": description})
@@ -514,16 +519,26 @@ def test_insight_lifecycle_pending_to_approved(store):
 
 
 def test_get_pending_insights_orders_by_confidence(store):
-    store.merge_node("Insight", "title", "low", {"confidence": 0.3, "status": "pending"})
-    store.merge_node("Insight", "title", "high", {"confidence": 0.9, "status": "pending"})
-    store.merge_node("Insight", "title", "mid", {"confidence": 0.6, "status": "pending"})
+    store.merge_node(
+        "Insight", "title", "low", {"confidence": 0.3, "status": "pending", "source_query": "test"}
+    )
+    store.merge_node(
+        "Insight", "title", "high", {"confidence": 0.9, "status": "pending", "source_query": "test"}
+    )
+    store.merge_node(
+        "Insight", "title", "mid", {"confidence": 0.6, "status": "pending", "source_query": "test"}
+    )
     titles = [p["title"] for p in store.get_pending_insights()]
     assert titles == ["high", "mid", "low"]
 
 
 def test_dismissed_insights_excluded_from_pending(store):
-    store.merge_node("Insight", "title", "kept", {"confidence": 0.5, "status": "pending"})
-    store.merge_node("Insight", "title", "drop", {"confidence": 0.5, "status": "pending"})
+    store.merge_node(
+        "Insight", "title", "kept", {"confidence": 0.5, "status": "pending", "source_query": "test"}
+    )
+    store.merge_node(
+        "Insight", "title", "drop", {"confidence": 0.5, "status": "pending", "source_query": "test"}
+    )
     store.update_insight_status("drop", "dismissed")
     titles = {p["title"] for p in store.get_pending_insights()}
     assert "kept" in titles and "drop" not in titles
@@ -535,8 +550,12 @@ def test_approved_insight_titles_separate_from_dismissed(store):
     ones — otherwise the merge_node rebuild silently pins them back to
     status='pending'.
     """
-    store.merge_node("Insight", "title", "yes", {"confidence": 0.5, "status": "pending"})
-    store.merge_node("Insight", "title", "no", {"confidence": 0.5, "status": "pending"})
+    store.merge_node(
+        "Insight", "title", "yes", {"confidence": 0.5, "status": "pending", "source_query": "test"}
+    )
+    store.merge_node(
+        "Insight", "title", "no", {"confidence": 0.5, "status": "pending", "source_query": "test"}
+    )
     store.update_insight_status("yes", "approved")
     store.update_insight_status("no", "dismissed")
     assert store.get_approved_insight_titles() == {"yes"}
@@ -801,23 +820,21 @@ def test_detect_cross_project_solutions_excludes_self(store):
     assert rows == []
 
 
-def test_detect_shared_technology(store):
-    store.merge_node("Project", "name", "alpha", {})
-    store.merge_node("Project", "name", "beta", {})
+def test_detect_shared_technology_groups_members_per_technology(store):
     store.merge_node("Technology", "name", "python", {})
-    store.merge_relation("Project", "name", "alpha", "USES", "Technology", "name", "python")
-    store.merge_relation("Project", "name", "beta", "USES", "Technology", "name", "python")
+    for name in ("alpha", "beta", "gamma"):
+        store.merge_node("Project", "name", name, {})
+        store.merge_relation("Project", "name", name, "USES", "Technology", "name", "python")
     rows = store.detect_shared_technology()
-    assert any(
-        {r["entity_a"], r["entity_b"]} == {"alpha", "beta"} and r["technology"] == "python"
-        for r in rows
-    )
+    assert [r["technology"] for r in rows] == ["python"]
+    assert {m["name"] for m in rows[0]["members"]} == {"alpha", "beta", "gamma"}
 
 
-def test_detect_shared_technology_no_self_pair(store):
-    store.merge_node("Project", "name", "alpha", {})
+def test_detect_shared_technology_needs_three_live_users(store):
     store.merge_node("Technology", "name", "python", {})
-    store.merge_relation("Project", "name", "alpha", "USES", "Technology", "name", "python")
+    for name, status in (("alpha", None), ("beta", None), ("gamma", "superseded")):
+        store.merge_node("Project", "name", name, {"status": status} if status else {})
+        store.merge_relation("Project", "name", name, "USES", "Technology", "name", "python")
     assert store.detect_shared_technology() == []
 
 
