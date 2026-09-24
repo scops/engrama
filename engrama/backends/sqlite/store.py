@@ -106,6 +106,23 @@ def _node_dict(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _health_node(node_id: Any, label: str, key: str, props: dict[str, Any]) -> dict[str, Any]:
+    """Project a node onto the fields :mod:`engrama.core.health` needs."""
+    return {
+        "id": node_id,
+        "label": label,
+        "key": key,
+        "status": props.get("status"),
+        "tags": props.get("tags"),
+        "confidence": props.get("confidence"),
+        "source_query": props.get("source_query"),
+        "has_summary": bool(props.get("summary")),
+        "has_engrama_id": bool(props.get("engrama_id")),
+        "has_source": props.get("source") is not None,
+        "has_trust": props.get("trust_level") is not None,
+    }
+
+
 class SqliteGraphStore:
     """Sync ``GraphStore`` (and partial ``VectorStore``) backed by SQLite.
 
@@ -440,6 +457,33 @@ class SqliteGraphStore:
         self._sync_fts(node_id, props)
         self._conn.commit()
         return {"matched": True, "deleted": 0}
+
+    def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        """Scoped nodes and edges for :func:`engrama.core.health.compute_health`.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty snapshot.
+        Only edges whose two endpoints are visible in ``scope`` are returned.
+        """
+        node_clause, params = scope_filter_sql(scope, "n", json_column="props")
+        nodes: list[dict[str, Any]] = []
+        for row in self._conn.execute(
+            f"SELECT n.id, n.label, n.key_value, n.props FROM nodes n WHERE {node_clause}",
+            params,
+        ):
+            props = json.loads(row["props"]) if row["props"] else {}
+            nodes.append(_health_node(row["id"], row["label"], row["key_value"], props))
+        a_clause, _ = scope_filter_sql(scope, "a", json_column="props")
+        b_clause, _ = scope_filter_sql(scope, "b", json_column="props")
+        edges = [
+            (row["from_id"], row["to_id"])
+            for row in self._conn.execute(
+                "SELECT e.from_id, e.to_id FROM edges e "
+                "JOIN nodes a ON a.id = e.from_id JOIN nodes b ON b.id = e.to_id "
+                f"WHERE {a_clause} AND {b_clause}",
+                params,
+            )
+        ]
+        return {"nodes": nodes, "edges": edges}
 
     def list_existing_nodes(
         self,

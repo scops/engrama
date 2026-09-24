@@ -512,6 +512,41 @@ class Neo4jGraphStore:
                 "properties": props,
             }
 
+    def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
+        """Scoped nodes and edges for :func:`engrama.core.health.compute_health`.
+
+        Spec 001: fail-closed — ``scope`` ``None``/incomplete → empty snapshot.
+        Only edges whose two endpoints are visible in ``scope`` are returned.
+        """
+        n_clause, params = scope_filter_cypher(scope, "n")
+        nodes = [
+            dict(r)
+            for r in self._client.run(
+                f"MATCH (n) WHERE {n_clause} AND coalesce(n.name, n.title) IS NOT NULL "
+                "RETURN elementId(n) AS id, "
+                "       [l IN labels(n) WHERE l <> 'Embedded'][0] AS label, "
+                "       coalesce(n.name, n.title) AS key, n.status AS status, "
+                "       n.tags AS tags, n.confidence AS confidence, "
+                "       n.source_query AS source_query, "
+                "       coalesce(n.summary, '') <> '' AS has_summary, "
+                "       n.engrama_id IS NOT NULL AS has_engrama_id, "
+                "       n.source IS NOT NULL AS has_source, "
+                "       n.trust_level IS NOT NULL AS has_trust",
+                params,
+            )
+        ]
+        a_clause, _ = scope_filter_cypher(scope, "a")
+        b_clause, _ = scope_filter_cypher(scope, "b")
+        edges = [
+            (r["a"], r["b"])
+            for r in self._client.run(
+                f"MATCH (a)-[]->(b) WHERE {a_clause} AND {b_clause} "
+                "RETURN elementId(a) AS a, elementId(b) AS b",
+                params,
+            )
+        ]
+        return {"nodes": nodes, "edges": edges}
+
     def iter_all_relations(self):
         """Yield every relationship as ``{from_label, from_key, from_value,
         rel_type, to_label, to_key, to_value}``. Mirrors the SQLite

@@ -312,6 +312,24 @@ def cmd_reflect(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_health(args: argparse.Namespace) -> int:
+    """Print the read-only graph health report for the active scope."""
+    try:
+        from engrama.adapters.sdk import Engrama
+        from engrama.core.health import format_health
+
+        with Engrama() as eng:
+            report = eng.health()
+        if args.json:
+            print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+        else:
+            print(format_health(report))
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_reindex(args: argparse.Namespace) -> int:
     """Batch re-embed all nodes and store vectors.
 
@@ -962,6 +980,12 @@ def main() -> None:
     # --- reflect ---
     sub.add_parser("reflect", help="Run cross-entity pattern detection")
 
+    # --- health ---
+    p_health = sub.add_parser(
+        "health", help="Report graph health (orphans, stubs, components, duplicates)"
+    )
+    p_health.add_argument("--json", action="store_true", help="Print the report as JSON")
+
     # --- search ---
     p_search = sub.add_parser("search", help="Fulltext search")
     p_search.add_argument("query", help="Search query")
@@ -1252,6 +1276,7 @@ def main() -> None:
         "init": cmd_init,
         "verify": cmd_verify,
         "reflect": cmd_reflect,
+        "health": cmd_health,
         "search": cmd_search,
         "reindex": cmd_reindex,
         "decay": cmd_decay,
