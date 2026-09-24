@@ -7,6 +7,101 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.18.0] — 2026-09-24
+
+This release keeps the graph connected and relevant as it grows, instead of
+relying on the agent to do it. The design is in
+[DDR-006](./ddr-006.md), [DDR-007](./ddr-007.md) and [DDR-008](./ddr-008.md).
+
+### Added
+
+- **Write feedback on `engrama_remember`.** Every response now reports the
+  node's `degree`, and an `orphan_warning` when it ends up with no relation.
+  Tags that name an existing `Project`, `Client`, `Course` or `Domain` the
+  node isn't linked to come back as `suggested_relations`.
+  `ENGRAMA_TAG_LINKING=off|suggest|auto` (default `suggest`) controls them;
+  `auto` creates the edges and lists them as `relations_from_tags`.
+  `ENGRAMA_REQUIRE_RELATIONS=true` refuses writes that would leave a
+  non-anchor node unlinked.
+- **Entity resolution on write.** Inline relation targets are resolved with a
+  bounded, scope-filtered lookup that still finds a target with a typo (it
+  replaces the alphabetical scan capped at 1 000 names). An exact match under
+  another label is reported as `label_conflict`, and one on an archived node
+  as `revive_candidate`; neither is connected silently. A newly created node
+  that looks like an existing one (same name under another label, a very
+  similar name, or a near-identical embedding) is reported in
+  `possible_duplicate_of`. Semantic similarity only ever warns.
+  `ENGRAMA_REMEMBER_DEDUPE=off|warn|block` (default `warn`); with `block`,
+  `force_new: true` creates the node anyway. Thresholds are tunable with
+  `ENGRAMA_RESOLVE_*`.
+- **Stub lifecycle.** A stub that receives a `summary` or `details` becomes
+  `active`. `engrama_remember` returns `enrich_hints` for stubs that already
+  hold three or more edges.
+- **`engrama health`** (CLI, `--json`) and `Engrama.health()`: a read-only,
+  scoped report on orphans, hub stubs, connected components, duplicate names,
+  tags without edges, archived nodes that still bridge live ones, and schema
+  gaps.
+- **New reflect detectors:** `hub_stubs` and `tag_without_edge`.
+- **`ABOUT` relation** (core, every profile): reflect links each Insight to
+  the entities it talks about, so `engrama_context` on an entity shows the
+  Insights about it.
+
+### Changed
+
+- **Node identity now includes its owner.** Nodes are keyed on
+  `(label, name|title, org_id, user_id)` instead of `(label, name|title)`, so
+  two owners can hold nodes with the same name, each with its own
+  properties and edges. Every operation that addresses a node by name
+  (merge, recall, forget, Insight approval and vault sync, embeddings,
+  export/import) now acts on the caller's own node. This strengthens tenant
+  isolation. Existing databases migrate on first connect: SQLite rebuilds the
+  `nodes` table keeping every id, edge, fulltext row and vector; Neo4j
+  replaces the per-label key uniqueness constraints with owner-scoped ones
+  plus a key index (`ensure_schema`, `engrama init`).
+- **Relevance over time is computed when ranking, never stored**
+  ([DDR-007](./ddr-007.md)). Recency is measured from `last_activity_at`,
+  which writes and new edges (on both endpoints) refresh. The half-life is
+  180 days for domain nodes and 30 for reflect Insights, hubs fade more
+  slowly, and anchor labels don't fade. See `ENGRAMA_RECENCY_*`;
+  `engrama_status` reports the parameters.
+- **An explicit `confidence` also applies when a node is updated** on Neo4j,
+  matching SQLite. A regenerated reflect Insight refreshes its confidence.
+- **Archiving is explicit and is not activity:** it no longer touches
+  `updated_at`, and it records `archived_reason`.
+- **Reflect runs on live nodes only.** Detectors skip archived and
+  superseded nodes, with the same results on SQLite and Neo4j.
+  `shared_technology` emits one Insight per technology with three or more
+  users instead of one per pair, and Insight titles no longer carry counts,
+  so a re-run updates the same Insight. `under_connected` reports every
+  weakly linked node, not only the 15 newest. Each detector is capped per
+  run. Pending Insights created under the previous titles are not removed
+  automatically.
+- **Hand-written Insights are domain nodes.** An `Insight` without
+  `source_query` (reflect always sets one) takes part in detectors and
+  structural checks, and never enters the review queue.
+- **`engrama import` keeps `created_at`, `updated_at` and
+  `last_activity_at`**, and exports carry node owners.
+
+### Deprecated
+
+- **`engrama decay`** and `decay_scores()` no longer modify the graph. They
+  print (or emit) a deprecation notice and will be removed in a later
+  release.
+
+### Fixed
+
+- Reflect run from the Python SDK no longer resets approved Insights to
+  pending.
+- A dismissed `under_connected` Insight now stays dismissed.
+- `engrama_remember` embeds each write once and reports `embedded` only when
+  the vector was stored.
+- Vault note paths are checked with a strict containment test.
+- Install hints for the `mcp` and `neo4j` extras point at
+  `pip install 'engrama[...]'`.
+- The test suite runs completely in CI, selected by a `neo4j` marker instead
+  of file lists, and a plain `pytest` without Neo4j skips those tests instead
+  of failing.
+
 ## [0.17.0] — 2026-09-21
 
 ### Changed
