@@ -422,41 +422,22 @@ class TestTimestampTypeSafety:
 
 
 class TestEngineDecay:
-    """Test EngramaEngine.decay_scores delegation."""
+    """EngramaEngine.decay_scores is a deprecated no-op (DDR-007)."""
 
-    def test_delegates_to_store(self):
+    def test_is_a_noop_that_warns(self):
         from engrama.core.engine import EngramaEngine
         from engrama.core.scope import MemoryScope
 
         mock_store = MagicMock()
-        mock_store.decay_scores.return_value = {"decayed": 42, "archived": 3}
         engine = EngramaEngine(
             mock_store,
             default_scope=MemoryScope(org_id="test-temporal", user_id="test-temporal"),
         )
 
-        result = engine.decay_scores(rate=0.02, min_confidence=0.05)
-        assert result == {"decayed": 42, "archived": 3}
-        mock_store.decay_scores.assert_called_once_with(
-            rate=0.02,
-            min_confidence=0.05,
-            max_age_days=0,
-            label=None,
-        )
-
-    def test_graceful_when_backend_lacks_decay(self):
-        from engrama.core.engine import EngramaEngine
-        from engrama.core.scope import MemoryScope
-
-        # A store without decay_scores attribute
-        mock_store = MagicMock(spec=[])
-        engine = EngramaEngine(
-            mock_store,
-            default_scope=MemoryScope(org_id="test-temporal", user_id="test-temporal"),
-        )
-
-        result = engine.decay_scores()
+        with pytest.warns(DeprecationWarning):
+            result = engine.decay_scores(rate=0.02, min_confidence=0.05)
         assert result == {"decayed": 0, "archived": 0}
+        mock_store.decay_scores.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +541,7 @@ class TestCLIDecay:
             label=None,
             dry_run=True,
         )
-        # Dry run should succeed without DB
+        # Deprecated no-op: succeeds without touching any DB
         result = cmd_decay(args)
         assert result == 0
 

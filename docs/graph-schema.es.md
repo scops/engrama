@@ -136,8 +136,8 @@ Cada nodo lleva metadatos temporales gestionados por el motor (DDR-003 Fase D):
   updated_at:  datetime,   // auto-actualizado en cada MERGE
   valid_from:  datetime,   // cuándo el hecho pasó a ser verdadero (auto-asignado al crear)
   valid_to:    datetime,   // cuándo fue supersedido (null = sigue vigente)
-  confidence:  float,      // 0.0–1.0, decae con el tiempo (por defecto 1.0)
-  decayed_at:  datetime,   // última vez que se aplicó decaimiento a la confianza
+  confidence:  float,      // 0.0–1.0, creencia en el hecho (por defecto 1.0; nunca decae, DDR-007)
+  archived_at: datetime,   // lo fija el archivado explícito, junto con archived_reason
   embedding:   [float],    // vector de 768 dimensiones (cuando EMBEDDING_PROVIDER != none)
 }
 ```
@@ -230,5 +230,5 @@ RETURN path LIMIT 50
 - **Acotado fail-closed** — cada lectura se restringe a la identidad `(org_id, user_id)` del llamante; un scope ausente o parcial no matchea nada. Ver [security.es.md](security.es.md#aislamiento-por-tenant-multi-tenant).
 - **Los embeddings son opcionales** — la búsqueda semántica a través de cualquier servicio compatible con la API de OpenAI (Ollama, OpenAI, LM Studio, vLLM, llama.cpp, Jina) mejora la búsqueda cuando está habilitada (DDR-003 Fase B+C, DDR-004). En Neo4j el índice vectorial sobre `(:Embedded)` cubre todos los tipos de nodo; en SQLite los vectores residen en la tabla virtual `vec0` `node_embeddings`.
 - **Siempre parametrizar consultas** — nunca formatear cadenas en Cypher (Neo4j) ni en SQL (SQLite). Ambos backends usan vinculación de parámetros.
-- **Campos temporales auto-gestionados** — `valid_from`, `confidence` se asignan al crear; `valid_to` se limpia al revivir (MATCH). El decaimiento se aplica mediante `engrama decay` en la CLI.
+- **Campos temporales auto-gestionados** — `valid_from`, `confidence` se asignan al crear; `valid_to` se limpia al revivir (MATCH). La confianza almacenada nunca decae (DDR-007); `engrama decay` es una operación obsoleta que no hace nada.
 - **El esquema es agnóstico al backend** — las mismas etiquetas y relaciones definidas en `profiles/*.yaml` se aplican a cualquiera de los dos backends. Consulta [backends.es.md](backends.es.md) para la guía de decisión entre SQLite y Neo4j.

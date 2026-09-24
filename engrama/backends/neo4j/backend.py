@@ -186,6 +186,11 @@ class Neo4jGraphStore:
             "confidence_val": confidence if confidence is not None else 1.0,
         }
 
+        # An explicit confidence is a statement about the fact, so it applies
+        # on update too (DDR-007); absent, an existing value is left alone.
+        if confidence is not None:
+            set_clauses_match.append("n.confidence = $confidence_val")
+
         # Use datetime() in Cypher for valid_from when not supplied
         if valid_from is None:
             set_clauses_create[2] = "n.valid_from = datetime()"
@@ -273,13 +278,14 @@ class Neo4jGraphStore:
         """Delete or archive a node.
 
         When ``soft=True``, sets ``status='archived'``, ``archived_at``
-        and ``updated_at``.  When ``soft=False``, detach-deletes the node.
+        and ``archived_reason`` (``updated_at`` is left alone: archiving is
+        not activity). When ``soft=False``, detach-deletes the node.
         """
         if soft:
             query = (
                 f"MATCH (n:{label} {{{key_field}: $key_value}}) "
                 "SET n.status = 'archived', n.archived_at = datetime(), "
-                "    n.updated_at = datetime() "
+                "    n.archived_reason = 'delete' "
                 "RETURN n"
             )
         else:
@@ -319,6 +325,8 @@ class Neo4jGraphStore:
         label: str | None = None,
     ) -> dict[str, int]:
         """Batch-apply exponential confidence decay to all nodes.
+
+        Deprecated (DDR-007): no longer called by Engrama; removed in a future release.
 
         For each node: ``new_confidence = confidence * exp(-rate * days_old)``
         where ``days_old = (now - updated_at)`` in days.
@@ -511,6 +519,38 @@ class Neo4jGraphStore:
                 "key_value": key_value,
                 "properties": props,
             }
+
+    def restore_timestamps(
+        self,
+        label: str,
+        key_value: str,
+        owner: MemoryScope | None,
+        created_at: str | None,
+        updated_at: str | None,
+    ) -> bool:
+        """Importer-only: put back the original ``created_at`` / ``updated_at``.
+
+        ``merge_node`` never takes these from a caller (#76), so an import
+        would otherwise date every node to the day it ran (DDR-007). This is
+        the trusted path for that one caller; ``None`` values are left alone.
+        """
+        # scope-exempt: import/migration path — addresses the exact owner's
+        # node that the importer just wrote.
+        key_field = "title" if label in TITLE_KEYED_LABELS else "name"
+        owner_clause, owner_params = owner_filter_cypher(owner, "n")
+        records = self._client.run(
+            f"MATCH (n:{label} {{{key_field}: $key_value}}) WHERE {owner_clause} "
+            "SET n.created_at = coalesce(datetime($created_at), n.created_at), "
+            "    n.updated_at = coalesce(datetime($updated_at), n.updated_at) "
+            "RETURN count(n) AS n",
+            {
+                "key_value": key_value,
+                "created_at": created_at,
+                "updated_at": updated_at,
+                **owner_params,
+            },
+        )
+        return bool(records and records[0]["n"])
 
     def health_snapshot(self, scope: MemoryScope | None = None) -> dict[str, Any]:
         """Scoped nodes and edges for :func:`engrama.core.health.compute_health`.
@@ -806,7 +846,7 @@ class Neo4jGraphStore:
         query = (
             f"MATCH (n:{label} {{{merge_key}: $name}}) WHERE {owner_clause} "
             "SET n.status = 'archived', n.archived_at = datetime(), "
-            "    n.updated_at = datetime() "
+            "    n.archived_reason = 'forget' "
             "RETURN n"
         )
         records = self._client.run(query, params)
@@ -839,7 +879,7 @@ class Neo4jGraphStore:
                 "  AND n.updated_at < datetime() - duration({days: $days}) "
                 "  AND (n.status IS NULL OR n.status <> 'archived') "
                 "SET n.status = 'archived', n.archived_at = datetime(), "
-                "    n.updated_at = datetime() "
+                "    n.archived_reason = 'ttl' "
                 "RETURN count(n) AS affected"
             )
 
@@ -1207,13 +1247,13 @@ class Neo4jGraphStore:
         Differs from :meth:`archive_node_by_name`: matches via
         ``$label IN labels(n)`` rather than ``(n:Label {name})``.  Sets
         the same archive shape (``status`` + ``archived_at`` +
-        ``updated_at``) as the other soft-archive methods.  Returns
+        ``archived_reason``) as the other soft-archive methods.  Returns
         ``True`` if a node was matched.
         """
         records = self._client.run(
             "MATCH (n {name: $name}) WHERE $label IN labels(n) "
             "SET n.status = 'archived', n.archived_at = datetime(), "
-            "    n.updated_at = datetime() "
+            "    n.archived_reason = 'missing_note' "
             "RETURN n.name AS name",
             {"name": name, "label": label},
         )

@@ -439,12 +439,18 @@ supersession, and time-travel queries:
   creation.
 - `valid_to` (datetime) — when the fact was superseded. `null` = still
   true.
-- `confidence` (float, 0.0–1.0) — decays over time. Defaults to 1.0.
-- `decayed_at` (datetime) — last decay pass.
-- `created_at`, `updated_at` — system timestamps (auto-managed).
+- `confidence` (float, 0.0–1.0) — belief in the fact. Defaults to 1.0 and
+  changes only when a write states it (or supersedes the node); it never
+  decays in storage ([DDR-007](./ddr-007.md)).
+- `archived_at`, `archived_reason` — set when a node is archived explicitly
+  (`forget`, TTL, a note removed from the vault). Archiving does not touch
+  `updated_at`.
+- `created_at`, `updated_at` — system timestamps (auto-managed; preserved by
+  `engrama import`).
 
-**Confidence decay** (`engrama decay`): exponential decay
-`new_conf = conf × exp(-rate × days_since_update)`.
+**Confidence decay** is retired ([DDR-007](./ddr-007.md)): `engrama decay`
+is a deprecated no-op. Relevance over time is a ranking signal computed at
+query time, and nothing is archived automatically.
 
 **Supersession (`valid_to`)**: setting it auto-halves confidence.
 Updating a superseded node clears `valid_to` (revival) and logs a

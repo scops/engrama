@@ -279,6 +279,10 @@ class SqliteGraphStore:
         # Embedding is handled by the vector store layer; ignore here.
         properties.pop("_id", None)
         properties.pop("_labels", None)
+        # Server-managed timestamps live in their own columns and are never
+        # taken from the caller (#76, parity with the Neo4j store).
+        properties.pop("created_at", None)
+        properties.pop("updated_at", None)
 
         owner_clause, owner_params = owner_filter_sql(node_owner(properties), "nodes")
         cur = self._conn.execute(
@@ -400,9 +404,10 @@ class SqliteGraphStore:
             props = json.loads(row["props"]) if row["props"] else {}
             props["status"] = "archived"
             props["archived_at"] = now
+            props["archived_reason"] = "delete"
             self._conn.execute(
-                "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-                (json.dumps(props), now, row["id"]),
+                "UPDATE nodes SET props = ? WHERE id = ?",
+                (json.dumps(props), row["id"]),
             )
             self._sync_fts(row["id"], props)
         else:
@@ -450,9 +455,10 @@ class SqliteGraphStore:
         props = json.loads(cur.fetchone()["props"] or "{}")
         props["status"] = "archived"
         props["archived_at"] = now
+        props["archived_reason"] = "forget"
         self._conn.execute(
-            "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(props), now, node_id),
+            "UPDATE nodes SET props = ? WHERE id = ?",
+            (json.dumps(props), node_id),
         )
         self._sync_fts(node_id, props)
         self._conn.commit()
@@ -507,15 +513,56 @@ class SqliteGraphStore:
     def iter_all_nodes(self) -> Iterator[dict[str, Any]]:
         """Yield every node in the graph for export. Migration-only — not
         intended for query paths, which should use indexed lookups instead.
+        ``created_at`` / ``updated_at`` live in columns here, so they are
+        added to the exported properties (Neo4j exports carry them there too).
         """
-        cur = self._conn.execute("SELECT label, key_field, key_value, props FROM nodes ORDER BY id")
+        cur = self._conn.execute(
+            "SELECT label, key_field, key_value, props, created_at, updated_at "
+            "FROM nodes ORDER BY id"
+        )
         for row in cur:
+            props = json.loads(row["props"]) if row["props"] else {}
+            props["created_at"] = row["created_at"]
+            props["updated_at"] = row["updated_at"]
             yield {
                 "label": row["label"],
                 "key_field": row["key_field"],
                 "key_value": row["key_value"],
-                "properties": json.loads(row["props"]) if row["props"] else {},
+                "properties": props,
             }
+
+    def restore_timestamps(
+        self,
+        label: str,
+        key_value: str,
+        owner: MemoryScope | None,
+        created_at: str | None,
+        updated_at: str | None,
+    ) -> bool:
+        """Importer-only: put back the original ``created_at`` / ``updated_at``.
+
+        ``merge_node`` never takes these from a caller (#76), so an import
+        would otherwise date every node to the day it ran (DDR-007). This is
+        the trusted path for that one caller; values that are ``None`` are
+        left as they are.
+        """
+        # scope-exempt: import/migration path — addresses the exact owner's
+        # node that the importer just wrote.
+        owner_clause, owner_params = owner_filter_sql(owner, "nodes")
+        cur = self._conn.execute(
+            "UPDATE nodes SET created_at = COALESCE(:created_at, created_at), "
+            "updated_at = COALESCE(:updated_at, updated_at) "
+            f"WHERE label = :label AND key_value = :key_value AND {owner_clause}",
+            {
+                "label": label,
+                "key_value": key_value,
+                "created_at": created_at,
+                "updated_at": updated_at,
+                **owner_params,
+            },
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
 
     def purge_all(self) -> None:
         """Wipe every node, edge, and FTS row. Used by ``engrama import
@@ -971,6 +1018,8 @@ class SqliteGraphStore:
     ) -> dict[str, int]:
         """Apply exponential confidence decay, then optionally archive.
 
+        Deprecated (DDR-007): no longer called by Engrama; removed in a future release.
+
         Done in Python (fetch + recompute + write) because SQLite has no
         native ``exp``. For typical graphs (<100k nodes) this is fast
         enough; if it ever bites we'll move to a SQLite extension.
@@ -1145,9 +1194,10 @@ class SqliteGraphStore:
                 props = json.loads(r["props"])
                 props["status"] = "archived"
                 props["archived_at"] = now
+                props["archived_reason"] = "ttl"
                 self._conn.execute(
-                    "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(props), now, r["id"]),
+                    "UPDATE nodes SET props = ? WHERE id = ?",
+                    (json.dumps(props), r["id"]),
                 )
                 affected += 1
         self._conn.commit()
@@ -1785,9 +1835,10 @@ class SqliteGraphStore:
         props = json.loads(row["props"]) if row["props"] else {}
         props["status"] = "archived"
         props["archived_at"] = now
+        props["archived_reason"] = "missing_note"
         self._conn.execute(
-            "UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(props), now, row["id"]),
+            "UPDATE nodes SET props = ? WHERE id = ?",
+            (json.dumps(props), row["id"]),
         )
         self._sync_fts(row["id"], props)
         self._conn.commit()

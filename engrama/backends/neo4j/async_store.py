@@ -168,7 +168,10 @@ class Neo4jAsyncStore:
             )
 
         if confidence is not None:
+            # An explicit confidence (or a supersession via valid_to) is a
+            # statement about the fact, so it applies on update too (DDR-007).
             set_create.append("n.confidence = $confidence_val")
+            set_match.append("n.confidence = $confidence_val")
             params["confidence_val"] = confidence
         else:
             set_create.append("n.confidence = 1.0")
@@ -305,13 +308,14 @@ class Neo4jAsyncStore:
         """Delete or archive a node.
 
         When ``soft=True``, sets ``status='archived'``, ``archived_at``
-        and ``updated_at``.  When ``soft=False``, detach-deletes the node.
+        and ``archived_reason`` (``updated_at`` is left alone: archiving is
+        not activity). When ``soft=False``, detach-deletes the node.
         """
         if soft:
             cypher = (
                 f"MATCH (n:{label} {{{key_field}: $key_value}}) "
                 "SET n.status = 'archived', n.archived_at = datetime(), "
-                "    n.updated_at = datetime() "
+                "    n.archived_reason = 'delete' "
                 "RETURN n"
             )
         else:
@@ -1374,6 +1378,9 @@ class Neo4jAsyncStore:
         min_confidence: float = 0.0,
     ) -> dict[str, Any]:
         """Apply exponential decay to node confidence based on staleness.
+
+        Deprecated (DDR-007): no longer called by Engrama; removed in a future release.
+
 
         Formula: ``new_confidence = confidence × exp(-decay_rate × days_old)``
 
