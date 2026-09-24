@@ -611,11 +611,11 @@ class RememberInput(BaseModel):
         description=(
             "Optional relations to create in the same call. "
             'Format: {"REL_TYPE": ["target_name", ...]}. '
-            'Example: {"USES": ["BDK"], "IN_DOMAIN": ["teaching"], "FOR": ["Accenture"]}. '
+            'Example: {"USES": ["Python"], "IN_DOMAIN": ["teaching"], "FOR": ["Acme Corp"]}. '
             "Targets are matched by name; a missing target is created as a "
             "stub. By default the stub's label is inferred from the relation "
             "type, which is lossy. To pin it, pass an object instead of a "
-            'string: {"RELATED_TO": [{"name": "BDK", "label": "Tool"}]}.'
+            'string: {"RELATED_TO": [{"name": "Python", "label": "Tool"}]}.'
         ),
     )
     force_new: bool = Field(
