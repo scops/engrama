@@ -21,6 +21,7 @@ from typing import Any
 
 from neo4j import AsyncDriver
 
+from engrama.backends.neo4j import _reflect_cypher
 from engrama.backends.neo4j._cypher import escape_cypher_identifier, scoped_key_lookup
 from engrama.backends.neo4j._lucene import escape_lucene_query
 from engrama.backends.neo4j.backend import (
@@ -985,56 +986,14 @@ class Neo4jAsyncStore:
     # so a missing-identity caller cannot leak cross-tenant patterns through
     # reflect.
 
-    @staticmethod
-    def _scope_and(
-        node_vars: tuple[str, ...],
-        scope: MemoryScope | None,
-    ) -> tuple[str, dict[str, Any]]:
-        """Build ``AND (scope_n1) AND (scope_n2) ...`` Cypher + params.
-
-        Returns ``("", {})`` for an empty scope so the caller can splice
-        the fragment unconditionally; with a complete scope, the helper's
-        equality predicate is applied to every node variable.
-        """
-        clauses: list[str] = []
-        params: dict[str, Any] = {}
-        for nv in node_vars:
-            clause, p = scope_filter_cypher(scope, nv)
-            if not clause:
-                continue
-            clauses.append(clause)
-            # All node vars share the same scope params (same keys); merging
-            # is idempotent.
-            params.update(p)
-        if not clauses:
-            return "", {}
-        return "AND " + " AND ".join(clauses), params
-
     async def detect_cross_project_solutions(
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Open Problem shares a Concept with a resolved Problem in a
-        different Project that has a Decision, within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("pB", "open", "c", "resolved", "d", "pA"), scope)
-        cypher = (
-            "MATCH (pB:Project)-[:HAS]->(open:Problem {status: $open_status}) "
-            "MATCH (open)-[:INSTANCE_OF|APPLIES]->(c:Concept)"
-            "<-[:INSTANCE_OF|APPLIES]-(resolved:Problem {status: $resolved_status}) "
-            "MATCH (resolved)-[:SOLVED_BY]->(d:Decision)<-[:INFORMED_BY]-(pA:Project) "
-            f"WHERE pA <> pB {scope_sql} "
-            "RETURN pB.name AS target_project, open.title AS open_problem, "
-            "d.title AS decision, pA.name AS source_project, c.name AS concept"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.cross_project_solutions``)."""
+        cypher, params = _reflect_cypher.cross_project_solutions(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_={
-                "open_status": "open",
-                "resolved_status": "resolved",
-                **scope_params,
-            },
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1042,21 +1001,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Two distinct entities use the same Technology, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("a", "b", "t"), scope)
-        cypher = (
-            "MATCH (a)-[:USES|TEACHES|COMPOSED_OF]->(t:Technology)"
-            "<-[:USES|TEACHES|COMPOSED_OF]-(b) "
-            "WHERE id(a) < id(b) "
-            f"AND NOT a:Insight AND NOT b:Insight {scope_sql} "
-            "RETURN coalesce(a.name, a.title) AS entity_a, labels(a)[0] AS type_a, "
-            "coalesce(b.name, b.title) AS entity_b, labels(b)[0] AS type_b, "
-            "t.name AS technology"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.shared_technology``)."""
+        cypher, params = _reflect_cypher.shared_technology(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_=scope_params,
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1064,21 +1012,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """A Vulnerability or open Problem shares a Concept with a Course,
-        within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("issue", "c", "course"), scope)
-        cypher = (
-            "MATCH (issue)-[:INSTANCE_OF|APPLIES]->(c:Concept)<-[:COVERS]-(course:Course) "
-            "WHERE ((issue:Vulnerability) OR (issue:Problem AND issue.status = $open_status)) "
-            f"{scope_sql} "
-            "RETURN coalesce(issue.title, issue.name) AS issue, "
-            "labels(issue)[0] AS issue_type, c.name AS concept, course.name AS course"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.training_opportunities``)."""
+        cypher, params = _reflect_cypher.training_opportunities(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_={"open_status": "open", **scope_params},
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1086,23 +1023,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Technique used in domain A could apply in domain B, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("t", "d1", "d2", "other"), scope)
-        cypher = (
-            "MATCH (t:Technique)-[:IN_DOMAIN]->(d1:Domain) "
-            "MATCH (d2:Domain) WHERE d1 <> d2 "
-            "AND NOT EXISTS { MATCH (t)-[:IN_DOMAIN]->(d2) } "
-            "MATCH (other)-[:IN_DOMAIN]->(d2) "
-            "WHERE (other)-[:INSTANCE_OF|APPLIES]->(:Concept)<-[:INSTANCE_OF|APPLIES]-(t) "
-            f"{scope_sql} "
-            "RETURN t.name AS technique, d1.name AS source_domain, "
-            "d2.name AS target_domain, count(other) AS related_entities "
-            "ORDER BY related_entities DESC LIMIT 10"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.technique_transfer``)."""
+        cypher, params = _reflect_cypher.technique_transfer(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_=scope_params,
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1110,21 +1034,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Concept connected to >= 3 entities, within ``scope``."""
-        scope_sql, scope_params = self._scope_and(("c", "n"), scope)
-        cypher = (
-            "MATCH (c:Concept)<-[:INSTANCE_OF|APPLIES]-(n) "
-            f"WHERE 1=1 {scope_sql} "
-            "WITH c, collect(DISTINCT {name: coalesce(n.name, n.title), "
-            "label: labels(n)[0]}) AS connected, count(n) AS cnt "
-            "WHERE cnt >= 3 "
-            "RETURN c.name AS concept, cnt AS entity_count, connected[..5] AS sample "
-            "ORDER BY cnt DESC LIMIT 10"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.concept_clusters``)."""
+        cypher, params = _reflect_cypher.concept_clusters(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_=scope_params,
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1132,28 +1045,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Nodes 90d+ stale or low-confidence connected to active
-        Project/Course, within ``scope``.
-        """
-        scope_sql, scope_params = self._scope_and(("n", "active"), scope)
-        cypher = (
-            "MATCH (n)-[r]-(active) "
-            "WHERE (active:Project OR active:Course) "
-            "AND (active.status IS NULL OR active.status IN [$active_status, 'active']) "
-            "AND ("
-            "  n.updated_at < datetime() - duration({days: 90}) "
-            "  OR (n.confidence IS NOT NULL AND n.confidence < 0.3)"
-            ") "
-            f"AND NOT n:Project AND NOT n:Course AND NOT n:Domain {scope_sql} "
-            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-            "n.updated_at AS last_updated, n.confidence AS confidence, "
-            "active.name AS project, type(r) AS rel "
-            "ORDER BY coalesce(n.confidence, 1.0) ASC, n.updated_at ASC LIMIT 15"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.stale_knowledge``)."""
+        cypher, params = _reflect_cypher.stale_knowledge(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_={"active_status": "active", **scope_params},
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 
@@ -1161,28 +1056,10 @@ class Neo4jAsyncStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Nodes with fewer than 2 *substantive* relationships, within ``scope``.
-
-        Edges to neighbours with ``status = 'stub'`` are not counted —
-        stubs are placeholder nodes and treating them as real
-        connections hides genuinely under-connected nodes.
-        """
-        scope_sql, scope_params = self._scope_and(("n",), scope)
-        cypher = (
-            "MATCH (n) WHERE NOT n:Domain AND NOT n:Insight "
-            "AND (n.name IS NOT NULL OR n.title IS NOT NULL) "
-            f"AND n.status <> 'archived' {scope_sql} "
-            "WITH n, size([(n)-[]-(m) "
-            "WHERE coalesce(m.status, 'active') <> 'stub' | 1]) AS rel_count "
-            "WHERE rel_count < 2 "
-            "RETURN coalesce(n.name, n.title) AS name, labels(n)[0] AS label, "
-            "rel_count, n.created_at AS created "
-            "ORDER BY n.created_at DESC LIMIT 15"
-        )
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.under_connected_nodes``)."""
+        cypher, params = _reflect_cypher.under_connected_nodes(scope)
         records, _, _ = await self._driver.execute_query(
-            cypher,
-            parameters_=scope_params,
-            database_=self._database,
+            cypher, parameters_=params, database_=self._database
         )
         return [dict(r) for r in records]
 

@@ -25,6 +25,7 @@ from typing import Any
 
 import sqlite_vec
 
+from engrama.core.reflection import SHARED_TECHNOLOGY_MIN_MEMBERS
 from engrama.core.scope import (
     MemoryScope,
     node_owner,
@@ -1480,6 +1481,20 @@ class SqliteGraphStore:
             return "", {}
         return " AND " + " AND ".join(clauses), params
 
+    @staticmethod
+    def _live_and(aliases: tuple[str, ...]) -> str:
+        """``AND``-joined live predicate per alias (DDR-008): not archived, not
+        superseded (null-safe), and not a reflect-generated Insight. Mirrors
+        ``engrama.backends.neo4j._reflect_cypher.live``."""
+        parts = [
+            f" AND COALESCE(json_extract({a}.props, '$.status'), 'active') "
+            f"NOT IN ('archived', 'superseded') "
+            f"AND NOT ({a}.label = 'Insight' "
+            f"AND json_extract({a}.props, '$.source_query') IS NOT NULL)"
+            for a in aliases
+        ]
+        return "".join(parts)
+
     def detect_cross_project_solutions(
         self,
         scope: MemoryScope | None = None,
@@ -1516,6 +1531,7 @@ class SqliteGraphStore:
             JOIN edges e5 ON e5.to_id = d.id AND e5.rel_type = 'INFORMED_BY'
             JOIN nodes pA ON pA.id = e5.from_id AND pA.label = 'Project'
             WHERE pB.label = 'Project' AND pA.id != pB.id{scope_sql}
+                  {self._live_and(("pB", "c", "d", "pA"))}
         """
         cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
@@ -1524,28 +1540,31 @@ class SqliteGraphStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Two distinct entities both connect to the same Technology via
-        USES / TEACHES / COMPOSED_OF, within ``scope``.
+        """One row per Technology with enough live users (via USES / TEACHES /
+        COMPOSED_OF), within ``scope``: ``{technology, members}`` where
+        ``members`` is a list of ``{name, label}``.
         """
-        scope_sql, scope_params = self._scope_and(("t", "a", "b"), scope)
+        scope_sql, scope_params = self._scope_and(("t", "m"), scope)
         sql = f"""
-            SELECT DISTINCT
-                a.key_value AS entity_a, a.label AS type_a,
-                b.key_value AS entity_b, b.label AS type_b,
-                t.key_value AS technology
+            SELECT
+                t.key_value AS technology,
+                json_group_array(
+                    DISTINCT json_object('name', m.key_value, 'label', m.label)
+                ) AS members_raw
             FROM nodes t
-            JOIN edges ea ON ea.to_id = t.id
-                         AND ea.rel_type IN ('USES', 'TEACHES', 'COMPOSED_OF')
-            JOIN nodes a  ON a.id = ea.from_id
-            JOIN edges eb ON eb.to_id = t.id
-                         AND eb.rel_type IN ('USES', 'TEACHES', 'COMPOSED_OF')
-            JOIN nodes b  ON b.id = eb.from_id
-            WHERE t.label = 'Technology'
-              AND a.id < b.id
-              AND a.label != 'Insight' AND b.label != 'Insight'{scope_sql}
+            JOIN edges e ON e.to_id = t.id
+                        AND e.rel_type IN ('USES', 'TEACHES', 'COMPOSED_OF')
+            JOIN nodes m ON m.id = e.from_id
+            WHERE t.label = 'Technology'{scope_sql}{self._live_and(("t", "m"))}
+            GROUP BY t.id
+            HAVING COUNT(DISTINCT m.id) >= :min_members
+            ORDER BY COUNT(DISTINCT m.id) DESC, technology
         """
-        cur = self._conn.execute(sql, scope_params)
-        return [dict(r) for r in cur.fetchall()]
+        params = {"min_members": SHARED_TECHNOLOGY_MIN_MEMBERS, **scope_params}
+        return [
+            {"technology": r["technology"], "members": json.loads(r["members_raw"])}
+            for r in self._conn.execute(sql, params)
+        ]
 
     def detect_training_opportunities(
         self,
@@ -1568,6 +1587,7 @@ class SqliteGraphStore:
             WHERE (issue.label = 'Vulnerability'
                OR (issue.label = 'Problem'
                    AND json_extract(issue.props, '$.status') = 'open')){scope_sql}
+                  {self._live_and(("issue", "c", "course"))}
         """
         cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]
@@ -1601,7 +1621,7 @@ class SqliteGraphStore:
                 FROM nodes t
                 JOIN edges e ON e.from_id = t.id AND e.rel_type = 'IN_DOMAIN'
                 JOIN nodes d ON d.id = e.to_id AND d.label = 'Domain'
-                WHERE t.label = 'Technique'{cte_t}{cte_d}
+                WHERE t.label = 'Technique'{cte_t}{cte_d}{self._live_and(("t", "d"))}
             ),
             technique_concept AS (
                 SELECT t.id AS t_id, c.id AS c_id
@@ -1609,7 +1629,7 @@ class SqliteGraphStore:
                 JOIN edges e ON e.from_id = t.id
                             AND e.rel_type IN ('INSTANCE_OF', 'APPLIES')
                 JOIN nodes c ON c.id = e.to_id AND c.label = 'Concept'
-                WHERE t.label = 'Technique'{cte_t}{cte_c}
+                WHERE t.label = 'Technique'{cte_t}{cte_c}{self._live_and(("t", "c"))}
             )
             SELECT
                 tid.t_name      AS technique,
@@ -1628,9 +1648,9 @@ class SqliteGraphStore:
                 WHERE from_id = tid.t_id
                   AND rel_type = 'IN_DOMAIN'
                   AND to_id = d2.id
-            ){main_scope_sql}
+            ){main_scope_sql}{self._live_and(("d2", "other"))}
             GROUP BY tid.t_id, tid.d_id, d2.id
-            ORDER BY related_entities DESC
+            ORDER BY related_entities DESC, technique, target_domain
             LIMIT 10
         """
         cur = self._conn.execute(sql, params)
@@ -1658,10 +1678,10 @@ class SqliteGraphStore:
             JOIN edges e ON e.to_id = c.id
                         AND e.rel_type IN ('INSTANCE_OF', 'APPLIES')
             JOIN nodes n ON n.id = e.from_id
-            WHERE c.label = 'Concept'{scope_sql}
+            WHERE c.label = 'Concept'{scope_sql}{self._live_and(("c", "n"))}
             GROUP BY c.id
             HAVING COUNT(DISTINCT n.id) >= 3
-            ORDER BY entity_count DESC
+            ORDER BY entity_count DESC, concept
             LIMIT 10
         """
         cur = self._conn.execute(sql, scope_params)
@@ -1690,6 +1710,7 @@ class SqliteGraphStore:
         # reused across halves via named placeholders.
         scope_sql, scope_params = self._scope_and(("n", "active"), scope)
         params: dict[str, Any] = {"cutoff": cutoff, **scope_params}
+        live_n = self._live_and(("n",))
         sql = f"""
             SELECT n_name, n_label, last_updated, confidence, project, rel
             FROM (
@@ -1709,12 +1730,12 @@ class SqliteGraphStore:
                                         json_extract(active.props, '$.status'),
                                         'active'
                                       ) IN ('active', '')
-                WHERE n.label NOT IN ('Project', 'Course', 'Domain', 'Insight')
+                WHERE n.label NOT IN ('Project', 'Course', 'Domain')
                   AND (
                         n.updated_at < :cutoff
                      OR (json_extract(n.props, '$.confidence') IS NOT NULL
                          AND CAST(json_extract(n.props, '$.confidence') AS REAL) < 0.3)
-                      ){scope_sql}
+                      ){scope_sql}{live_n}
                 UNION
                 SELECT
                     n.key_value, n.label, n.updated_at,
@@ -1728,14 +1749,14 @@ class SqliteGraphStore:
                                         json_extract(active.props, '$.status'),
                                         'active'
                                       ) IN ('active', '')
-                WHERE n.label NOT IN ('Project', 'Course', 'Domain', 'Insight')
+                WHERE n.label NOT IN ('Project', 'Course', 'Domain')
                   AND (
                         n.updated_at < :cutoff
                      OR (json_extract(n.props, '$.confidence') IS NOT NULL
                          AND CAST(json_extract(n.props, '$.confidence') AS REAL) < 0.3)
-                      ){scope_sql}
+                      ){scope_sql}{live_n}
             )
-            ORDER BY COALESCE(CAST(confidence AS REAL), 1.0) ASC, last_updated ASC
+            ORDER BY COALESCE(CAST(confidence AS REAL), 1.0) ASC, last_updated ASC, n_name
             LIMIT 15
         """
         cur = self._conn.execute(sql, params)
@@ -1755,14 +1776,12 @@ class SqliteGraphStore:
         self,
         scope: MemoryScope | None = None,
     ) -> list[dict[str, Any]]:
-        """Nodes with fewer than 2 *substantive* relationships (excluding
-        Domain/Insight and archived nodes), within ``scope``.
+        """Every live node (except ``Domain``) with fewer than 2 substantive
+        relationships, within ``scope``, most isolated first. No limit: the
+        caller reports the total and samples.
 
-        Edges to neighbours marked ``status = 'stub'`` are not counted —
-        stubs are placeholder nodes created during ingest before their
-        real content arrives, and treating them as real connections
-        masks genuinely under-connected nodes whose only neighbours are
-        placeholders.
+        Edges to stubs and to reflect-generated Insights don't count: they
+        are placeholders or annotations, not structure.
         """
         scope_sql, scope_params = self._scope_and(("n",), scope)
         sql = f"""
@@ -1776,17 +1795,16 @@ class SqliteGraphStore:
                                      THEN e.to_id
                                      ELSE e.from_id END
                     WHERE (e.from_id = n.id OR e.to_id = n.id)
-                      AND COALESCE(json_extract(m.props, '$.status'), 'active')
-                          != 'stub'
+                      AND COALESCE(json_extract(m.props, '$.status'), 'active') != 'stub'
+                      AND NOT (m.label = 'Insight'
+                               AND json_extract(m.props, '$.source_query') IS NOT NULL)
                 ) AS rel_count,
                 n.created_at AS created
             FROM nodes n
-            WHERE n.label NOT IN ('Domain', 'Insight')
-              AND COALESCE(json_extract(n.props, '$.status'), '') != 'archived'{scope_sql}
+            WHERE n.label != 'Domain'{scope_sql}{self._live_and(("n",))}
             GROUP BY n.id
             HAVING rel_count < 2
-            ORDER BY n.created_at DESC
-            LIMIT 15
+            ORDER BY rel_count ASC, n.created_at DESC, name
         """
         cur = self._conn.execute(sql, scope_params)
         return [dict(r) for r in cur.fetchall()]

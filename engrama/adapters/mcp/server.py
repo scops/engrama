@@ -47,6 +47,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from engrama import __version__
 from engrama.adapters.obsidian import NoteParser, ObsidianAdapter
 from engrama.core.identity import resolve_local_sub
+from engrama.core.reflection import DETECTORS, select
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
 from engrama.core.scope import MemoryScope, node_owner
 from engrama.core.security import Provenance, Sanitiser, sanitize_node_for_output
@@ -2690,331 +2691,44 @@ def create_engrama_mcp(
             pass
         judged = dismissed | approved
 
-        # --- Helper to run a query and create Insights ---
-        async def _run_pattern(
-            query_name: str,
-            detect_fn,
-            required_labels: list[str] | None = None,
-            any_labels: list[list[str]] | None = None,
-            min_label_count: dict[str, int] | None = None,
-            builder_fn=None,
-        ):
-            # Check if ALL required labels have data
-            for label in required_labels or []:
-                if not profile.get(label):
-                    queries_skipped.append(query_name)
-                    return
-            # Check any_labels: each entry is an OR-group — at least one must exist
-            for group in any_labels or []:
-                if not any(profile.get(lbl) for lbl in group):
-                    queries_skipped.append(query_name)
-                    return
-            if min_label_count:
-                for label, min_cnt in min_label_count.items():
-                    if profile.get(label, 0) < min_cnt:
-                        queries_skipped.append(query_name)
-                        return
-
-            queries_run.append(query_name)
+        # --- Step 3: Run applicable detectors (declared in core.reflection) ---
+        # Each store query only sees live nodes in the caller's scope
+        # (Spec 001 FR-12, DDR-008); ``select`` drops judged titles and caps
+        # every detector's output.
+        for detector in DETECTORS:
+            if not detector.applies(profile):
+                queries_skipped.append(detector.name)
+                continue
+            queries_run.append(detector.name)
+            if detector.name == "under_connected":
+                # A dismissed under-connected Insight stays dismissed even
+                # though its body changes between runs (BUG-007).
+                try:
+                    if await store.find_insight_by_source_query(
+                        "under_connected", statuses=["dismissed"], scope=scope
+                    ):
+                        continue
+                except Exception as e:
+                    logger.warning("Could not check dismissed under-connected Insight: %s", e)
             try:
-                records = await detect_fn()
+                records = await getattr(store, detector.store_method)(scope=scope)
             except Exception as e:
-                logger.warning("Reflect query %s failed: %s", query_name, e)
-                return
-
-            if builder_fn:
-                await builder_fn(records)
-
-        # --- Query builders ---
-
-        async def _build_cross_project(records):
-            for r in records:
-                title = (
-                    f"Solution transfer: {r['decision']} "
-                    f"({r['source_project']} → {r['target_project']})"
-                )
-                if title in judged:
-                    continue
-                body = (
-                    f'The open problem "{r["open_problem"]}" in project '
-                    f'"{r["target_project"]}" shares the concept '
-                    f'"{r["concept"]}" with a resolved problem in project '
-                    f'"{r["source_project"]}". The decision '
-                    f'"{r["decision"]}" may apply here.'
-                )
+                logger.warning("Reflect query %s failed: %s", detector.name, e)
+                continue
+            for draft in select(detector.build(records), judged):
                 await store.merge_node(
                     "Insight",
                     "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": 0.85,
-                            "status": "pending",
-                            "source_query": "cross_project_solution",
-                        },
-                        scope,
-                    ),
+                    draft.title,
+                    _with_mcp_provenance(draft.properties(), scope),
                 )
                 insights.append(
-                    {"query": "cross_project_solution", "title": title, "confidence": 0.85}
-                )
-
-        async def _build_shared_tech(records):
-            for r in records:
-                a_desc = f"{r['type_a']}:{r['entity_a']}"
-                b_desc = f"{r['type_b']}:{r['entity_b']}"
-                title = f"Shared technology: {r['technology']} ({a_desc} & {b_desc})"
-                if title in judged:
-                    continue
-                confidence = 0.75 if r["type_a"] != r["type_b"] else 0.6
-                body = (
-                    f"{a_desc} and {b_desc} both use {r['technology']}. "
-                    f"Consider sharing knowledge or materials between them."
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": confidence,
-                            "status": "pending",
-                            "source_query": "shared_technology",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append(
-                    {"query": "shared_technology", "title": title, "confidence": confidence}
-                )
-
-        async def _build_training(records):
-            for r in records:
-                issue_desc = f"{r['issue_type']}:{r['issue']}"
-                title = (
-                    f"Training opportunity: {r['course']} "
-                    f"covers {r['concept']} (relates to: {issue_desc})"
-                )
-                if title in judged:
-                    continue
-                body = (
-                    f'The {r["issue_type"].lower()} "{r["issue"]}" involves '
-                    f'the concept "{r["concept"]}", which is covered by the '
-                    f'course "{r["course"]}". Reviewing this material may help.'
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": 0.65,
-                            "status": "pending",
-                            "source_query": "training_opportunity",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append(
-                    {"query": "training_opportunity", "title": title, "confidence": 0.65}
-                )
-
-        async def _build_technique_transfer(records):
-            for r in records:
-                title = (
-                    f"Technique transfer: {r['technique']} "
-                    f"({r['source_domain']} → {r['target_domain']})"
-                )
-                if title in judged:
-                    continue
-                related = r["related_entities"]
-                confidence = min(0.5 + (related * 0.1), 0.9)
-                body = (
-                    f'The technique "{r["technique"]}" is used in '
-                    f'"{r["source_domain"]}" but not in '
-                    f'"{r["target_domain"]}". There are {related} '
-                    f"entities in {r['target_domain']} sharing concepts "
-                    f"with this technique."
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": confidence,
-                            "status": "pending",
-                            "source_query": "technique_transfer",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append(
-                    {"query": "technique_transfer", "title": title, "confidence": confidence}
-                )
-
-        async def _build_concept_clustering(records):
-            for r in records:
-                concept = r["concept"]
-                count = r["entity_count"]
-                sample = r["sample"]
-                title = f"Concept cluster: {concept} ({count} entities)"
-                if title in judged:
-                    continue
-                sample_desc = ", ".join(f"{s['label']}:{s['name']}" for s in (sample or [])[:5])
-                confidence = min(0.5 + (count * 0.05), 0.9)
-                body = (
-                    f'The concept "{concept}" connects {count} entities: '
-                    f"{sample_desc}. This cluster may reveal a pattern."
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": confidence,
-                            "status": "pending",
-                            "source_query": "concept_clustering",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append(
-                    {"query": "concept_clustering", "title": title, "confidence": confidence}
-                )
-
-        async def _build_stale(records):
-            for r in records:
-                name = r["name"]
-                title = f"Stale knowledge: {r['label']}:{name} (linked to {r['project']})"
-                if title in judged:
-                    continue
-                last_updated = r["last_updated"]
-                if hasattr(last_updated, "isoformat"):
-                    last_updated = last_updated.isoformat()[:10]
-                body = (
-                    f'The {r["label"]} "{name}" is connected to the active '
-                    f'project "{r["project"]}" via {r["rel"]}, but hasn\'t been '
-                    f"updated since {last_updated}. Consider reviewing or archiving."
-                )
-                await store.merge_node(
-                    "Insight",
-                    "title",
-                    title,
-                    _with_mcp_provenance(
-                        {
-                            "body": body,
-                            "confidence": 0.5,
-                            "status": "pending",
-                            "source_query": "stale_knowledge",
-                        },
-                        scope,
-                    ),
-                )
-                insights.append({"query": "stale_knowledge", "title": title, "confidence": 0.5})
-
-        async def _build_under_connected(records):
-            if not records:
-                return
-            # BUG-007: use a stable title (no count) to avoid uniqueness
-            # constraint collisions when the node count changes between runs.
-            title = "Under-connected nodes need more relationships"
-
-            # Skip if already dismissed
-            if title in judged:
-                return
-            try:
-                dismissed_sq = await store.find_insight_by_source_query(
-                    "under_connected",
-                    statuses=["dismissed"],
-                    scope=scope,
-                )
-                if dismissed_sq:
-                    return
-            except Exception:
-                pass
-
-            names = [f"{r['label']}:{r['name']}" for r in records[:10]]
-            total = len(records)
-            body = (
-                f"Found {total} nodes with fewer than 2 relationships. "
-                f"Candidates for enrichment: {', '.join(names)}."
-            )
-            # MERGE on stable title — idempotent, updates body on repeat runs
-            await store.merge_node(
-                "Insight",
-                "title",
-                title,
-                _with_mcp_provenance(
                     {
-                        "body": body,
-                        "confidence": 0.4,
-                        "status": "pending",
-                        "source_query": "under_connected",
-                    },
-                    scope,
-                ),
-            )
-            insights.append({"query": "under_connected", "title": title, "confidence": 0.4})
-
-        # --- Step 3: Run applicable patterns ---
-        # Each detector is closed over the resolved scope so the pattern
-        # match only sees the caller's nodes (Spec 001 FR-12).
-        await _run_pattern(
-            "cross_project_solution",
-            lambda: store.detect_cross_project_solutions(scope=scope),
-            required_labels=["Problem", "Project"],
-            builder_fn=_build_cross_project,
-        )
-        await _run_pattern(
-            "shared_technology",
-            lambda: store.detect_shared_technology(scope=scope),
-            required_labels=["Technology"],
-            builder_fn=_build_shared_tech,
-        )
-        await _run_pattern(
-            "training_opportunity",
-            lambda: store.detect_training_opportunities(scope=scope),
-            any_labels=[["Problem", "Vulnerability"], ["Course"]],
-            builder_fn=_build_training,
-        )
-        await _run_pattern(
-            "technique_transfer",
-            lambda: store.detect_technique_transfer(scope=scope),
-            required_labels=["Technique"],
-            min_label_count={"Domain": 2},
-            builder_fn=_build_technique_transfer,
-        )
-        await _run_pattern(
-            "concept_clustering",
-            lambda: store.detect_concept_clusters(scope=scope),
-            required_labels=["Concept"],
-            builder_fn=_build_concept_clustering,
-        )
-        await _run_pattern(
-            "stale_knowledge",
-            lambda: store.detect_stale_knowledge(scope=scope),
-            any_labels=[["Project", "Course"]],
-            builder_fn=_build_stale,
-        )
-
-        # Under-connected: always run if enough nodes
-        total_nodes = sum(profile.values())
-        if total_nodes >= 5:
-            queries_run.append("under_connected")
-            try:
-                uc_records = await store.detect_under_connected_nodes(scope=scope)
-                await _build_under_connected(uc_records)
-            except Exception as e:
-                logger.warning("Under-connected query failed: %s", e)
-        else:
-            queries_skipped.append("under_connected")
+                        "query": draft.source_query,
+                        "title": draft.title,
+                        "confidence": draft.confidence,
+                    }
+                )
 
         # --- Proactivity: reset counter ---
         _proactive_state["last_reflect_at"] = _proactive_state.get("remember_count", 0)

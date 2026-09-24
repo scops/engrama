@@ -806,23 +806,21 @@ def test_detect_cross_project_solutions_excludes_self(store):
     assert rows == []
 
 
-def test_detect_shared_technology(store):
-    store.merge_node("Project", "name", "alpha", {})
-    store.merge_node("Project", "name", "beta", {})
+def test_detect_shared_technology_groups_members_per_technology(store):
     store.merge_node("Technology", "name", "python", {})
-    store.merge_relation("Project", "name", "alpha", "USES", "Technology", "name", "python")
-    store.merge_relation("Project", "name", "beta", "USES", "Technology", "name", "python")
+    for name in ("alpha", "beta", "gamma"):
+        store.merge_node("Project", "name", name, {})
+        store.merge_relation("Project", "name", name, "USES", "Technology", "name", "python")
     rows = store.detect_shared_technology()
-    assert any(
-        {r["entity_a"], r["entity_b"]} == {"alpha", "beta"} and r["technology"] == "python"
-        for r in rows
-    )
+    assert [r["technology"] for r in rows] == ["python"]
+    assert {m["name"] for m in rows[0]["members"]} == {"alpha", "beta", "gamma"}
 
 
-def test_detect_shared_technology_no_self_pair(store):
-    store.merge_node("Project", "name", "alpha", {})
+def test_detect_shared_technology_needs_three_live_users(store):
     store.merge_node("Technology", "name", "python", {})
-    store.merge_relation("Project", "name", "alpha", "USES", "Technology", "name", "python")
+    for name, status in (("alpha", None), ("beta", None), ("gamma", "superseded")):
+        store.merge_node("Project", "name", name, {"status": status} if status else {})
+        store.merge_relation("Project", "name", name, "USES", "Technology", "name", "python")
     assert store.detect_shared_technology() == []
 
 
