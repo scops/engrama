@@ -13,6 +13,9 @@ from engrama.core.engine import EngramaEngine
 from engrama.core.scope import MemoryScope
 from engrama.skills.reflect import ReflectSkill
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # Spec 001 fail-closed: every read goes through the (org_id, user_id) filter,
 # so tests must seed nodes under a known scope and run reflect with the
 # matching default_scope on the engine.

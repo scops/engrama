@@ -1,12 +1,12 @@
 """
 Engrama test suite — conftest.py
 
-Tests that need a live Neo4j instance go through the ``neo4j_driver``
-fixture, which skips gracefully when ``NEO4J_PASSWORD`` is not set.
-This means the SQLite-only test suite (``tests/backends/test_sqlite*``)
-runs without any external dependency — matching the spec's goal of a
-base install (``uv sync`` from source, or ``pip install engrama`` once
-on PyPI) plus ``pytest`` working out of the box.
+Tests that need a live Neo4j carry the ``neo4j`` marker (module-level
+``pytestmark`` or a marked parameter). They are skipped at collection
+time when ``NEO4J_PASSWORD`` is not set, before any fixture tries to
+connect, so a plain ``pytest`` on a base install (``pip install engrama``
+or ``uv sync``) runs everything else and never waits on a missing
+server. CI runs ``-m "not neo4j"`` and ``-m neo4j`` as separate jobs.
 """
 
 import os
@@ -20,6 +20,40 @@ NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USERNAME", "neo4j")
 NEO4J_PASS = os.getenv("NEO4J_PASSWORD", "")
 NEO4J_AVAILABLE = bool(NEO4J_PASS)
+
+
+try:
+    import neo4j  # noqa: F401
+
+    _NEO4J_DRIVER_INSTALLED = True
+except ImportError:
+    _NEO4J_DRIVER_INSTALLED = False
+
+_NEO4J_MODULE_MARK = "pytestmark = pytest.mark.neo4j"
+
+
+def pytest_ignore_collect(collection_path, config):
+    """Without the ``neo4j`` extra, don't import whole-module Neo4j suites.
+
+    They import the driver at module level, so collecting them would fail
+    before the marker could skip them.
+    """
+    if _NEO4J_DRIVER_INSTALLED or collection_path.suffix != ".py":
+        return None
+    if collection_path.name.startswith("test_") and _NEO4J_MODULE_MARK in (
+        collection_path.read_text(encoding="utf-8")
+    ):
+        return True
+    return None
+
+
+def pytest_collection_modifyitems(config, items):
+    if NEO4J_AVAILABLE:
+        return
+    skip = pytest.mark.skip(reason="Neo4j not configured (set NEO4J_PASSWORD to run)")
+    for item in items:
+        if "neo4j" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture(scope="session")

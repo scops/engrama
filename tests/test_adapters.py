@@ -12,6 +12,9 @@ from engrama.core.client import EngramaClient
 from engrama.core.engine import EngramaEngine
 from engrama.core.scope import MemoryScope
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # Spec 001 T011: engine writes need a complete (org_id, user_id) scope.
 _TEST_SCOPE = MemoryScope(org_id="test-adapters", user_id="test-adapters")
 # Raw-Cypher node fixtures must carry the same scope, or the now scope-filtered

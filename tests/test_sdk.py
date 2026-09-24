@@ -12,6 +12,9 @@ import pytest
 
 from engrama import Engrama
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # Spec 001 fail-closed: writes/reads filter by (org_id, user_id). Pin a
 # test scope on the SDK fixture and stamp the same identity on every
 # seed Cypher so the round-trip works.

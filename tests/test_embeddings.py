@@ -19,6 +19,9 @@ from engrama.embeddings.null import NullProvider
 from engrama.embeddings.ollama import OllamaProvider
 from engrama.embeddings.text import node_to_text
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # ---------------------------------------------------------------------------
 # Helpers — fake Ollama HTTP server
 # ---------------------------------------------------------------------------

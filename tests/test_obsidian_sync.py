@@ -13,6 +13,9 @@ import pytest
 from engrama.adapters.obsidian.adapter import ObsidianAdapter
 from engrama.adapters.obsidian.parser import NoteParser
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 

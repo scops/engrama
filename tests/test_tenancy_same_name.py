@@ -9,7 +9,6 @@ own node. Also covers the in-place migration of pre-v3 SQLite databases.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import uuid
 from pathlib import Path
@@ -257,12 +256,11 @@ async def test_mcp_remember_same_name_does_not_cross_tenants(
     assert "acme secret" not in json.dumps(bob_ctx)
 
 
+@pytest.mark.neo4j
 @pytest.mark.asyncio
 async def test_neo4j_same_name_is_owner_scoped() -> None:
     """Same contract on Neo4j, where the owner is part of the MERGE pattern
     and the key constraint is (key, org_id, user_id)."""
-    if not os.getenv("NEO4J_PASSWORD"):
-        pytest.skip("Neo4j not configured (set NEO4J_PASSWORD to run)")
     from engrama.backends import create_async_stores
 
     store, _ = create_async_stores({"GRAPH_BACKEND": "neo4j"})

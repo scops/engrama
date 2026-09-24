@@ -20,6 +20,9 @@ from engrama.core.search import (
     SearchResult,
 )
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # ---------------------------------------------------------------------------
 # Mock stores for unit tests
 # ---------------------------------------------------------------------------

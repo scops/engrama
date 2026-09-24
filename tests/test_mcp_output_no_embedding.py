@@ -232,13 +232,7 @@ async def test_context_does_not_return_embedding(tmp_path: Path, neo4j_shaped) -
 @pytest.fixture(
     params=[
         "sqlite",
-        pytest.param(
-            "neo4j",
-            marks=pytest.mark.skipif(
-                not os.getenv("NEO4J_PASSWORD"),
-                reason="Neo4j not configured (set NEO4J_PASSWORD to run)",
-            ),
-        ),
+        pytest.param("neo4j", marks=pytest.mark.neo4j),
     ]
 )
 def live_server(request: pytest.FixtureRequest, tmp_path: Path):

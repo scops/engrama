@@ -24,6 +24,9 @@ from engrama.core.scope import MemoryScope
 from engrama.core.search import HybridConfig, HybridSearchEngine
 from engrama.embeddings.null import NullProvider
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 _TEST_SCOPE = MemoryScope(org_id="test-vector", user_id="test-vector")
 
 # ---------------------------------------------------------------------------

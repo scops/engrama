@@ -19,6 +19,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+# Needs a live Neo4j; skipped when NEO4J_PASSWORD is unset (see conftest).
+pytestmark = pytest.mark.neo4j
+
 # ---------------------------------------------------------------------------
 # 1. Pure helper tests (no DB needed)
 # ---------------------------------------------------------------------------
