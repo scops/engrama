@@ -109,6 +109,15 @@ class SqliteAsyncStore:
         created = n.get("created_at") == n.get("updated_at")
         return {"node": n, "created": created}
 
+    async def node_degree(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+        scope: MemoryScope | None = None,
+    ) -> int | None:
+        return await self._run(self._sync.node_degree, label, key_field, key_value, scope)
+
     async def get_node(
         self,
         label: str,

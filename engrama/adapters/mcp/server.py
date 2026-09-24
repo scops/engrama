@@ -51,6 +51,7 @@ from engrama.core.reflection import DETECTORS, select
 from engrama.core.schema import TITLE_KEYED_LABELS, NodeType, RelationType
 from engrama.core.scope import MemoryScope, node_owner
 from engrama.core.security import Provenance, Sanitiser, sanitize_node_for_output
+from engrama.core.stubs import HUB_STUB_MIN_DEGREE, STUB_STATUS
 
 logger = logging.getLogger("engrama_mcp")
 logger.setLevel(logging.INFO)
@@ -334,6 +335,23 @@ def _with_mcp_provenance(extra: dict[str, Any] | None, scope: MemoryScope) -> di
 
 # Opportunistic re-embeds per healthy write (see _sweep_pending_embeddings).
 _SWEEP_LIMIT = 3
+
+
+async def _hub_stub_hint(
+    store: Any, label: str, key_field: str, name: str, scope: MemoryScope
+) -> dict[str, Any] | None:
+    """``{label, name, degree}`` when the target is a stub worth enriching."""
+    try:
+        node = await store.get_node(label, key_field, name, scope=scope)
+        if not node or node.get("status") != STUB_STATUS:
+            return None
+        degree = await store.node_degree(label, key_field, name, scope=scope)
+    except Exception as e:  # noqa: BLE001 — a hint must never break the write
+        logger.warning("Could not check stub enrichment for a %s node: %s", label, e)
+        return None
+    if degree is None or degree < HUB_STUB_MIN_DEGREE:
+        return None
+    return {"label": label, "name": name, "degree": degree}
 
 
 async def _embed_text(embedder: Any, text: str) -> list[float]:
@@ -1572,6 +1590,9 @@ def create_engrama_mcp(
         relations_stubbed: list[dict[str, str]] = []
         relations_resolved: list[dict[str, Any]] = []
         relations_ambiguous: list[dict[str, Any]] = []
+        # Existing stubs this write linked to that already hold structure
+        # (DDR-006): the agent is asked to give them content.
+        enrich_hints: list[dict[str, Any]] = []
         if all_relations:
             from engrama.adapters.obsidian.sync import ObsidianSync
 
@@ -1705,6 +1726,12 @@ def create_engrama_mcp(
                         )
                         if rel_result:
                             relations_created += 1
+                            if not created_as_stub:
+                                hint = await _hub_stub_hint(
+                                    store, target_label, target_key, resolved_name, scope
+                                )
+                                if hint:
+                                    enrich_hints.append(hint)
                             if created_as_stub:
                                 # Edge landed, but on a node we just invented.
                                 # The caller may have meant an existing node
@@ -1809,6 +1836,14 @@ def create_engrama_mcp(
                 f"created for them: {targets}. Pick the intended node from "
                 f"'did_you_mean' and re-relate with its exact name, or remember it "
                 f"first if it's genuinely new."
+            )
+        if enrich_hints:
+            result_data["enrich_hints"] = enrich_hints
+            names = ", ".join(sorted({h["name"] for h in enrich_hints}))
+            result_data["enrich_hints_note"] = (
+                f"these nodes are still stubs but already connect several nodes: {names}. "
+                "Call engrama_remember on each with a 'summary' and 'details' so the "
+                "connections they hold are explained."
             )
         if relations_stubbed:
             result_data["relations_stubbed"] = relations_stubbed

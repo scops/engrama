@@ -17,6 +17,7 @@ from typing import Any
 
 from engrama.core.reflection import SHARED_TECHNOLOGY_MIN_MEMBERS
 from engrama.core.scope import MemoryScope, scope_filter_cypher
+from engrama.core.stubs import HUB_STUB_MIN_DEGREE
 
 
 def live(var: str) -> str:
@@ -166,8 +167,24 @@ def under_connected_nodes(scope: MemoryScope | None) -> tuple[str, dict[str, Any
     return cypher, params
 
 
+def hub_stubs(scope: MemoryScope | None) -> tuple[str, dict[str, Any]]:
+    """Stubs holding at least ``HUB_STUB_MIN_DEGREE`` substantive edges."""
+    scope_sql, params = _scope_and(("n",), scope)
+    cypher = (
+        "MATCH (n) WHERE n.status = 'stub' AND coalesce(n.name, n.title) IS NOT NULL "
+        f"AND {scope_sql} "
+        "WITH n, size([(n)-[]-(m) "
+        "WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) AS degree "
+        "WHERE degree >= $min_degree "
+        f"RETURN coalesce(n.name, n.title) AS name, {label('n')} AS label, degree "
+        "ORDER BY degree DESC, name"
+    )
+    return cypher, {"min_degree": HUB_STUB_MIN_DEGREE, **params}
+
+
 __all__ = [
     "concept_clusters",
+    "hub_stubs",
     "cross_project_solutions",
     "live",
     "shared_technology",

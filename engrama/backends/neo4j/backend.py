@@ -26,6 +26,7 @@ from engrama.core.scope import (
     owner_filter_cypher,
     scope_filter_cypher,
 )
+from engrama.core.stubs import clears_stub
 
 _NEO4J_TIME_TYPES = (DateTime, Date, Time, Duration)
 
@@ -180,6 +181,11 @@ class Neo4jGraphStore:
         set_clauses_match: list[str] = [
             "n.updated_at = datetime()",
         ]
+        if clears_stub(properties):
+            # Enriching a stub promotes it (DDR-006).
+            set_clauses_match.append(
+                "n.status = CASE WHEN n.status = 'stub' THEN 'active' ELSE n.status END"
+            )
 
         params: dict[str, Any] = {
             "merge_value": key_value,
@@ -250,6 +256,23 @@ class Neo4jGraphStore:
                 query = f"CREATE (n:{label} {{{key_field}: $merge_value}}) SET {on_create} RETURN n"
 
         return _records_to_dicts(self._client.run(query, params))
+
+    def node_degree(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+        scope: MemoryScope | None = None,
+    ) -> int | None:
+        """Substantive degree of the node visible in ``scope`` (own first);
+        edges to reflect-generated Insights don't count. ``None`` if unseen."""
+        cypher, params = scoped_key_lookup(label, key_field, scope)
+        cypher += (
+            " RETURN size([(n)-[]-(m) "
+            "WHERE NOT (m:Insight AND m.source_query IS NOT NULL) | 1]) AS degree"
+        )
+        records = self._client.run(cypher, {"key_value": key_value, **params})
+        return records[0]["degree"] if records else None
 
     def get_node(
         self,
@@ -1081,6 +1104,14 @@ class Neo4jGraphStore:
     ) -> list[dict[str, Any]]:
         """Reflect detector, scoped to live nodes (``_reflect_cypher.stale_knowledge``)."""
         cypher, params = _reflect_cypher.stale_knowledge(scope)
+        return [dict(r) for r in self._client.run(cypher, params)]
+
+    def detect_hub_stubs(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Reflect detector, scoped to live nodes (``_reflect_cypher.hub_stubs``)."""
+        cypher, params = _reflect_cypher.hub_stubs(scope)
         return [dict(r) for r in self._client.run(cypher, params)]
 
     def detect_under_connected_nodes(

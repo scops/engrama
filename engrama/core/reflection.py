@@ -244,6 +244,23 @@ def _stale(records: list[dict[str, Any]]) -> list[InsightDraft]:
     return drafts
 
 
+def _hub_stubs(records: list[dict[str, Any]]) -> list[InsightDraft]:
+    return [
+        InsightDraft(
+            title=f"Hub stub: {r['label']}:{r['name']}",
+            body=(
+                f'The {r["label"]} "{r["name"]}" links {r["degree"]} nodes but is still a '
+                "stub with no content of its own. Add a summary and details so the "
+                "connections it holds are explained."
+            ),
+            confidence=0.6,
+            source_query="hub_stubs",
+            about=((r["label"], r["name"]),),
+        )
+        for r in records
+    ]
+
+
 def _under_connected(records: list[dict[str, Any]]) -> list[InsightDraft]:
     if not records:
         return []
@@ -303,6 +320,7 @@ DETECTORS: tuple[Detector, ...] = (
         _stale,
         any_of=(("Project", "Course"),),
     ),
+    Detector("hub_stubs", "detect_hub_stubs", _hub_stubs),
     Detector(
         "under_connected",
         "detect_under_connected_nodes",

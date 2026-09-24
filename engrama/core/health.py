@@ -26,8 +26,9 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from typing import Any
 
+from engrama.core.stubs import HUB_STUB_MIN_DEGREE
+
 ANCHOR_LABELS: frozenset[str] = frozenset({"Project", "Client", "Course", "Domain"})
-HUB_STUB_MIN_DEGREE = 3
 _TOP = 10
 
 

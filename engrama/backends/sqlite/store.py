@@ -33,6 +33,7 @@ from engrama.core.scope import (
     owner_filter_sql,
     scope_filter_sql,
 )
+from engrama.core.stubs import HUB_STUB_MIN_DEGREE, STUB_STATUS, clears_stub
 
 logger = logging.getLogger("engrama.backends.sqlite")
 
@@ -324,6 +325,9 @@ class SqliteGraphStore:
             # Revival: clear valid_to unless caller explicitly set one.
             if "valid_to" not in properties:
                 merged.pop("valid_to", None)
+            # Enriching a stub promotes it (DDR-006).
+            if existing.get("status") == STUB_STATUS and clears_stub(properties):
+                merged["status"] = "active"
             # Stable identity (#6): an existing id always wins (a caller can't
             # rewrite it); backfill nodes written before this field existed.
             if existing.get("engrama_id"):
@@ -1773,6 +1777,70 @@ class SqliteGraphStore:
             }
             for r in cur.fetchall()
         ]
+
+    def node_degree(
+        self,
+        label: str,
+        key_field: str,
+        key_value: str,
+        scope: MemoryScope | None = None,
+    ) -> int | None:
+        """Substantive degree of the node visible in ``scope`` (own first).
+
+        Edges to reflect-generated Insights don't count. ``None`` when the
+        node isn't visible — fail-closed on an incomplete scope.
+        """
+        clause, params = scope_filter_sql(scope, "n", json_column="props")
+        row = self._conn.execute(
+            "SELECT n.id FROM nodes n WHERE n.label = :label AND n.key_value = :key_value "
+            f"AND {clause} ORDER BY CASE WHEN json_extract(n.props, '$.user_id') = "
+            ":owner_hint THEN 0 ELSE 1 END LIMIT 1",
+            {
+                "label": label,
+                "key_value": key_value,
+                "owner_hint": scope.user_id if scope is not None else None,
+                **params,
+            },
+        ).fetchone()
+        if row is None:
+            return None
+        return self._conn.execute(
+            "SELECT COUNT(*) FROM edges e JOIN nodes m ON m.id = CASE WHEN e.from_id = :id "
+            "THEN e.to_id ELSE e.from_id END WHERE (e.from_id = :id OR e.to_id = :id) "
+            "AND NOT (m.label = 'Insight' AND json_extract(m.props, '$.source_query') IS NOT NULL)",
+            {"id": row["id"]},
+        ).fetchone()[0]
+
+    def detect_hub_stubs(
+        self,
+        scope: MemoryScope | None = None,
+    ) -> list[dict[str, Any]]:
+        """Stubs holding at least ``HUB_STUB_MIN_DEGREE`` substantive edges
+        (edges to reflect-generated Insights don't count), within ``scope``.
+        """
+        scope_sql, scope_params = self._scope_and(("n",), scope)
+        sql = f"""
+            SELECT
+                n.key_value AS name,
+                n.label     AS label,
+                (
+                    SELECT COUNT(*) FROM edges e
+                    JOIN nodes m
+                      ON m.id = CASE WHEN e.from_id = n.id
+                                     THEN e.to_id
+                                     ELSE e.from_id END
+                    WHERE (e.from_id = n.id OR e.to_id = n.id)
+                      AND NOT (m.label = 'Insight'
+                               AND json_extract(m.props, '$.source_query') IS NOT NULL)
+                ) AS degree
+            FROM nodes n
+            WHERE json_extract(n.props, '$.status') = 'stub'{scope_sql}
+            GROUP BY n.id
+            HAVING degree >= :min_degree
+            ORDER BY degree DESC, name
+        """
+        params = {"min_degree": HUB_STUB_MIN_DEGREE, **scope_params}
+        return [dict(r) for r in self._conn.execute(sql, params)]
 
     def detect_under_connected_nodes(
         self,
