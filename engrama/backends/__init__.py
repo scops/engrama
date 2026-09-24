@@ -36,8 +36,8 @@ def _neo4j_extra_error_message() -> str:
     """Return a consistent install hint for Neo4j-backed execution."""
     return (
         "GRAPH_BACKEND=neo4j requires the optional 'neo4j' Python dependency. "
-        "Install it with `uv sync --extra neo4j` "
-        "(or `pip install engrama[neo4j]` once Engrama ships on PyPI)."
+        "Install it with `pip install 'engrama[neo4j]'` "
+        "(or `uv sync --extra neo4j` from a source checkout)."
     )
 
 
