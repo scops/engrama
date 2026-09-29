@@ -7,6 +7,22 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.18.1] — 2026-09-29
+
+### Fixed
+
+- **MCP tool descriptions no longer carry internal development references.**
+  Tool descriptions and the `admin_tools` reasons in `engrama_status` quoted
+  spec and requirement ids that mean nothing to a client. They now describe
+  behaviour only.
+- **`engrama_remember` declares the type of relation targets.** The
+  `relations` schema accepted any value per target (`items: {}`), which some
+  MCP clients refuse or flag. A target is now declared as a name string or an
+  object such as `{"name": ..., "label": ...}`, which is what the tool
+  already accepted.
+
+---
+
 ## [0.18.0] — 2026-09-24
 
 This release keeps the graph connected and relevant as it grows, instead of
