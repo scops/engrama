@@ -185,14 +185,13 @@ _HDR_USER = "x-engrama-user-id"
 _ADMIN_TOOLS: tuple[dict[str, str], ...] = (
     {
         "name": "engrama_status",
-        "reason": "runtime introspection (FR-11); counts are deployment-wide, "
-        "no tenant isolation. No identity required.",
+        "reason": "Runtime introspection. Counts are deployment-wide, not "
+        "per tenant. No identity required.",
     },
     {
         "name": "engrama_reindex",
-        "reason": "candidate scan is now scoped to the caller's tenant, so it "
-        "leaks no cross-tenant data; still admin-flavoured (bulk re-embed cost) "
-        "— a gateway may gate it for cost/abuse.",
+        "reason": "Scoped to the caller's own nodes, but a bulk re-embed is "
+        "costly, so a gateway may want to restrict it.",
     },
 )
 
@@ -606,7 +605,7 @@ class RememberInput(BaseModel):
             '{"name": "kerberoasting-lab", "description": "Lab about kerberoasting"}'
         ),
     )
-    relations: dict[str, list[Any]] = Field(
+    relations: dict[str, list[str | dict[str, Any]]] = Field(
         default_factory=dict,
         description=(
             "Optional relations to create in the same call. "
@@ -1105,13 +1104,12 @@ def create_engrama_mcp(
         }
         ```
 
-        **Identity (Spec 001).** No identity requirement — this is
-        runtime introspection (FR-11), explicitly admin and CI-allowlisted
-        as ``# scope-exempt``. Counts are deployment-wide so an operator
-        can verify boot state without a tenant identity bound.
+        **Identity.** No identity requirement — this is runtime
+        introspection. Counts are deployment-wide so an operator can verify
+        boot state without a tenant identity bound.
 
         ``admin_tools`` lists the tools that are not isolated per tenant
-        (deployment-wide or admin-flavoured). A multi-tenant gateway can read
+        (deployment-wide or costly to run). A multi-tenant gateway can read
         this to decide which tools to gate for a normal tenant, instead of
         hardcoding names — engrama declares the boundary, the gateway enforces.
         """
@@ -1249,10 +1247,10 @@ def create_engrama_mcp(
         returned here; call ``engrama_context`` when you need the full
         content of a node.
 
-        **Identity (Spec 001 FR-3).** Both ``X-Engrama-Org-Id`` and
+        **Identity.** Both ``X-Engrama-Org-Id`` and
         ``X-Engrama-User-Id`` request headers, or neither for standalone.
-        Unresolved (exactly one) → 0 results (no error). **Degradation
-        (NFR-5).** With ``EMBEDDING_PROVIDER=null`` the tool falls back to
+        Unresolved (exactly one) → 0 results (no error). **Degradation.**
+        With ``EMBEDDING_PROVIDER=null`` the tool falls back to
         the fulltext path; the scope filter still applies on the fallback.
         """
         store = _store(ctx)
@@ -1429,9 +1427,9 @@ def create_engrama_mcp(
         node whether or not a vault is configured. When a vault is configured,
         a corresponding .md note is created (or updated) with full YAML
         frontmatter carrying that same ``engrama_id`` and an empty relations
-        block (DDR-002).
+        block.
 
-        **Identity (Spec 001 FR-4).** Required: both ``X-Engrama-Org-Id``
+        **Identity.** Required: both ``X-Engrama-Org-Id``
         and ``X-Engrama-User-Id`` request headers, or neither for
         standalone (resolves to ``sub_local``). Unresolved (exactly one)
         → explicit error, graph untouched. The node persists with
@@ -2036,7 +2034,7 @@ def create_engrama_mcp(
 
         Returns a confirmation or a message if either node was not found.
 
-        **Identity (Spec 001 FR-4 / FR-1).** Required: both
+        **Identity.** Required: both
         ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
         neither for standalone. Unresolved → explicit error, graph
         untouched. The edge is stamped with ``(org_id, user_id)`` so a
@@ -2224,7 +2222,7 @@ def create_engrama_mcp(
         decide whether a neighbour is worth exploring — call
         ``engrama_context`` on that neighbour if you need its full details.
 
-        **Identity (Spec 001 FR-2).** Both ``X-Engrama-Org-Id`` and
+        **Identity.** Both ``X-Engrama-Org-Id`` and
         ``X-Engrama-User-Id`` headers, or neither for standalone.
         Unresolved → "not found". The root lookup AND neighbour
         traversal are scope-filtered: an existing node owned by another
@@ -2295,7 +2293,7 @@ def create_engrama_mcp(
         either ``created`` + ``node`` (real run) or ``would_create`` +
         ``would_inject_engrama_id`` (dry run).
 
-        **Identity (Spec 001 FR-4).** Required: both
+        **Identity.** Required: both
         ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
         neither for standalone. Unresolved → explicit error, vault and
         graph untouched. The merged node carries the resolved
@@ -2491,7 +2489,7 @@ def create_engrama_mcp(
         Returns JSON with status, dry_run, and either the live counts
         or the ``would_*`` projection.
 
-        **Identity (Spec 001 FR-4).** Required: both
+        **Identity.** Required: both
         ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
         neither for standalone. Unresolved → explicit error, vault and
         graph untouched. Every merged node carries the resolved
@@ -2700,7 +2698,7 @@ def create_engrama_mcp(
 
         This is the primary way to populate the graph from existing content.
 
-        **Identity (Spec 001 FR-4).** Required even though this tool
+        **Identity.** Required even though this tool
         doesn't itself write nodes: it precedes a wave of
         ``engrama_remember`` calls, and an unscoped caller would drive
         downstream writes that the engine guard would then reject. The
@@ -2823,7 +2821,7 @@ def create_engrama_mcp(
         Detected patterns are stored as Insight nodes with status "pending" —
         present them to the user via engrama_surface_insights for review.
 
-        **Identity (Spec 001 FR-4 / FR-12).** Required: both
+        **Identity.** Required: both
         ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
         neither for standalone. Unresolved → explicit error, no
         Insights written. Reflect profiles, detects, and writes
@@ -2962,7 +2960,7 @@ def create_engrama_mcp(
         approve or dismiss it — never act on an Insight without explicit
         approval.
 
-        **Identity (Spec 001 FR-2).** Both ``X-Engrama-Org-Id`` and
+        **Identity.** Both ``X-Engrama-Org-Id`` and
         ``X-Engrama-User-Id`` headers, or neither for standalone.
         Unresolved → error. Only Insights owned by the caller are
         surfaced; another tenant's pending Insights remain invisible.
@@ -3070,7 +3068,7 @@ def create_engrama_mcp(
         and records a timestamp.  Only approved Insights can later be
         written to Obsidian.
 
-        **Identity (Spec 001 FR-2 / FR-4).** Required: both
+        **Identity.** Required: both
         ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
         neither for standalone. Unresolved → explicit error, graph
         untouched. The Insight is looked up under the caller's scope;
@@ -3168,7 +3166,7 @@ def create_engrama_mcp(
         is appended as a Markdown section with a horizontal rule separator,
         including confidence, source query, and approval timestamp.
 
-        **Identity (Spec 001 FR-2 / FR-4).** Required: both
+        **Identity.** Required: both
         ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
         neither for standalone. Unresolved → explicit error, vault
         untouched. The Insight lookup is scope-filtered; writing another
@@ -3415,7 +3413,7 @@ def create_engrama_mcp(
         process in batches; if ``detect`` reports ``unembedded_found ==
         limit`` there may be more, so raise the limit or re-run after applying.
 
-        **Identity (Spec 001 FR-4).** Required: both
+        **Identity.** Required: both
         ``X-Engrama-Org-Id`` and ``X-Engrama-User-Id`` headers, or
         neither for standalone — every mode, even read-only ``detect``,
         enforces this. The candidate scan is **scoped to the calling
@@ -3425,7 +3423,7 @@ def create_engrama_mcp(
         opportunistic sweep and the admin CLI keep the unscoped cross-tenant
         backfill via ``scope=None``.) ``engrama_status`` and this tool are
         still listed in ``engrama_status.admin_tools`` so a gateway may
-        additionally gate them for cost/abuse reasons.
+        additionally restrict them for cost reasons.
         """
         store = _store(ctx)
         state = ctx.request_context.lifespan_context
@@ -3554,7 +3552,7 @@ def create_engrama_mcp(
         ),
     )
     async def engrama_gdpr_forget(params: GdprForgetInput, ctx: Context) -> str:
-        """Permanently erase **the caller's own** memory (GDPR, Spec 001 US-3).
+        """Permanently erase **the caller's own** memory (GDPR).
 
         Physically deletes every node, relationship and embedding belonging to
         the resolved identity, plus its notes in Engrama's internal vault. This
@@ -3577,7 +3575,7 @@ def create_engrama_mcp(
         no-op there if it is unconfigured, and it never follows a path outside
         the vault root (never an external user-managed vault).
 
-        **Identity (Spec 001 FR-4).** Required: both ``X-Engrama-Org-Id`` and
+        **Identity.** Required: both ``X-Engrama-Org-Id`` and
         ``X-Engrama-User-Id`` headers, or neither for standalone. Unresolved →
         explicit error, nothing erased.
 
